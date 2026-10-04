@@ -49,6 +49,7 @@ class LigneEcriture:
     credit: int = 0  # centimes
     lettrage: str = ""
     piece: str = ""
+    version_source: str = ""  # version Odoo d'origine (conversion 14->19)
 
     def cle_idempotence(self) -> str:
         """Clé d'idempotence : deux lignes identiques = doublon, jamais réimportées."""

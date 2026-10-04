@@ -56,6 +56,10 @@ class Marceau:
         if "lettrage" in q or "lettr" in q:
             return ("Le lettrage reconstruit les paires débit/crédit par compte, à montant "
                     "exact en centimes. Toute ligne non appariable est une anomalie.")
+        if "conversion" in q or "odoo 1" in q or "version" in q:
+            return ("CONCORDE convertit les écritures entre toutes les versions d'Odoo, "
+                    "de la 14 à la 19, via son modèle canonique en centimes. "
+                    "Chaque saut de version est vérifié : équilibre 0,00 € et idempotence.")
         if "guardian" in q:
             return ("Guardian est la surveillance déterministe de CONCORDE : self-check "
                     "bloquant au démarrage, audit chaîné SHA-256, zéro LLM.")

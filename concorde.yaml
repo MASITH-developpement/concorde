@@ -52,10 +52,12 @@ regles:
 
 cible:
   type: odoo
-  version: "18"
+  versions: ["14", "15", "16", "17", "18", "19"]
+  conversion_chainee: "14->15->16->17->18->19"
   edition: community
   protocole: xml-rpc
   mode_defaut: dry-run
+  import_donnees_reelles: desactive
 
 azalplus:
   module_independant: true

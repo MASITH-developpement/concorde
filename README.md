@@ -2,7 +2,7 @@
 
 **La passerelle de liaison comptable universelle** — (c) MASITH / Stéphane Moreau. Tous droits réservés.
 
-> Migration comptable **Quadra → Odoo 18 Community**, avec un noyau FEC pivot universel.
+> Migration comptable **Quadra → Odoo (14 à 19 Community)**, avec un noyau FEC pivot universel.
 
 ## Principes fondateurs
 
@@ -34,6 +34,10 @@ FEC (Quadra, ISO-8859-1) ─► importer_fec ─► verifier_equilibre ─► ma
   compte inconnu = blocage avec le numéro fautif nommé.
 - **No-code** (`concorde.yaml`) — pipeline 100 % YAML, parseur maison zéro dépendance (`core/yaml_min.py`).
 - **Injecteur Odoo 18** (`injectors/odoo18.py`) — XML-RPC, dry-run par défaut, idempotent.
+- **Chaîne de conversion Odoo 14→19** (`injectors/odoo_conversion.py`) — convertit
+  les écritures d'une version Odoo à la suivante (14→15→16→17→18→19), un saut à la
+  fois, via le canonique en centimes. Équilibre 0,00 € et idempotence vérifiés à
+  **chaque saut** ; dry-run par défaut, aucune donnée réelle importée.
 - **Module AZALPLUS** (`azalplus_module.yaml`) — manifeste du module indépendant.
 
 ## Utilisation
@@ -76,8 +80,9 @@ Voir `deploy/INSTALL.md` — Docker : **odoo:18 + postgres:16**.
 
 1. ~~Injecteur Odoo~~ ✅ (`injectors/odoo18.py`, dry-run)
 2. ~~Serveur + docker-compose~~ ✅ (`deploy/`)
-3. FEC réel du client (validation février 2026)
-4. Dépôt INPI — classes 9 et 42
+3. ~~Chaîne conversion Odoo 14→19~~ ✅ (`injectors/odoo_conversion.py`, 5 sauts, dry-run)
+4. FEC réel du client (validation février 2026)
+5. Dépôt INPI — classes 9 et 42
 
 ---
 *CONCORDE est une marque de MASITH — MARQUÉ DÉPOSÉ ™*

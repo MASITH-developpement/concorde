@@ -15,6 +15,7 @@ from core.moteur import MoteurConcorde
 from core.mapping import charger_mapping, mapper_comptes, ErreurMapping
 from samples.generateur_fec_test import generer_fec
 from injectors.odoo18 import InjecteurOdoo18, ErreurInjecteur
+from injectors.odoo_conversion import ConvertisseurOdoo, ErreurConversion
 
 
 class TestCentimes(unittest.TestCase):
@@ -209,6 +210,52 @@ class TestInjecteurOdoo18(unittest.TestCase):
         canon = parse_fec(TestParseurFEC.FEC_MINIMAL.encode("utf-8"))
         with self.assertRaises(ErreurInjecteur):
             inj.injecter(canon)
+
+
+class TestConversionOdoo(unittest.TestCase):
+    def _canon(self):
+        return parse_fec(TestParseurFEC.FEC_MINIMAL.encode("utf-8"))
+
+    def test_chainee_14_vers_19(self):
+        conv = ConvertisseurOdoo()
+        self.assertTrue(conv.dry_run)          # jamais de données réelles par défaut
+        self.assertTrue(conv.guardian.self_check_ok)
+        r = conv.convertir_chainee(self._canon(), source="14", cible="19")
+        self.assertEqual(r["source"], "14")
+        self.assertEqual(r["cible"], "19")
+        self.assertEqual(len(r["etapes"]), 5)  # 14→15→16→17→18→19
+        self.assertTrue(all(e["equilibre"] for e in r["etapes"]))
+        self.assertEqual(r["nb_lignes_final"], len(self._canon()))
+        # montants en centimes inchangés de bout en bout
+        self.assertEqual(r["canonique"].total_debit, self._canon().total_debit)
+        self.assertEqual(r["canonique"].total_credit, self._canon().total_credit)
+        self.assertTrue(all(l.version_source == "19" for l in r["canonique"].lignes))
+
+    def test_saut_unique_17_vers_18(self):
+        conv = ConvertisseurOdoo()
+        r = conv.convertir_chainee(self._canon(), source="17", cible="18")
+        self.assertEqual(len(r["etapes"]), 1)
+        self.assertEqual(r["etapes"][0]["saut"], "17→18")
+        self.assertEqual(r["version_source_final"], "18")
+
+    def test_refuse_version_non_supportee(self):
+        conv = ConvertisseurOdoo()
+        with self.assertRaises(ErreurConversion):
+            conv.convertir_chainee(self._canon(), source="13", cible="19")
+        with self.assertRaises(ErreurConversion):
+            conv.convertir_chainee(self._canon(), source="19", cible="14")  # rétro refusée
+
+    def test_equilibre_verifie_et_audit_guardian(self):
+        conv = ConvertisseurOdoo()
+        r = conv.convertir_chainee(self._canon(), source="14", cible="19")
+        self.assertTrue(r["canonique"].est_equilibre(tolerance=0))
+        self.assertTrue(conv.guardian.verifier_chaine())
+        # écriture déséquilibrée -> refus à chaque saut, tolérance 0,00 €
+        c = Canonique()
+        c.ajouter(LigneEcriture("AC", "9", __import__("datetime").date(2026, 1, 1),
+                                "41100000", "Orphelin", debit=5000))
+        with self.assertRaises(ErreurConversion):
+            conv.convertir_chainee(c, source="14", cible="15")
 
 
 if __name__ == "__main__":

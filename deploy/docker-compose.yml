@@ -1,0 +1,46 @@
+# CONCORDE v1.0 — déploiement Docker (c) MASITH / Stéphane Moreau
+# Serveur de production : Odoo 17 Community + PostgreSQL 16
+# Usage : docker compose up -d
+
+services:
+  postgres:
+    image: postgres:16
+    container_name: concorde-postgres
+    restart: unless-stopped
+    environment:
+      POSTGRES_DB: ${POSTGRES_DB:-odoo}
+      POSTGRES_USER: ${POSTGRES_USER:-odoo}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-CHANGEZ_MOI}
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-odoo}"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  odoo:
+    image: odoo:17
+    container_name: concorde-odoo
+    restart: unless-stopped
+    depends_on:
+      postgres:
+        condition: service_healthy
+    ports:
+      - "8069:8069"          # XML-RPC + interface web
+      - "8072:8072"          # longpolling
+    environment:
+      HOST: postgres
+      USER: ${POSTGRES_USER:-odoo}
+      PASSWORD: ${POSTGRES_PASSWORD:-CHANGEZ_MOI}
+      DB_NAME: ${POSTGRES_DB:-odoo}
+      ADMIN_PASSWD: ${ADMIN_PASSWD:-CHANGEZ_MOI_ADMIN}
+    volumes:
+      - odoodata:/var/lib/odoo
+      - ./config/odoo.conf:/etc/odoo/odoo.conf:ro
+      - ./addons:/mnt/extra-addons:ro
+    command: odoo -c /etc/odoo/odoo.conf
+
+volumes:
+  pgdata:
+  odoodata:

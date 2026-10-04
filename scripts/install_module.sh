@@ -12,7 +12,7 @@ cp mapping_quadra_odoo.json "$MODULE_DIR/engine/"
 # Logo officiel CONCORDE (SVG, copie exacte du fichier fourni par MASITH,
 # tatouage numerique invisible inclus) dans le module
 mkdir -p "$MODULE_DIR/static/description"
-cat > "$MODULE_DIR/static/description/logo.svg" <<'SVGEOF'
+cat > "$MODULE_DIR/static/description/logo_masith.svg" <<'SVGEOF'
 <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 560 200" width="560" height="200">
   <!-- ================================================================
        TATOUAGE NUMÉRIQUE INVISIBLE — propriété intellectuelle
@@ -76,7 +76,33 @@ cat > "$MODULE_DIR/static/description/logo.svg" <<'SVGEOF'
 </svg>
 SVGEOF
 # copie exacte : retirer le retour a la ligne final ajoute par le heredoc
-truncate -s -1 "$MODULE_DIR/static/description/logo.svg"
+truncate -s -1 "$MODULE_DIR/static/description/logo_masith.svg"
+
+# Variante d'affichage (logo.svg, ce qu'Odoo affiche) : meme balance centree,
+# recomposee pour remplir le cadre sans rognage. Le logo officiel reste logo_masith.svg.
+cat > "$MODULE_DIR/static/description/logo.svg" <<'SVGEOF2'
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 560 200" width="560" height="200">
+  <title>CONCORDE - Liaison comptable universelle</title>
+  <!-- Balance centree : meme symbole que le logo officiel MASITH -->
+  <g transform="translate(280,90)">
+    <rect x="-4" y="-58" width="8" height="96" rx="4" fill="#8B1E3F"/>
+    <rect x="-52" y="-66" width="104" height="8" rx="4" fill="#8B1E3F"/>
+    <line x1="-52" y1="-58" x2="-52" y2="-30" stroke="#D4A017" stroke-width="4"/>
+    <line x1="52" y1="-58" x2="52" y2="-30" stroke="#D4A017" stroke-width="4"/>
+    <path d="M-76,-30 A26,14 0 0 0 -28,-30 Z" fill="#D4A017"/>
+    <path d="M28,-30 A26,14 0 0 0 76,-30 Z" fill="#D4A017"/>
+    <rect x="-30" y="36" width="60" height="10" rx="5" fill="#8B1E3F"/>
+    <circle cx="0" cy="-74" r="9" fill="#D4A017" stroke="#8B1E3F" stroke-width="3"/>
+  </g>
+  <text x="280" y="178" text-anchor="middle" font-family="Georgia, 'Times New Roman', serif"
+        font-size="34" font-weight="bold" letter-spacing="2" fill="#8B1E3F">CONCORDE</text>
+  <text x="280" y="196" text-anchor="middle" font-family="Verdana, sans-serif" font-size="11"
+        letter-spacing="3" fill="#B06A2E">LIAISON COMPTABLE AU CENTIME PRES</text>
+</svg>
+SVGEOF2
+
+# 3) forcer le rafraichissement de l'icone en base (Odoo la met en cache en piece jointe)
+docker exec concorde-postgres psql -U odoo -d concorde -c "DELETE FROM ir_attachment WHERE res_model='ir.module.module' AND res_field='icon' AND res_id IN (SELECT id FROM ir_module_module WHERE name='concorde');" || true
 
 # Icone du module : balance bordeaux/or, rendu fidele aux coordonnees du logo SVG
 python3 - "$MODULE_DIR/static/description/icon.png" <<'PYEOF'

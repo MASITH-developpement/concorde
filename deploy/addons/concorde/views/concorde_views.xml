@@ -15,7 +15,7 @@
                         <group>
                             <field name="name"/>
                             <field name="fec_filename"/>
-                            <field name="journal_id" options="'{"no_create": True}'"/>
+                            <field name="journal_id"/>
                             <field name="empreinte_guardian"/>
                         </group>
                         <group>
@@ -32,15 +32,14 @@
                         <page string="Rapport pipeline">
                             <field name="rapport_html" nolabel="1"/>
                         </page>
-                        <page string="Écritures Odoo">
+                        <page string="Ecritures Odoo">
                             <field name="move_ids">
                                 <tree>
                                     <field name="ref"/>
                                     <field name="date"/>
                                     <field name="journal_id"/>
                                     <field name="amount_total"/>
-                                    <field name="state" widget="b
-adge"/>
+                                    <field name="state" widget="badge"/>
                                 </tree>
                             </field>
                         </page>
@@ -76,7 +75,7 @@ adge"/>
                 <group>
                     <field name="fec_filename" invisible="1"/>
                     <field name="fec_file" filename="fec_filename"/>
-                    <field name="journal_id"/>
+                    <field name="journal_id" options="{'no_create': True}"/>
                     <field name="dry_run"/>
                 </group>
                 <footer>
@@ -91,8 +90,7 @@ adge"/>
     <!-- Actions -->
     <record id="action_concorde_import" model="ir.actions.act_window">
         <field name="name">Imports FEC</field>
-        <field name="res_model">concorde.impo
-rt</field>
+        <field name="res_model">concorde.import</field>
         <field name="view_mode">tree,form</field>
     </record>
 

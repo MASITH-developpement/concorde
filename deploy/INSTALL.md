@@ -1,4 +1,4 @@
-# Déploiement serveur CONCORDE — Odoo 17 Community + PostgreSQL 16
+# Déploiement serveur CONCORDE — Odoo 18 Community + PostgreSQL 16
 
 Guide de déploiement Docker sur serveur Ubuntu 22.04/24.04 LTS.
 
@@ -41,7 +41,7 @@ docker compose up -d
 docker compose ps          # les 2 services doivent être "healthy/up"
 ```
 
-Odoo est accessible sur `http://<IP_SERVEUR>:8069`.
+Odoo 18 est accessible sur `http://<IP_SERVEUR>:8069`.
 Créer la base au premier accès (le gestionnaire de bases demande `ADMIN_PASSWD`).
 
 ## 5. Activer la comptabilité (module `account`)
@@ -50,24 +50,26 @@ Interface Odoo → Applications → rechercher **Comptabilité** (Accounting) �
 
 ## 6. Brancher l'injecteur CONCORDE
 
-Sur la machine qui exécute CONCORDE (le serveur ou un poste local) :
+Sur la machine qui exécute CONCORDE :
 
 ```bash
 cd ..   # racine du dépôt concorde
-python3 -m unittest tests.test_moteur    # 15/15 attendus
+python3 -m unittest tests.test_moteur    # tests complets attendus
 
 # Migration complète en 2 commandes :
 python3 - <<'EOF'
 from core.fec_parser import parse_fec
-from injectors.odoo17 import InjecteurOdoo17
+from core.mapping import mapper_comptes
+from injectors.odoo18 import InjecteurOdoo18
 
 canon = parse_fec("FEC_QUADRA.txt")
-rapport = InjecteurOdoo17().injecter(canon)   # dry-run : rien n'est écrit
+mapper_comptes(canon, "mapping_quadra_odoo.json")
+rapport = InjecteurOdoo18().injecter(canon)   # dry-run : rien n'est écrit
 print(rapport)
 EOF
 
 # Quand le dry-run est validé, injection réelle :
-# InjecteurOdoo17(url="http://<IP_SERVEUR>:8069", db="odoo",
+# InjecteurOdoo18(url="http://<IP_SERVEUR>:8069", db="odoo",
 #                 utilisateur="admin", mot_de_passe="...",
 #                 dry_run=False).injecter(canon)
 ```
@@ -76,6 +78,7 @@ EOF
 - **Dry-run par défaut** : aucune écriture Odoo sans `dry_run=False` explicite
 - **Idempotence** : réf `CONCORDE/<journal>/<écriture>` — réexécuter ne duplique rien
 - **Tolérance Concordance 0,00 €** : journal déséquilibré = injection refusée
+- **Mapping bloquant** : compte Quadra absent du mapping = erreur, aucun compte deviné
 - **Guardian** : self-check bloquant + audit chaîné SHA-256 de chaque création
 
 ## 7. Sauvegardes
@@ -89,8 +92,6 @@ gunzip -c backup_YYYY-MM-DD.sql.gz | docker exec -i concorde-postgres psql -U od
 ```
 
 ## Journal Guardian
-
-Sur le serveur, réserver l'emplacement du journal d'audit :
 
 ```bash
 sudo mkdir -p /var/concorde/guardian

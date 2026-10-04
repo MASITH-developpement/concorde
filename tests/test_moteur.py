@@ -1,6 +1,5 @@
 # CONCORDE v1.0 — (c) MASITH / Stéphane Moreau. Tous droits réservés.
 # Tests unitaires — tolérance Concordance 0,00 EUR.
-import json
 import os
 import sys
 import unittest
@@ -15,7 +14,7 @@ from core.marceau import Marceau
 from core.moteur import MoteurConcorde
 from core.mapping import charger_mapping, mapper_comptes, ErreurMapping
 from samples.generateur_fec_test import generer_fec
-from injectors.odoo17 import InjecteurOdoo17, ErreurInjecteur
+from injectors.odoo18 import InjecteurOdoo18, ErreurInjecteur
 
 
 class TestCentimes(unittest.TestCase):
@@ -49,7 +48,7 @@ class TestParseurFEC(unittest.TestCase):
         self.assertEqual(len(canon), 2)
         self.assertTrue(canon.est_equilibre())
         self.assertEqual(canon.lignes[0].debit, 10000)
-        self.assertEqual(canon.lignes[0].compte, "41100000")  # comptes réels client
+        self.assertEqual(canon.lignes[0].compte, "41100000")
 
     def test_parse_iso_tab_preambule(self):
         brut = generer_fec(5)
@@ -141,18 +140,17 @@ class TestMapping(unittest.TestCase):
         canon = parse_fec(TestParseurFEC.FEC_MINIMAL.encode("utf-8"))
         r = mapper_comptes(canon, self.MAPPING_CLIENT)
         self.assertEqual(r["nb_mappees"], 2)
-        self.assertEqual(canon.lignes[0].compte, "41000000")  # 41100000 -> 41000000
-        self.assertEqual(canon.lignes[1].compte, "70600000")  # inchangé
+        self.assertEqual(canon.lignes[0].compte, "41000000")
+        self.assertEqual(canon.lignes[1].compte, "70600000")
 
     def test_mapper_comptes_inconnu_bloquant(self):
         canon = parse_fec(TestParseurFEC.FEC_MINIMAL.encode("utf-8"))
-        mapping_incomplet = [("41100000", "41000000")]  # 70600000 absent
+        mapping_incomplet = [("41100000", "41000000")]
         with self.assertRaises(ErreurMapping) as cm:
             mapper_comptes(canon, mapping_incomplet)
-        self.assertIn("70600000", str(cm.exception))  # le compte fautif est nommé
+        self.assertIn("70600000", str(cm.exception))
 
     def test_pipeline_avec_mapping_reel_client(self):
-        # Pipeline complet avec le mapping réel du client si disponible
         chemin = "/home/user/tool-results/data-analysis/concorde-fec/mapping.json"
         if not os.path.exists(chemin):
             self.skipTest("mapping client non présent")
@@ -166,7 +164,7 @@ class TestMapping(unittest.TestCase):
                 {"nom": "rapport", "fonction": "rapport"},
             ],
         }
-        comptes = [("41100000", "70615000"), ("40120000", "60411000")]  # comptes du mapping client
+        comptes = [("41100000", "70615000"), ("40120000", "60411000")]
         brut = generer_fec(10, comptes=comptes)
         moteur = MoteurConcorde(config=config)
         contexte = moteur.executer(brut)
@@ -177,21 +175,24 @@ class TestMapping(unittest.TestCase):
                             for l in canon.lignes))
 
 
-class TestInjecteurOdoo17(unittest.TestCase):
+class TestInjecteurOdoo18(unittest.TestCase):
     def test_dry_run_par_defaut(self):
-        inj = InjecteurOdoo17()
-        self.assertTrue(inj.dry_run)
-        self.assertTrue(inj.guardian.self_check_ok)
+        inj = InjecteurOdoo18()  # aucun paramètre Odoo
+        self.assertTrue(inj.dry_run)  # sécurité : jamais d'injection réelle par défaut
+        self.assertTrue(inj.guardian.self_check_ok)  # Guardian obligatoire
+        self.assertEqual(inj.VERSION_CIBLE, "18")
 
     def test_injection_dry_run_idempotente(self):
         canon = parse_fec(TestParseurFEC.FEC_MINIMAL.encode("utf-8"))
-        inj = InjecteurOdoo17()
+        inj = InjecteurOdoo18()
         r1 = inj.injecter(canon)
         self.assertEqual(r1["mode"], "dry-run")
+        self.assertEqual(r1["cible"], "odoo-18")
         self.assertEqual(r1["nb_ecritures"], 1)
         self.assertEqual(r1["injectees"][0]["ref"], "CONCORDE/AC/1")
         self.assertEqual(r1["injectees"][0]["total_centimes"], 10000)
-        r2 = inj.injecter(canon)
+        self.assertTrue(r1["injectees"][0]["simule"])
+        r2 = inj.injecter(canon)  # re-injection : idempotence au niveau écriture
         self.assertEqual(r2["nb_ecritures"], 1)
         self.assertTrue(inj.guardian.verifier_chaine())
 
@@ -199,12 +200,12 @@ class TestInjecteurOdoo17(unittest.TestCase):
         c = Canonique()
         c.ajouter(LigneEcriture("AC", "9", __import__("datetime").date(2026, 1, 1),
                                 "41100000", "Orphelin", debit=5000))
-        inj = InjecteurOdoo17()
+        inj = InjecteurOdoo18()
         with self.assertRaises(ErreurInjecteur):
-            inj.injecter(c)
+            inj.injecter(c)  # tolérance Concordance 0,00 €
 
     def test_production_sans_identifiants_refusee(self):
-        inj = InjecteurOdoo17(dry_run=False)
+        inj = InjecteurOdoo18(dry_run=False)  # production sans config -> erreur claire
         canon = parse_fec(TestParseurFEC.FEC_MINIMAL.encode("utf-8"))
         with self.assertRaises(ErreurInjecteur):
             inj.injecter(canon)

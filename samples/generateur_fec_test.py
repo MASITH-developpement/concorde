@@ -11,7 +11,7 @@ def generer_fec(nb_ecritures: int = 45, comptes=None) -> bytes:
     """
     random.seed(2026)  # déterministe
     if not comptes:
-        comptes = [("41100000", "70600000"), ("40100000", "60100000"),
+        comptes = [("41100000", "70615000"), ("40120000", "60411000"),
                    ("44572000", "44562000"), ("51211000", "41100000")]
     lignes = ["JournalCode\tEcritureNum\tEcritureDate\tCompteNum\tCompteLib\tEcritureLib\tDebit\tCredit"]
     for n in range(1, nb_ecritures + 1):

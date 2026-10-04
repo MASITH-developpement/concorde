@@ -29,6 +29,9 @@ pipeline:
   - nom: verifier_equilibre
     fonction: verifier_equilibre
     description: Equilibre debit/credit, tolerance Concordance 0,00 EUR
+  - nom: mapper_comptes
+    fonction: mapper_comptes
+    description: Mapping Quadra vers Odoo, compte inconnu = blocage
   - nom: lettrer
     module: core.lettrage
     fonction: lettrer
@@ -36,6 +39,9 @@ pipeline:
   - nom: rapport
     fonction: rapport
     description: Rapport final relie a son explication Marceau
+
+mapping:
+  fichier: mapping_quadra_odoo.json
 
 regles:
   montants: centimes_entier
@@ -46,7 +52,7 @@ regles:
 
 cible:
   type: odoo
-  version: "17"
+  version: "18"
   edition: community
   protocole: xml-rpc
   mode_defaut: dry-run

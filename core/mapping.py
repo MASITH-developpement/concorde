@@ -18,11 +18,7 @@ class ErreurMapping(RuntimeError):
 
 
 def charger_mapping(source):
-    """Charge un mapping depuis un chemin JSON, une chaîne JSON ou une liste de tuples.
-
-    Format JSON : [{"quadra": "41100000", "odoo": "41000000", ...}, ...]
-    Format tuples : [("41100000", "41000000"), ...]
-    """
+    """Charge un mapping depuis un chemin JSON, une chaîne JSON ou une liste de tuples."""
     if isinstance(source, str) and (source.lstrip().startswith("[") or source.lstrip().startswith("{")):
         rows = json.loads(source)
         return {str(r["quadra"]).strip(): str(r["odoo"]).strip() for r in rows
@@ -38,12 +34,7 @@ def charger_mapping(source):
 
 
 def mapper_comptes(donnees, mapping=None):
-    """Étape pipeline : mappe les comptes Quadra vers Odoo sur toutes les lignes.
-
-    Accepte un Canonique ou un dict {'canon': ...} du pipeline.
-    Retourne {'nb_lignes', 'nb_mappees', 'inconnus': [...], 'canon': canon}.
-    Lève ErreurMapping si au moins un compte est absent du mapping.
-    """
+    """Étape pipeline : mappe les comptes Quadra vers Odoo sur toutes les lignes."""
     if mapping is None:
         raise ErreurMapping("Aucun mapping fourni (fichier Mapping Quadra Odoo requis).")
     if isinstance(mapping, (str, list, tuple)):

@@ -23,7 +23,7 @@ dependances:
 
 comptabilite:
   source_initiale: Quadra
-  cible_initiale: Odoo 17 Community
+  cible_initiale: Odoo 18 Community
   formats_pivot: FEC
   montants: centimes_entier
   tolerance: 0

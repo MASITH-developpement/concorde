@@ -1,5 +1,5 @@
 # CONCORDE v1.0 — déploiement Docker (c) MASITH / Stéphane Moreau
-# Serveur de production : Odoo 17 Community + PostgreSQL 16
+# Serveur de production : Odoo 18 Community + PostgreSQL 16
 # Usage : docker compose up -d
 
 services:
@@ -20,7 +20,7 @@ services:
       retries: 5
 
   odoo:
-    image: odoo:17
+    image: odoo:18
     container_name: concorde-odoo
     restart: unless-stopped
     depends_on:

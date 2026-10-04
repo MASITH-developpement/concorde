@@ -78,9 +78,87 @@ SVGEOF
 # copie exacte : retirer le retour a la ligne final ajoute par le heredoc
 truncate -s -1 "$MODULE_DIR/static/description/logo.svg"
 
-# Icone du module : balance comptable bordeaux/or generee par code (fond transparent)
+# Icone du module : balance bordeaux/or, rendu fidele aux coordonnees du logo SVG
 python3 - "$MODULE_DIR/static/description/icon.png" <<'PYEOF'
-import sys, struct, zlib, math
+import sys
+import struct, zlib, math
+
+BORDEAUX = (139, 30, 63)
+OR = (212, 160, 23)
+SS = 8
+S = 256
+W = S * SS
+SYMX0, SYMX1 = 6, 110
+SYMY0, SYMY1 = 12, 148
+SW, SH = SYMX1 - SYMX0, SYMY1 - SYMY0
+px = [[(0, 0, 0, 0)] * W for _ in range(W)]
+
+def svg(x, y):
+    return (x - SYMX0) / SW * W, (y - SYMY0) / SH * W
+
+def put(x, y, col):
+    if 0 <= x < W and 0 <= y < W:
+        px[y][x] = col + (255,)
+
+def rect(x, y, w, h, rx, col):
+    x0, y0 = svg(x, y)
+    x1, y1 = svg(x + w, y + h)
+    rr = rx / SW * W
+    for yy in range(max(0, int(y0)), min(W, int(y1) + 1)):
+        for xx in range(max(0, int(x0)), min(W, int(x1) + 1)):
+            inside = True
+            dxl = xx - (x0 + rr); dxr = (x1 - rr) - xx
+            dyt = yy - (y0 + rr); dyb = (y1 - rr) - yy
+            if dxl < 0 and dyt < 0 and math.hypot(xx-(x0+rr), yy-(y0+rr)) > rr: inside = False
+            elif dxr < 0 and dyt < 0 and math.hypot(xx-(x1-rr), yy-(y0+rr)) > rr: inside = False
+            elif dxl < 0 and dyb < 0 and math.hypot(xx-(x0+rr), yy-(y1-rr)) > rr: inside = False
+            elif dxr < 0 and dyb < 0 and math.hypot(xx-(x1-rr), yy-(y1-rr)) > rr: inside = False
+            if inside: put(xx, yy, col)
+
+def ligne(x1, y1, x2, y2, ep, col):
+    xa, ya = svg(x1, y1); xb, yb = svg(x2, y2)
+    e = ep / SW * W / 2.0
+    n = int(max(abs(xb-xa), abs(yb-ya))) * 2 + 1
+    for i in range(n+1):
+        xx = xa + (xb-xa)*i/n; yy = ya + (yb-ya)*i/n
+        for ox in range(int(-e-1), int(e+2)):
+            for oy in range(int(-e-1), int(e+2)):
+                if ox*ox+oy*oy <= e*e: put(int(xx)+ox, int(yy)+oy, col)
+
+def demi_ellipse(cx, cy, rx, ry, col):
+    x0, y0 = svg(cx - rx, cy)
+    x1, _ = svg(cx + rx, cy)
+    rr_x = rx / SW * W; rr_y = ry / SH * W
+    ymin = int(max(0, y0)); ymax = int(min(W, y0 + rr_y + 2))
+    cxp = (x0 + x1) / 2
+    for yy in range(ymin, ymax):
+        for xx in range(W):
+            dx = (xx - cxp) / rr_x
+            dy = (yy - y0) / rr_y
+            if 0 <= dy <= 1 and dx*dx + dy*dy <= 1: put(xx, yy, col)
+
+def cercle(cx, cy, r, ep, col_fill, col_stroke):
+    xc, yc = svg(cx, cy)
+    rr = r / SW * W; e = ep / SW * W / 2
+    for yy in range(int(yc-rr-e-1), int(yc+rr+e+2)):
+        if yy < 0 or yy >= W: continue
+        for xx in range(int(xc-rr-e-1), int(xc+rr+e+2)):
+            if xx < 0 or xx >= W: continue
+            d = math.hypot(xx-xc, yy-yc)
+            if abs(d-rr) <= e: put(xx, yy, col_stroke)
+            elif d < rr: put(xx, yy, col_fill)
+
+T = (58, 100)
+def tx(x, y): return (x + T[0], y + T[1])
+
+X, Y = tx(-4, -58); rect(X, Y, 8, 96, 4, BORDEAUX)
+X, Y = tx(-52, -66); rect(X, Y, 104, 8, 4, BORDEAUX)
+ligne(tx(-52, -58)[0], tx(-52, -58)[1], tx(-52, -30)[0], tx(-52, -30)[1], 4, OR)
+ligne(tx(52, -58)[0], tx(52, -58)[1], tx(52, -30)[0], tx(52, -30)[1], 4, OR)
+X, Y = tx(-52, -30); demi_ellipse(X, Y, 24, 14, OR)
+X, Y = tx(28, -30); demi_ellipse(X, Y, 24, 14, OR)
+X, Y = tx(-30, 36); rect(X, Y, 60, 10, 5, BORDEAUX)
+X, Y = tx(0, -74); cercle(X, Y, 9, 3, OR, BORDEAUX)
 
 def png(path, w, h, pixels):
     def chunk(typ, data):
@@ -94,58 +172,6 @@ def png(path, w, h, pixels):
         + chunk(b'IDAT', zlib.compress(raw, 9))
         + chunk(b'IEND', b''))
 
-BORDEAUX = (139, 30, 63)
-OR = (212, 160, 23)
-SS = 4
-S = 128
-W = S * SS
-px = [[(0, 0, 0, 0)] * W for _ in range(W)]
-
-def put(x, y, col):
-    if 0 <= x < W and 0 <= y < W:
-        px[y][x] = col + (255,)
-
-def rect(x0, y0, x1, y1, col):
-    for yy in range(int(y0*W), int(y1*W)+1):
-        for xx in range(int(x0*W), int(x1*W)+1):
-            put(xx, yy, col)
-
-def line(x0, y0, x1, y1, col, ep):
-    x0, y0, x1, y1 = x0*W, y0*W, x1*W, y1*W
-    dx, dy = x1-x0, y1-y0
-    n = int(max(abs(dx), abs(dy)))*2+1
-    for i in range(n+1):
-        xx = x0 + dx*i/n
-        yy = y0 + dy*i/n
-        for ox in range(-ep, ep+1):
-            for oy in range(-ep, ep+1):
-                if ox*ox+oy*oy <= ep*ep:
-                    put(int(xx)+ox, int(yy)+oy, col)
-
-def pan(cx, cy, rx, ry, col):
-    for yy in range(W):
-        for xx in range(W):
-            dx = (xx/SS - cx)/rx
-            dy = (yy/SS - cy)/ry
-            if 0 <= dy <= 1 and dx*dx + dy*dy <= 1:
-                put(xx, yy, col)
-
-def circle(cx, cy, r, col, stroke=0):
-    for yy in range(W):
-        for xx in range(W):
-            d = math.hypot(xx/SS-cx, yy/SS-cy)
-            if abs(d-r) <= stroke or (stroke == 0 and d <= r):
-                put(xx, yy, col)
-
-rect(0.47, 0.06, 0.53, 0.55, BORDEAUX)
-rect(0.20, 0.14, 0.80, 0.21, BORDEAUX)
-line(0.24, 0.21, 0.24, 0.44, OR, SS//2)
-line(0.76, 0.21, 0.76, 0.44, OR, SS//2)
-pan(0.24, 0.44, 0.16, 0.11, OR)
-pan(0.76, 0.44, 0.16, 0.11, OR)
-rect(0.35, 0.55, 0.65, 0.62, BORDEAUX)
-circle(0.5, 0.075, 0.055, OR, SS//2)
-
 out = [[None]*S for _ in range(S)]
 for y in range(S):
     for x in range(S):
@@ -153,21 +179,16 @@ for y in range(S):
         for sy in range(SS):
             for sx in range(SS):
                 pr, pg, pb, pa = px[y*SS+sy][x*SS+sx]
-                r += pr*pa
-                g += pg*pa
-                b += pb*pa
-                a += pa
+                r += pr*pa; g += pg*pa; b += pb*pa; a += pa
         if a == 0:
             out[y][x] = (0, 0, 0, 0)
         else:
             out[y][x] = (min(255, r//a), min(255, g//a), min(255, b//a), a//(SS*SS))
 png(sys.argv[1], S, S, out)
-print('icon.png generee (balance bordeaux/or, fond transparent)')
-
 PYEOF
 
 # Installation du module dans la base concorde
 cd deploy
-docker compose run --rm odoo -i concorde -d concorde --without-demo=all --stop-after-init
+docker compose run --rm odoo -u concorde -d concorde --without-demo=all --stop-after-init
 docker compose up -d
 echo "=== MODULE CONCORDE INSTALLE ==="

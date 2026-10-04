@@ -49,7 +49,8 @@ class ConcordeImportWizard(models.TransientModel):
     def default_get(self, fields_list):
         vals = super().default_get(fields_list)
         if 'journal_id' in fields_list and not vals.get('journal_id'):
-            vals['journal_id'] = self._default_journal().id
+            vals['journal_id'] 
+= self._default_journal().id
         return vals
 
     def _config_moteur(self):
@@ -82,7 +83,7 @@ class ConcordeImportWizard(models.TransientModel):
 
     def _html_rapport(self, resultats, contexte):
         lignes = ['<p><b>Pipeline CONCORDE</b> — Guardian : %s</p>' % (
-            'audit validé' if contexte.get('audit_valide') else 'ALERTE : chaîne d'audit invalide')]
+            "audit validé" if contexte.get('audit_valide') else "ALERTE : chaîne d'audit invalide")]
         lignes.append('<ul>')
         for r in resultats:
             nom = html_escape(r.get('etape', '?'))
@@ -94,7 +95,8 @@ class ConcordeImportWizard(models.TransientModel):
         return ''.join(lignes)
 
     def _retour_fiche(self, record):
-        return {
+        retu
+rn {
             'type': 'ir.actions.act_window',
             'res_model': 'concorde.import',
             'res_id': record.id,
@@ -143,7 +145,8 @@ class ConcordeImportWizard(models.TransientModel):
         manquants = []
         for code in comptes:
             acct = Account.search([
-                ('code', '=', code),
+  
+              ('code', '=', code),
                 ('company_id', '=', self.env.company.id)], limit=1)
             if acct:
                 par_code[code] = acct

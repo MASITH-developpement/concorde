@@ -9,8 +9,42 @@ mkdir -p "$MODULE_DIR/engine"
 cp core/*.py "$MODULE_DIR/engine/"
 cp mapping_quadra_odoo.json "$MODULE_DIR/engine/"
 
-# Icone du module (generee, decodee ici pour eviter un binaire dans git)
-echo "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" | base64 -d > "$MODULE_DIR/icon.png"
+# Icone du module (generee par code : arche du pont de la Concorde sur fond bleu nuit)
+python3 - "$MODULE_DIR/icon.png" <<'PYEOF'
+import sys, struct, zlib, math
+
+def png(path, w, h, pixels):
+    def chunk(typ, data):
+        c = typ + data
+        return struct.pack('>I', len(data)) + c + struct.pack('>I', zlib.crc32(c) & 0xffffffff)
+    raw = b''
+    for y in range(h):
+        raw += b'\x00' + b''.join(bytes(pixels[y][x]) for x in range(w))
+    data = (b'\x89PNG\r\n\x1a\n'
+            + chunk(b'IHDR', struct.pack('>IIBBBBB', w, h, 8, 6, 0, 0, 0))
+            + chunk(b'IDAT', zlib.compress(raw))
+            + chunk(b'IEND', b''))
+    open(path, 'wb').write(data)
+
+S = 256
+px = [[None]*S for _ in range(S)]
+for y in range(S):
+    for x in range(S):
+        t = y / S
+        r = int(10 + 14*t); g = int(24 + 48*t); b = int(48 + 88*t)
+        cy, cx = 150, 128
+        in_band = 118 <= y <= 134
+        d = math.hypot(x - cx, y - cy)
+        in_arc = abs(d - 66) <= 9 and y <= cy
+        in_pier = (68 <= y <= 210) and ((52 <= x <= 72) or (184 <= x <= 204))
+        if in_band or in_arc or in_pier:
+            r, g, b = 245, 249, 255
+        if y > 216 and (x + y) % 9 < 3:
+            r = int(r*0.7); g = int(g*0.85); b = min(255, b+40)
+        px[y][x] = (r, g, b, 255)
+png(sys.argv[1], S, S, px)
+print('icon.png generee')
+PYEOF
 
 # Installation du module dans la base concorde
 cd deploy

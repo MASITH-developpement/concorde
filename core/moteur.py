@@ -7,7 +7,7 @@
 """
 import importlib
 
-from .guardian import Guardian, ErreurGuardian
+from .guardian import Guardian
 from .marceau import Marceau
 
 
@@ -38,11 +38,10 @@ def rapport(contexte):
 
 
 class MoteurConcorde:
-    """Moteur pipeline : import FEC -> équilibre -> lettrage -> rapport."""
+    """Moteur pipeline : import FEC -> équilibre -> mapping -> lettrage -> rapport."""
 
     def __init__(self, config=None, guardian=None, marceau=None):
         self.config = config or {}
-        # NOYAU OBLIGATOIRE : pas de Guardian self-checké, pas de moteur.
         self.guardian = guardian or Guardian(
             journal_dir=self.config.get("guardian", {}).get("journal", "/var/concorde/guardian"))
         if not self.guardian.self_check_ok:
@@ -57,12 +56,16 @@ class MoteurConcorde:
             return getattr(mod, etape["fonction"])
         return getattr(self, "_" + etape["fonction"])
 
-    # étapes internes du moteur
     def _verifier_equilibre(self, donnees):
         return verifier_equilibre(donnees)
 
     def _rapport(self, donnees):
         return rapport(donnees)
+
+    def _mapper_comptes(self, donnees):
+        from .mapping import mapper_comptes
+        chemin = (self.config.get("mapping") or {}).get("fichier")
+        return mapper_comptes(donnees, chemin)
 
     def executer(self, donnees=None):
         """Exécute le pipeline complet. Chaque résultat porte son explication Marceau."""
@@ -71,6 +74,8 @@ class MoteurConcorde:
         for etape in self.pipeline:
             nom = etape["nom"]
             fonction = self._resoudre(etape)
+            if nom == "mapper_comptes" and etape.get("fonction") == "mapper_comptes":
+                fonction = self._mapper_comptes
             resultat = self.guardian.envelopper_etape(nom, fonction, courant)
             explication = self.marceau.expliquer_etape(nom, resultat)
             contexte["resultats"].append({"etape": nom, "resultat": resultat,

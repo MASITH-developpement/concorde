@@ -15,7 +15,7 @@
                         <group>
                             <field name="name"/>
                             <field name="fec_filename"/>
-                            <field name="journal_id"/>
+                            <field name="journal_id" options="'{"no_create": True}'"/>
                             <field name="empreinte_guardian"/>
                         </group>
                         <group>
@@ -39,7 +39,8 @@
                                     <field name="date"/>
                                     <field name="journal_id"/>
                                     <field name="amount_total"/>
-                                    <field name="state" widget="badge"/>
+                                    <field name="state" widget="b
+adge"/>
                                 </tree>
                             </field>
                         </page>
@@ -90,7 +91,8 @@
     <!-- Actions -->
     <record id="action_concorde_import" model="ir.actions.act_window">
         <field name="name">Imports FEC</field>
-        <field name="res_model">concorde.import</field>
+        <field name="res_model">concorde.impo
+rt</field>
         <field name="view_mode">tree,form</field>
     </record>
 

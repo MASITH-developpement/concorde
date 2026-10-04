@@ -8,7 +8,7 @@ class ConcordeImport(models.Model):
     _order = 'id desc'
 
     name = fields.Char(string="Import", required=True)
-    fec_filename = fields.Char(string="Fichier FEC")
+    fec_filename = fields.Char(string="Nom du fichier FEC")
     fec_file = fields.Binary(string="Fichier FEC", attachment=True)
     state = fields.Selection([
         ('draft', 'Brouillon'),

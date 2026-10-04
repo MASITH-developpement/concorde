@@ -76,6 +76,25 @@ rapport = InjecteurOdoo17().injecter(canon)          # dry-run : rien n'est écr
 
 Voir `deploy/INSTALL.md` — Docker : **odoo:17 + postgres:16**.
 
+## Déploiement automatique (webhook GitHub)
+
+Chaque `git push` sur `main` redéploie CONCORDE automatiquement sur le serveur :
+
+1. Sur le VPS : générer un secret (`openssl rand -hex 32`), le mettre dans
+   `deploy/concorde-webhook.service` (`CONCORDE_WEBHOOK_SECRET=`), puis :
+   `cp deploy/concorde-webhook.service /etc/systemd/system/ && systemctl daemon-reload && systemctl enable --now concorde-webhook`
+2. Ouvrir le port 9000 (`ufw allow 9000/tcp`).
+3. Sur GitHub : dépôt → Settings → Webhooks → Add webhook :
+   - Payload URL : `http://<IP_VPS>:9000/webhook`
+   - Content type : `application/json`
+   - Secret : le même que dans le service
+   - Events : *Just the push event*
+
+Le récepteur (`deploy/webhook.py`, Python stdlib) vérifie la signature
+HMAC-SHA256 de chaque requête, ignore tout ce qui n'est pas `main`, et
+exécute `git pull` + `docker compose up -d --build`. Journal local dans
+`deploy/log/webhook.log`. Toute requête non signée est refusée en 403.
+
 ## Roadmap
 
 1. ~~Injecteur Odoo~~ ✅ (`injectors/odoo17.py` natif, `odoo18.py` compat, dry-run)

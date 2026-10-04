@@ -1,0 +1,17 @@
+[Unit]
+Description=CONCORDE webhook GitHub — déploiement automatique
+After=network.target docker.service
+Wants=docker.service
+
+[Service]
+Type=simple
+WorkingDirectory=/opt/concorde
+ExecStart=/usr/bin/python3 /opt/concorde/deploy/webhook.py
+Environment=CONCORDE_WEBHOOK_SECRET=CHANGER_CE_SECRET
+Environment=CONCORDE_WEBHOOK_PORT=9000
+Restart=always
+RestartSec=5
+User=root
+
+[Install]
+WantedBy=multi-user.target

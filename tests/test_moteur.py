@@ -14,6 +14,7 @@ from core.marceau import Marceau
 from core.moteur import MoteurConcorde
 from core.yaml_min import parse_yaml
 from samples.generateur_fec_test import generer_fec
+from injectors.odoo17 import InjecteurOdoo17, ErreurInjecteur
 
 
 class TestCentimes(unittest.TestCase):
@@ -123,6 +124,41 @@ class TestMarceauEtMoteur(unittest.TestCase):
             self.assertTrue(r["marceau"])  # chaque donnée liée à son Marceau
         stats = contexte["resultats"][2]["resultat"][2]
         self.assertEqual(stats["nb_lignes"], 40)
+
+
+class TestInjecteurOdoo17(unittest.TestCase):
+    def test_dry_run_par_defaut(self):
+        inj = InjecteurOdoo17()  # aucun paramètre Odoo
+        self.assertTrue(inj.dry_run)  # sécurité : jamais d'injection réelle par défaut
+        self.assertTrue(inj.guardian.self_check_ok)  # Guardian obligatoire
+
+    def test_injection_dry_run_idempotente(self):
+        canon = parse_fec(TestParseurFEC.FEC_MINIMAL.encode("utf-8"))
+        inj = InjecteurOdoo17()
+        r1 = inj.injecter(canon)
+        self.assertEqual(r1["mode"], "dry-run")
+        self.assertEqual(r1["nb_ecritures"], 1)
+        self.assertEqual(len(r1["injectees"]), 1)
+        self.assertEqual(r1["injectees"][0]["ref"], "CONCORDE/AC/1")
+        self.assertEqual(r1["injectees"][0]["total_centimes"], 10000)
+        self.assertTrue(r1["injectees"][0]["simule"])
+        r2 = inj.injecter(canon)  # re-injection : idempotence au niveau écriture
+        self.assertEqual(r2["nb_ecritures"], 1)  # stable, déterministe
+        self.assertTrue(inj.guardian.verifier_chaine())
+
+    def test_refuse_journal_desequilibre(self):
+        c = Canonique()
+        c.ajouter(LigneEcriture("AC", "9", __import__("datetime").date(2026, 1, 1),
+                                "411000", "Orphelin", debit=5000))  # pas de contrepartie
+        inj = InjecteurOdoo17()
+        with self.assertRaises(ErreurInjecteur):
+            inj.injecter(c)  # tolérance Concordance 0,00 €
+
+    def test_production_sans_identifiants_refusee(self):
+        inj = InjecteurOdoo17(dry_run=False)  # production sans config -> erreur claire
+        canon = parse_fec(TestParseurFEC.FEC_MINIMAL.encode("utf-8"))
+        with self.assertRaises(ErreurInjecteur):
+            inj.injecter(canon)
 
 
 if __name__ == "__main__":

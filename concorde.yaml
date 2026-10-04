@@ -1,0 +1,56 @@
+# CONCORDE v1.0 — configuration no-code 100 % YAML
+# (c) MASITH / Stéphane Moreau. Tous droits réservés.
+
+version: "1.0"
+nom: CONCORDE
+slogan: "La passerelle de liaison comptable universelle"
+marque: "MARQUÉ DÉPOSÉ"
+
+noyau:
+  guardian:
+    obligatoire: true
+    journal: /var/concorde/guardian
+    self_check: bloquant
+    llm: aucun
+    rate_limit: 200_evenements_par_seconde
+  marceau:
+    actif: true
+    provider: mistral
+    modele_defaut: mistral-small-latest
+    variable_cle: MISTRAL_API_KEY
+    repli: moteur_regles
+    jamais_muet: true
+
+pipeline:
+  - nom: importer_fec
+    module: core.fec_parser
+    fonction: parse_fec
+    description: Import FEC avec idempotence et refus d'arrondi silencieux
+  - nom: verifier_equilibre
+    fonction: verifier_equilibre
+    description: Equilibre debit/credit, tolerance Concordance 0,00 EUR
+  - nom: lettrer
+    module: core.lettrage
+    fonction: lettrer
+    description: Reconstruction des paires et detection des anomalies
+  - nom: rapport
+    fonction: rapport
+    description: Rapport final relie a son explication Marceau
+
+regles:
+  montants: centimes_entier
+  jamais_float: true
+  arrondi_silencieux: interdit
+  tolerance_concordance: 0
+  idempotence: journal_ecriture_compte_montants_libelle
+
+cible:
+  type: odoo
+  version: "17"
+  edition: community
+  protocole: xml-rpc
+  mode_defaut: dry-run
+
+azalplus:
+  module_independant: true
+  manifeste: azalplus_module.yaml

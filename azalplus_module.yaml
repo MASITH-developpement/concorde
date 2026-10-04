@@ -1,0 +1,35 @@
+# CONCORDE v1.0 — manifeste module indépendant AZALPLUS
+# (c) MASITH / Stéphane Moreau. Tous droits réservés.
+
+module:
+  nom: concorde
+  version: "1.0"
+  type: independant
+  editeur: MASITH
+  auteur: Stéphane Moreau
+  licence: proprietaire
+  marque: "CONCORDE - MARQUÉ DÉPOSÉ"
+
+description: >
+  Passerelle de liaison comptable universelle. Noyau FEC pivot, no-code 100 % YAML,
+  Marceau (IA conversationnelle Mistral) et Guardian (surveillance deterministe, zero LLM).
+  Integre AZALPLUS comme module independant.
+
+dependances:
+  azalplus: ">=2.0"
+  python: ">=3.9"
+  llm: mistral-uniquement
+  optionnel: MISTRAL_API_KEY
+
+comptabilite:
+  source_initiale: Quadra
+  cible_initiale: Odoo 17 Community
+  formats_pivot: FEC
+  montants: centimes_entier
+  tolerance: 0
+
+securite:
+  guardian: obligatoire
+  self_check_demarrage: bloquant
+  audit: sha256_chaine
+  souverainete: 100_pour_100_francaise

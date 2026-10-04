@@ -10,7 +10,8 @@ cp core/*.py "$MODULE_DIR/engine/"
 cp mapping_quadra_odoo.json "$MODULE_DIR/engine/"
 
 # Icone du module (generee par code : arche du pont de la Concorde sur fond bleu nuit)
-python3 - "$MODULE_DIR/icon.png" <<'PYEOF'
+mkdir -p "$MODULE_DIR/static/description"
+python3 - "$MODULE_DIR/static/description/icon.png" <<'PYEOF'
 import sys, struct, zlib, math
 
 def png(path, w, h, pixels):

@@ -14,6 +14,7 @@ from core.marceau import Marceau
 from core.moteur import MoteurConcorde
 from core.mapping import charger_mapping, mapper_comptes, ErreurMapping
 from samples.generateur_fec_test import generer_fec
+from injectors.odoo17 import InjecteurOdoo17, ErreurInjecteur as ErreurInjecteur17
 from injectors.odoo18 import InjecteurOdoo18, ErreurInjecteur
 from injectors.odoo_conversion import ConvertisseurOdoo, ErreurConversion
 
@@ -256,6 +257,37 @@ class TestConversionOdoo(unittest.TestCase):
                                 "41100000", "Orphelin", debit=5000))
         with self.assertRaises(ErreurConversion):
             conv.convertir_chainee(c, source="14", cible="15")
+
+
+class TestInjecteurOdoo17(unittest.TestCase):
+    """Cible native actuelle : Odoo 17 Community."""
+
+    def test_dry_run_par_defaut(self):
+        inj = InjecteurOdoo17()
+        self.assertTrue(inj.dry_run)
+        self.assertTrue(inj.guardian.self_check_ok)
+        self.assertEqual(inj.VERSION_CIBLE, "17")
+
+    def test_injection_dry_run_idempotente(self):
+        canon = parse_fec(TestParseurFEC.FEC_MINIMAL.encode("utf-8"))
+        inj = InjecteurOdoo17()
+        r = inj.injecter(canon)
+        self.assertEqual(r["mode"], "dry-run")
+        self.assertEqual(r["cible"], "odoo-17")
+        self.assertEqual(r["nb_ecritures"], 1)
+        self.assertEqual(r["injectees"][0]["total_centimes"], 10000)
+        self.assertTrue(r["injectees"][0]["simule"])
+        r2 = inj.injecter(canon)
+        self.assertEqual(r2["nb_ecritures"], 1)
+        self.assertTrue(inj.guardian.verifier_chaine())
+
+    def test_refuse_journal_desequilibre(self):
+        c = Canonique()
+        c.ajouter(LigneEcriture("AC", "9", __import__("datetime").date(2026, 1, 1),
+                                "41100000", "Orphelin", debit=5000))
+        inj = InjecteurOdoo17()
+        with self.assertRaises(ErreurInjecteur17):
+            inj.injecter(c)  # tolérance Concordance 0,00 €
 
 
 if __name__ == "__main__":

@@ -53,6 +53,7 @@ regles:
 cible:
   type: odoo
   versions: ["14", "15", "16", "17", "18", "19"]
+  version_native: "17"
   conversion_chainee: "14->15->16->17->18->19"
   edition: community
   protocole: xml-rpc

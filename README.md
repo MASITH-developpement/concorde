@@ -2,7 +2,7 @@
 
 **La passerelle de liaison comptable universelle** — (c) MASITH / Stéphane Moreau. Tous droits réservés.
 
-> Migration comptable **Quadra → Odoo (14 à 19 Community)**, avec un noyau FEC pivot universel.
+> Migration comptable **Quadra → Odoo 17 Community (chaîne de conversion 14→19 disponible)**, avec un noyau FEC pivot universel.
 
 ## Principes fondateurs
 
@@ -19,7 +19,7 @@
 ## Architecture
 
 ```
-FEC (Quadra, ISO-8859-1) ─► importer_fec ─► verifier_equilibre ─► mapper_comptes ─► lettrer ─► rapport ─► injecteur Odoo 18
+FEC (Quadra, ISO-8859-1) ─► importer_fec ─► verifier_equilibre ─► mapper_comptes ─► lettrer ─► rapport ─► injecteur Odoo 17 (natif)
         │                        │                 │                   │            │
         Guardian (audit SHA-256 chaîné, rate limiting invisible, self-check bloquant)
         Marceau (explication conversationnelle : API Mistral ou moteur à règles — jamais muet)
@@ -33,7 +33,7 @@ FEC (Quadra, ISO-8859-1) ─► importer_fec ─► verifier_equilibre ─► ma
 - **Mapping** (`core/mapping.py`) — correspondance Quadra → Odoo (362 comptes réels client) ;
   compte inconnu = blocage avec le numéro fautif nommé.
 - **No-code** (`concorde.yaml`) — pipeline 100 % YAML, parseur maison zéro dépendance (`core/yaml_min.py`).
-- **Injecteur Odoo 18** (`injectors/odoo18.py`) — XML-RPC, dry-run par défaut, idempotent.
+- **Injecteur Odoo 17 natif** (`injectors/odoo17.py`) — XML-RPC, dry-run par défaut, idempotent. L'injecteur Odoo 18 (`injectors/odoo18.py`) reste fourni : le payload est identique entre 17 et 18.
 - **Chaîne de conversion Odoo 14→19** (`injectors/odoo_conversion.py`) — convertit
   les écritures d'une version Odoo à la suivante (14→15→16→17→18→19), un saut à la
   fois, via le canonique en centimes. Équilibre 0,00 € et idempotence vérifiés à
@@ -51,16 +51,16 @@ python3 samples/generateur_fec_test.py fec_test.txt  # FEC synthétique type Qua
 from core.moteur import MoteurConcorde
 from core.fec_parser import parse_fec
 from core.yaml_min import charger_yaml
-from injectors.odoo18 import InjecteurOdoo18
+from injectors.odoo17 import InjecteurOdoo17
 
 moteur = MoteurConcorde(config=charger_yaml("concorde.yaml"))
 contexte = moteur.executer(open("FEC.txt", "rb").read())
 # chaque résultat porte son explication Marceau : r["marceau"]
 
 canon = contexte["resultats"][1]["resultat"]["canon"]
-rapport = InjecteurOdoo18().injecter(canon)          # dry-run : rien n'est écrit
+rapport = InjecteurOdoo17().injecter(canon)          # dry-run : rien n'est écrit
 # injection réelle (après validation du dry-run) :
-# InjecteurOdoo18(url="http://serveur:8069", db="odoo",
+# InjecteurOdoo17(url="http://serveur:8069", db="odoo",
 #                 utilisateur="admin", mot_de_passe="...",
 #                 dry_run=False).injecter(canon)
 ```
@@ -74,11 +74,11 @@ rapport = InjecteurOdoo18().injecter(canon)          # dry-run : rien n'est écr
 
 ## Déploiement serveur
 
-Voir `deploy/INSTALL.md` — Docker : **odoo:18 + postgres:16**.
+Voir `deploy/INSTALL.md` — Docker : **odoo:17 + postgres:16**.
 
 ## Roadmap
 
-1. ~~Injecteur Odoo~~ ✅ (`injectors/odoo18.py`, dry-run)
+1. ~~Injecteur Odoo~~ ✅ (`injectors/odoo17.py` natif, `odoo18.py` compat, dry-run)
 2. ~~Serveur + docker-compose~~ ✅ (`deploy/`)
 3. ~~Chaîne conversion Odoo 14→19~~ ✅ (`injectors/odoo_conversion.py`, 5 sauts, dry-run)
 4. FEC réel du client (validation février 2026)

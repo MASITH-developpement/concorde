@@ -1,4 +1,4 @@
-# Déploiement serveur CONCORDE — Odoo 18 Community + PostgreSQL 16
+# Déploiement serveur CONCORDE — Odoo 17 Community + PostgreSQL 16
 
 Guide de déploiement Docker sur serveur Ubuntu 22.04/24.04 LTS.
 
@@ -41,7 +41,7 @@ docker compose up -d
 docker compose ps          # les 2 services doivent être "healthy/up"
 ```
 
-Odoo 18 est accessible sur `http://<IP_SERVEUR>:8069`.
+Odoo 17 est accessible sur `http://<IP_SERVEUR>:8069`.
 Créer la base au premier accès (le gestionnaire de bases demande `ADMIN_PASSWD`).
 
 ## 5. Activer la comptabilité (module `account`)
@@ -60,16 +60,16 @@ python3 -m unittest tests.test_moteur    # tests complets attendus
 python3 - <<'EOF'
 from core.fec_parser import parse_fec
 from core.mapping import mapper_comptes
-from injectors.odoo18 import InjecteurOdoo18
+from injectors.odoo17 import InjecteurOdoo17
 
 canon = parse_fec("FEC_QUADRA.txt")
 mapper_comptes(canon, "mapping_quadra_odoo.json")
-rapport = InjecteurOdoo18().injecter(canon)   # dry-run : rien n'est écrit
+rapport = InjecteurOdoo17().injecter(canon)   # dry-run : rien n'est écrit
 print(rapport)
 EOF
 
 # Quand le dry-run est validé, injection réelle :
-# InjecteurOdoo18(url="http://<IP_SERVEUR>:8069", db="odoo",
+# InjecteurOdoo17(url="http://<IP_SERVEUR>:8069", db="odoo",
 #                 utilisateur="admin", mot_de_passe="...",
 #                 dry_run=False).injecter(canon)
 ```

@@ -12,8 +12,11 @@ Regles CONCORDE :
 - Dates normalisees en AAAAMMJJ (format FEC obligatoire)
 """
 import io
+import re
 import unicodedata
-from datetime import date, datetime
+import zipfile
+from datetime import date, datetime, timedelta
+from xml.etree import ElementTree as ET
 
 from .canonical import vers_centimes
 
@@ -191,33 +194,199 @@ def _trouver_entete(rows):
     return None, None
 
 
+def _lire_avec_openpyxl(brut):
+    """Lecture via openpyxl (si installe). Retourne une liste de lignes."""
+    if load_workbook is None:
+        raise ImportError("openpyxl absent")
+    wb = load_workbook(io.BytesIO(brut), read_only=True, data_only=True)
+    try:
+        feuille = wb.worksheets[0]
+        rows = []
+        for row in feuille.iter_rows(values_only=True):
+            rows.append(row)
+            if len(rows) > 200000:
+                break
+        return rows
+    finally:
+        wb.close()
+
+
+# ---- Lecteur xlsx interne, bibliotheque standard uniquement ----
+NS_MAIN = "{http://schemas.openxmlformats.org/spreadsheetml/2006/main}"
+NS_REL_OFFICE = ("{http://schemas.openxmlformats.org/"
+                 "officeDocument/2006/relationships}")
+EPOQUE_EXCEL = date(1899, 12, 30)  # serie 0 = 30/12/1899
+FORMATS_DATE_BUILTIN = {14, 15, 16, 17, 18, 19, 20, 21, 22, 45, 46, 47}
+_RE_DATE = re.compile(r"[dmyhs]", re.IGNORECASE)
+
+
+def _colonne_xlsx(ref):
+    """'B12' -> 1 (index 0)."""
+    lettres = re.match(r"([A-Z]+)", ref or "")
+    if not lettres:
+        raise ErreurFEC("Reference de cellule invalide : %r" % (ref,))
+    n = 0
+    for ch in lettres.group(1):
+        n = n * 26 + (ord(ch) - 64)
+    return n - 1
+
+
+def _est_format_date(code):
+    """Format de nombre date ? (guillemets et echappements ignores)."""
+    code = re.sub(r'"[^"]*"', "", code).replace("\\", "")
+    return bool(_RE_DATE.search(code))
+
+
+def _styles_date(zf):
+    """Indices de style (cellXfs) correspondant a des formats date."""
+    try:
+        racine = ET.fromstring(zf.read("xl/styles.xml"))
+    except KeyError:
+        return set()
+    formats_date = set(FORMATS_DATE_BUILTIN)
+    for fmt in racine.iter(NS_MAIN + "numFmt"):
+        fid = fmt.get("numFmtId")
+        if fid and _est_format_date(fmt.get("formatCode") or ""):
+            formats_date.add(int(fid))
+    indices = set()
+    for i, xf in enumerate(racine.iter(NS_MAIN + "xf")):
+        fid = xf.get("numFmtId")
+        if fid and int(fid) in formats_date:
+            indices.add(i)
+    return indices
+
+
+def _valeur_date(serie):
+    """Numero de serie Excel -> date. Jamais de date devinee."""
+    return EPOQUE_EXCEL + timedelta(days=int(serie))
+
+
+def _lire_xlsx_stdlib(brut, nom_fichier=""):
+    """Lecture d'un classeur .xlsx sans openpyxl (zipfile + ElementTree).
+
+    Gere : sharedStrings, inlineStr, chaines de formule, references de
+    cellules (colonnes eparses), styles date (serie Excel -> date).
+    Retourne une liste de tuples (une ligne = un tuple).
+    """
+    zf = zipfile.ZipFile(io.BytesIO(brut))
+
+    # 1. Chaines partagees
+    sst = []
+    if "xl/sharedStrings.xml" in zf.namelist():
+        racine = ET.fromstring(zf.read("xl/sharedStrings.xml"))
+        for si in racine.iter(NS_MAIN + "si"):
+            sst.append("".join(t.text or "" for t in si.iter(NS_MAIN + "t")))
+
+    # 2. Indices de style date
+    styles_date = _styles_date(zf)
+
+    # 3. Premiere feuille declaree (via les relations du classeur)
+    feuille_xml = None
+    try:
+        wb = ET.fromstring(zf.read("xl/workbook.xml"))
+        sheet = next(iter(wb.iter(NS_MAIN + "sheet")))
+        rid = sheet.get(NS_REL_OFFICE + "id")
+        rels = ET.fromstring(zf.read("xl/_rels/workbook.xml.rels"))
+        for rel in rels.iter():
+            if rel.get("Id") == rid:
+                cible = rel.get("Target")
+                break
+        else:
+            cible = None
+        if cible:
+            if cible.startswith("/"):
+                feuille_xml = cible.lstrip("/")
+            else:
+                feuille_xml = "xl/" + cible.lstrip("./")
+    except StopIteration:
+        pass
+    if not feuille_xml or feuille_xml not in zf.namelist():
+        # repli : premiere feuille triee si relations absentes
+        cands = sorted(n for n in zf.namelist()
+                       if re.match(r"xl/worksheets/sheet\d+\.xml$", n))
+        if not cands:
+            raise ErreurFEC(
+                "Aucune feuille de calcul trouvee dans %r." % (nom_fichier,))
+        feuille_xml = cands[0]
+
+    # 4. Lecture des lignes
+    racine = ET.fromstring(zf.read(feuille_xml))
+    lignes = []
+    largeur = 0
+    for row in racine.iter(NS_MAIN + "row"):
+        if len(lignes) > 200000:
+            break
+        vals = {}
+        for c in row.iter(NS_MAIN + "c"):
+            ref = c.get("r") or ""
+            j = _colonne_xlsx(ref)
+            t = c.get("t")
+            v = c.find(NS_MAIN + "v")
+            is_elem = c.find(NS_MAIN + "is")
+            if t == "s" and v is not None:
+                try:
+                    val = sst[int(v.text)]
+                except (ValueError, IndexError):
+                    raise ErreurFEC(
+                        "Indice de chaine partagee invalide en %s de %r." %
+                        (ref, nom_fichier))
+            elif t == "inlineStr" and is_elem is not None:
+                val = "".join(x.text or ""
+                              for x in is_elem.iter(NS_MAIN + "t"))
+            elif t == "str" and v is not None:
+                val = v.text
+            elif v is not None and v.text is not None:
+                texte = v.text.strip()
+                if c.get("s") and int(c.get("s")) in styles_date:
+                    val = _valeur_date(float(texte))  # serie -> date
+                elif t == "b":
+                    val = bool(int(texte))
+                elif texte == "":
+                    val = None
+                else:
+                    try:
+                        f = float(texte)
+                        val = int(f) if f.is_integer() else f
+                    except ValueError:
+                        val = texte
+            else:
+                val = None
+            vals[j] = val
+            largeur = max(largeur, j + 1)
+        ligne = tuple(vals.get(j) for j in range(largeur)) if largeur else ()
+        lignes.append(ligne)
+    return lignes
+
 def xlsx_vers_fec(brut: bytes, nom_fichier: str = "") -> bytes:
     """Convertit un classeur xlsx (bytes) en texte FEC (bytes UTF-8).
 
     Le FEC produit respecte le format attendu par core.fec_parser :
     en-tete JournalCode/EcritureNum..., dates AAAAMMJJ, montants texte.
     """
-    if load_workbook is None:
-        raise ErreurFEC(
-            "openpyxl n'est pas disponible : conversion Excel impossible.")
     if not brut.startswith(b"PK"):
         raise ErreurFEC(
             "Fichier %r non reconnu comme classeur .xlsx (binaire zip "
             "attendu). L'ancien format .xls n'est pas supporte : "
             "re-exportez en .xlsx depuis Excel/Quadra." % (nom_fichier,))
 
+    # Lecture : openpyxl si disponible, sinon lecteur interne stdlib
+    # (zipfile + XML) - aucune dependance externe obligatoire.
     try:
-        wb = load_workbook(io.BytesIO(brut), read_only=True, data_only=True)
+        rows = _lire_avec_openpyxl(brut)
+    except ErreurFEC:
+        raise
     except Exception as exc:
-        raise ErreurFEC(
-            "Classeur Excel illisible (%s) : %s" % (nom_fichier, exc))
-    feuille = wb.worksheets[0]
-    rows = []
-    for row in feuille.iter_rows(values_only=True):
-        rows.append(row)
-        if len(rows) > 200000:
-            break
-    wb.close()
+        if load_workbook is None:
+            try:
+                rows = _lire_xlsx_stdlib(brut, nom_fichier)
+            except ErreurFEC:
+                raise
+            except Exception as exc2:
+                raise ErreurFEC(
+                    "Classeur Excel illisible (%s) : %s" % (nom_fichier, exc2))
+        else:
+            raise ErreurFEC(
+                "Classeur Excel illisible (%s) : %s" % (nom_fichier, exc))
 
     idx, colonnes = _trouver_entete(rows)
     if colonnes is None:

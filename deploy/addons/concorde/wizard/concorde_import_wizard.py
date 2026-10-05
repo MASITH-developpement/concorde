@@ -20,11 +20,9 @@ from odoo.tools import html_escape
 from odoo.addons.concorde.engine.moteur import MoteurConcorde
 from odoo.addons.concorde.engine.xlsx_vers_fec import xlsx_vers_fec
 
-
 def _chemin_engine():
     return os.path.join(
         os.path.dirname(os.path.dirname(os.path.abspath(__file__))), 'engine')
-
 
 class ConcordeImportWizard(models.TransientModel):
     _name = 'concorde.import.wizard'
@@ -120,14 +118,14 @@ class ConcordeImportWizard(models.TransientModel):
     def action_importer(self):
         self.ensure_one()
         brut = base64.b64decode(self.fec_file)
-        # Convertisseur Excel -> FEC : les exports d'ecritures .xlsx
-        # (Quadra et assimiles) sont convertis en FEC standard avant
-        # le pipeline. Erreur explicite si le classeur est illisible
-        # ou incomplet (Marceau : jamais muet).
-        if (self.fec_filename or '').lower().endswith(('.xlsx', '.xls')):
-            brut = xlsx_vers_fec(brut, nom_fichier=self.fec_filename)
         moteur = MoteurConcorde(config=self._config_moteur())
         try:
+            # Convertisseur Excel -> FEC : les exports d'ecritures .xlsx
+            # (Quadra et assimiles) sont convertis en FEC standard avant
+            # le pipeline. Erreur explicite si le classeur est illisible
+            # ou incomplet (Marceau : jamais muet).
+            if (self.fec_filename or '').lower().endswith(('.xlsx', '.xls')):
+                brut = xlsx_vers_fec(brut, nom_fichier=self.fec_filename)
             contexte = moteur.executer(brut)
         except Exception as exc:
             record = self.env['concorde.import'].create({

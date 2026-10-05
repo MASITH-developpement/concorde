@@ -57,6 +57,7 @@ services:
       ADMIN_PASSWD: ${ADMIN_PASSWD:-CHANGEZ_MOI_ADMIN}
     volumes:
       - odoo18data:/var/lib/odoo
+      - ./addons:/mnt/extra-addons:ro
     command: odoo --db-filter=^odoo18$ -d odoo18 --http-interface=0.0.0.0
 
   odoo19:
@@ -75,6 +76,7 @@ services:
       ADMIN_PASSWD: ${ADMIN_PASSWD:-CHANGEZ_MOI_ADMIN}
     volumes:
       - odoo19data:/var/lib/odoo
+      - ./addons:/mnt/extra-addons:ro
     command: odoo --db-filter=^odoo19$ -d odoo19 --http-interface=0.0.0.0
 
   odoo20:
@@ -93,6 +95,7 @@ services:
       ADMIN_PASSWD: ${ADMIN_PASSWD:-CHANGEZ_MOI_ADMIN}
     volumes:
       - odoo20data:/var/lib/odoo
+      - ./addons:/mnt/extra-addons:ro
     command: odoo --db-filter=^odoo20$ -d odoo20 --http-interface=0.0.0.0
 
 volumes:

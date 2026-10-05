@@ -27,7 +27,7 @@ for ver in ('18', '19', '20'):
         v = re.sub(r'<field name="move_ids">.*?</field>', '<field name="move_ids"/>', v, flags=re.S)
         v = v.replace('<tree>', '<list>').replace('</tree>', '</list>')
         open(vp, 'w', encoding='utf-8').write(v)
-    # --- Odoo 20 : ir.model.access devient ir.access avec operation (cles r/w/c/u)
+    # --- Odoo 20 : ir.model.access devient ir.access ; operation 'crud' = r+u+c+d
     if ver == '20':
         sp = os.path.join(dst, 'security', 'ir.model.access.csv')
         if os.path.isfile(sp):
@@ -44,8 +44,7 @@ for ver in ('18', '19', '20'):
                 parts = line.split(',')
                 aid, name, model = parts[i_id], parts[i_name], parts[i_model]
                 group = parts[i_group] if i_group is not None else ''
-                for op, code in (('read', 'r'), ('write', 'w'), ('create', 'c'), ('unlink', 'u')):
-                    out.append('%s_%s,%s [%s],%s,%s,%s' % (aid, op, name, op, model, group, code))
+                out.append('%s,%s,%s,%s,crud' % (aid, name, model, group))
             c = '\n'.join(out) + '\n'
             open(os.path.join(dst, 'security', 'ir.access.csv'), 'w', encoding='utf-8').write(c)
             os.remove(sp)

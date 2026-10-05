@@ -27,21 +27,26 @@ for ver in ('18', '19', '20'):
         v = re.sub(r'<field name="move_ids">.*?</field>', '<field name="move_ids"/>', v, flags=re.S)
         v = v.replace('<tree>', '<list>').replace('</tree>', '</list>')
         open(vp, 'w', encoding='utf-8').write(v)
-    # --- Odoo 20 : ir.model.access devient ir.access (fichier ET manifest)
+    # --- Odoo 20 : ir.model.access devient ir.access avec un champ operation
     if ver == '20':
         sp = os.path.join(dst, 'security', 'ir.model.access.csv')
         if os.path.isfile(sp):
-            lines = []
-            for line in open(sp, encoding='utf-8').read().splitlines():
-                if not line.strip() or line.startswith('#'):
-                    lines.append(line)
+            raw = open(sp, encoding='utf-8').read().splitlines()
+            header = raw[0].split(',')
+            i_id = header.index('id')
+            i_name = header.index('name')
+            i_model = header.index('model_id:id')
+            i_group = header.index('group_id:id') if 'group_id:id' in header else None
+            out = ['id,name,model_id:id,group_id:id,operation']
+            for line in raw[1:]:
+                if not line.strip():
                     continue
                 parts = line.split(',')
-                # Odoo 20 : ir.access n'a plus les colonnes perm_* ; on garde id, name, model_id:id, group_id:id
-                keep = [p for p in parts if not p.strip().startswith('perm_')]
-                lines.append(','.join(keep))
-            c = '\n'.join(lines) + '\n'
-            c = c.replace('ir.model.access', 'ir.access')
+                aid, name, model = parts[i_id], parts[i_name], parts[i_model]
+                group = parts[i_group] if i_group is not None else ''
+                for op in ('read', 'write', 'create', 'unlink'):
+                    out.append('%s_%s,%s [%s],%s,%s,%s' % (aid, op, name, op, model, group, op))
+            c = '\n'.join(out) + '\n'
             open(os.path.join(dst, 'security', 'ir.access.csv'), 'w', encoding='utf-8').write(c)
             os.remove(sp)
         txt = txt.replace('security/ir.model.access.csv', 'security/ir.access.csv')

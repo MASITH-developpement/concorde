@@ -1,6 +1,9 @@
 # CONCORDE v1.0 — (c) MASITH / Stéphane Moreau. Tous droits réservés.
 """Assistant d'import FEC CONCORDE pour Odoo 17.
 
+Accepte un FEC texte Quadra OU un export d'ecritures Excel (.xlsx),
+converti en FEC standard par engine.xlsx_vers_fec avant le pipeline.
+
 Pipeline complet embarque : FEC -> equilibre -> mapping -> lettrage -> rapport.
 Guardian : self-check bloquant, audit chaine SHA-256. Marceau : jamais muet.
 Idempotence : une ecriture FEC deja importee (ref. FEC journal-ecriture)
@@ -15,6 +18,7 @@ from odoo.exceptions import UserError
 from odoo.tools import html_escape
 
 from odoo.addons.concorde.engine.moteur import MoteurConcorde
+from odoo.addons.concorde.engine.xlsx_vers_fec import xlsx_vers_fec
 
 
 def _chemin_engine():
@@ -26,7 +30,9 @@ class ConcordeImportWizard(models.TransientModel):
     _name = 'concorde.import.wizard'
     _description = "Assistant d'import FEC CONCORDE"
 
-    fec_file = fields.Binary(string="Fichier FEC (Quadra)", required=True)
+    fec_file = fields.Binary(
+        string="Fichier FEC (Quadra) ou export Excel (.xlsx)",
+        required=True)
     fec_filename = fields.Char(string="Nom du fichier")
     dry_run = fields.Boolean(
         string="Mode simulation (dry-run)",
@@ -114,6 +120,12 @@ class ConcordeImportWizard(models.TransientModel):
     def action_importer(self):
         self.ensure_one()
         brut = base64.b64decode(self.fec_file)
+        # Convertisseur Excel -> FEC : les exports d'ecritures .xlsx
+        # (Quadra et assimiles) sont convertis en FEC standard avant
+        # le pipeline. Erreur explicite si le classeur est illisible
+        # ou incomplet (Marceau : jamais muet).
+        if (self.fec_filename or '').lower().endswith(('.xlsx', '.xls')):
+            brut = xlsx_vers_fec(brut, nom_fichier=self.fec_filename)
         moteur = MoteurConcorde(config=self._config_moteur())
         try:
             contexte = moteur.executer(brut)

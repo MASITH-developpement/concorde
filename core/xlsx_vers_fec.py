@@ -67,6 +67,11 @@ SYNONYMES = {
     ],
     "Debit": ["debit", "dbt", "montantdebit", "d"],
     "Credit": ["credit", "crdt", "montantcredit", "c", "crebit"],
+    # Export "Liste des ecritures" Cegid Quadra
+    "Periode": ["periode"],
+    "Jour": ["jour"],
+    "NumUniq": ["numuniq"],
+    "TypeLigne": ["typeligne"],
 }
 
 OBLIGATOIRES = ["EcritureNum", "EcritureDate", "CompteNum", "Debit", "Credit"]
@@ -357,6 +362,196 @@ def _lire_xlsx_stdlib(brut, nom_fichier=""):
         lignes.append(ligne)
     return lignes
 
+# ---- Export "Liste des ecritures" Cegid Quadra ----
+# Ce format n'a pas de numero d'ecriture : NumUniq identifie chaque LIGNE.
+# Regroupement explicite en ecritures equilibrees : accumulation
+# sequentielle des lignes (meme journal, meme date) jusqu'a ce que le
+# cumul debit egale le cumul credit au centime (tolerance 0). Aucun
+# regroupement devine : un groupe non solde = erreur explicite.
+
+QUADRA_OBLIGATOIRES = ["Periode", "Jour", "JournalCode", "CompteNum",
+                       "EcritureLib", "Debit", "Credit", "NumUniq"]
+QUADRA_MAX_LIGNES_GROUPE = 1000
+
+
+def _trouver_entete_quadra(rows):
+    """Detecte l'en-tete d'un export Cegid Quadra. Retourne
+    (index_ligne, {champ: index_colonne}) ou (None, None)."""
+    for i, ligne in enumerate(rows):
+        if i >= MAX_RECHERCHE_ENTETE:
+            break
+        if ligne is None:
+            continue
+        trouve = {}
+        for j, cellule in enumerate(ligne):
+            nom = _norm(cellule)
+            if not nom:
+                continue
+            for champ, synos in SYNONYMES.items():
+                if champ in trouve:
+                    continue
+                if nom in synos:
+                    trouve[champ] = j
+        manquants = [c for c in QUADRA_OBLIGATOIRES if c not in trouve]
+        if not manquants:
+            return i, trouve
+    return None, None
+
+
+def _date_quadra(periode, jour, contexte):
+    """Periode (JJ/MM/AAAA) + Jour -> date AAAAMMJJ. Le jour vient de la
+    colonne Jour, le mois et l'annee de la Periode. Jamais devine."""
+    p = _date_fec(periode, contexte + "/Periode")  # valide JJ/MM/AAAA
+    mois, annee = int(p[4:6]), int(p[:4])
+    j_txt = str(jour or "").strip()
+    if not j_txt.isdigit() or not 1 <= int(j_txt) <= 31:
+        raise ErreurFEC(
+            "Jour invalide (%r) en colonne %s/Jour : CONCORDE attend un "
+            "numero de jour 1-31." % (jour, contexte))
+    try:
+        date(annee, mois, int(j_txt))
+    except ValueError:
+        raise ErreurFEC(
+            "Date invalide : jour %s inexistant en %02d/%d "
+            "(colonnes Periode/Jour)." % (j_txt, mois, annee))
+    return "%04d%02d%02d" % (annee, mois, int(j_txt))
+
+
+def _convertir_quadra(rows, idx, colonnes, nom_fichier):
+    """Convertit un export Cegid Quadra en FEC standard.
+
+    Regroupement en ecritures equilibrees : coupe des que le cumul
+    debit == cumul credit (meme journal + meme date). Le numero
+    d'ecriture retenu est le NumUniq de la premiere ligne du groupe.
+    """
+    def val(row, champ):
+        j = colonnes.get(champ)
+        if j is None or j >= len(row):
+            return None
+        return row[j]
+
+    out = ["\t".join(CHAMPS_FEC)]
+    nb_lignes = 0
+    nb_ecritures = 0
+    # groupe en cours
+    g_lignes = []       # lignes FEC en attente de numerotation
+    g_journal = None
+    g_date = None
+    g_debit = 0
+    g_credit = 0
+    g_premier = None    # NumUniq de la premiere ligne
+
+    def soldage_err():
+        return ErreurFEC(
+            "Ecriture non soldee apres %d lignes (journal %s, date %s, "
+            "NumUniq %s..%s, debit %d != credit %d centimes) : CONCORDE "
+            "ne cree jamais une ecriture desequilibree. Verifiez "
+            "l'export Quadra (tranchee complete, meme journal/date)." %
+            (len(g_lignes), g_journal, g_date, g_premier,
+             g_lignes[-1]["numuniq"] if g_lignes else "?",
+             g_debit, g_credit))
+
+    def clorre_groupe():
+        nonlocal nb_lignes, g_lignes, g_journal, g_date
+        nonlocal g_debit, g_credit, g_premier
+        # Lignes strictement identiques (compte/montants/libelle) dans la
+        # meme ecriture : l'idempotence canonique les fusionnerait et
+        # desequilibrerait l'ecriture. On distingue les occurrences par
+        # leur NumUniq, appose au libelle (jamais silencieusement).
+        vus = set()
+        for d in g_lignes:
+            f = d["fec"]
+            cle = (f["CompteNum"], f["Debit"], f["Credit"], f["EcritureLib"])
+            if cle in vus:
+                f["EcritureLib"] = "%s [%s]" % (f["EcritureLib"], d["numuniq"])
+            else:
+                vus.add(cle)
+        for d in g_lignes:
+            ligne = dict(d["fec"])
+            ligne["EcritureNum"] = g_premier
+            out.append("\t".join(ligne[c] for c in CHAMPS_FEC))
+            nb_lignes += 1
+        g_lignes, g_journal, g_date = [], None, None
+        g_debit, g_credit, g_premier = 0, 0, None
+
+    for row in rows[idx + 1:]:
+        if row is None:
+            continue
+        debit_c = _centimes(val(row, "Debit"), "Debit")
+        credit_c = _centimes(val(row, "Credit"), "Credit")
+        compte = _nombre_texte(val(row, "CompteNum"))
+        numuniq = _nombre_texte(val(row, "NumUniq"))
+        if not compte and debit_c == 0 and credit_c == 0 and not numuniq:
+            continue  # ligne vide / de presentation
+        if not numuniq:
+            raise ErreurFEC(
+                "Ligne sans NumUniq dans %r : CONCORDE ne devine jamais "
+                "un identifiant." % (nom_fichier,))
+        if not compte:
+            raise ErreurFEC(
+                "Ligne NumUniq %s sans numero de compte : CONCORDE ne "
+                "devine jamais un compte." % numuniq)
+        typ = _nettoyer_texte(val(row, "TypeLigne"))
+        if typ and typ != "E":
+            raise ErreurFEC(
+                "TypeLigne %r inconnu (NumUniq %s) : CONCORDE ne traite "
+                "que les lignes d'ecriture 'E'. Aucune ligne devinee." %
+                (typ, numuniq))
+        journal = _nettoyer_texte(val(row, "JournalCode"))
+        if not journal:
+            raise ErreurFEC(
+                "Ligne NumUniq %s sans journal : CONCORDE ne devine "
+                "jamais un journal." % numuniq)
+        date_ecr = _date_quadra(val(row, "Periode"), val(row, "Jour"),
+                                "NumUniq %s" % numuniq)
+        libelle = _nettoyer_texte(val(row, "EcritureLib"))
+
+        # regroupement : un groupe ne peut pas couvrir deux journaux
+        # ni deux dates ; un groupe non solde est une erreur explicite.
+        if g_lignes and (journal != g_journal or date_ecr != g_date):
+            raise soldage_err()
+        if len(g_lignes) >= QUADRA_MAX_LIGNES_GROUPE:
+            raise soldage_err()
+        if not g_lignes:
+            g_journal, g_date, g_premier = journal, date_ecr, numuniq
+        g_lignes.append({
+            "numuniq": numuniq,
+            "fec": {
+                "JournalCode": journal,
+                "JournalLib": journal,
+                "EcritureNum": "",  # remplace a la cloture du groupe
+                "EcritureDate": date_ecr,
+                "CompteNum": compte,
+                "CompteLib": "",
+                "CompAuxNum": "",
+                "CompAuxLib": "",
+                "PieceRef": _nettoyer_texte(val(row, "PieceRef")),
+                "PieceDate": date_ecr,
+                "EcritureLib": libelle or ("Ecriture %s" % numuniq),
+                "Debit": _fmt_centimes(debit_c),
+                "Credit": _fmt_centimes(credit_c),
+                "EcritureLet": "",
+                "DateLet": "",
+                "ValidDate": date_ecr,
+                "Montantdevise": "",
+                "Idevise": "",
+            },
+        })
+        g_debit += debit_c
+        g_credit += credit_c
+        if g_debit == g_credit:
+            clorre_groupe()
+            nb_ecritures += 1
+
+    if g_lignes:
+        raise soldage_err()
+
+    if nb_lignes == 0:
+        raise ErreurFEC(
+            "Aucune ligne d'ecriture exploitable dans %r apres l'en-tete "
+            "(ligne %d)." % (nom_fichier, idx + 1))
+    return ("\n".join(out) + "\n").encode("utf-8")
+
 def xlsx_vers_fec(brut: bytes, nom_fichier: str = "") -> bytes:
     """Convertit un classeur xlsx (bytes) en texte FEC (bytes UTF-8).
 
@@ -390,11 +585,18 @@ def xlsx_vers_fec(brut: bytes, nom_fichier: str = "") -> bytes:
 
     idx, colonnes = _trouver_entete(rows)
     if colonnes is None:
+        # Export "Liste des ecritures" Cegid Quadra (Periode + Jour +
+        # NumUniq, sans numero d'ecriture) : conversion dediee.
+        idx_q, col_q = _trouver_entete_quadra(rows)
+        if col_q is not None:
+            return _convertir_quadra(rows, idx_q, col_q, nom_fichier)
         raise ErreurFEC(
             "Ligne d'en-tete introuvable dans %r : CONCORDE attend au "
             "minimum les colonnes EcritureNum, EcritureDate, CompteNum, "
             "Debit, Credit (synonymes acceptes : Date, Compte, Libelle, "
-            "Journal...). Aucune colonne n'est devinee." % (nom_fichier,))
+            "Journal...) ou un export Cegid Quadra (Periode, Jour, "
+            "Journal, Compte, Debit, Credit, NumUniq, TypeLigne). "
+            "Aucune colonne n'est devinee." % (nom_fichier,))
 
     def val(row, champ):
         j = colonnes.get(champ)

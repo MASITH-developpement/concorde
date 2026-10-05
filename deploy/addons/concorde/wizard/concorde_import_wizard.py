@@ -22,8 +22,17 @@ from odoo.exceptions import UserError
 from odoo.tools import html_escape
 
 from odoo.addons.concorde.engine.moteur import MoteurConcorde
-from odoo.addons.concorde.engine.mapping import charger_mapping_xlsx
+from odoo.addons.concorde.engine.mapping import charger_mapping, charger_mapping_xlsx
+from odoo.addons.concorde.engine.plan_comptable import (
+    charger_plan_xlsx,
+    dictionnaire_plan,
+)
 from odoo.addons.concorde.engine.xlsx_vers_fec import xlsx_vers_fec
+
+# Type de compte Odoo appliqué aux comptes créés depuis le plan uploadé
+# quand aucune colonne « Type » exploitable n'existe. Choix explicite et
+# tracé dans le rapport (Marceau : jamais muet, jamais deviné).
+TYPE_COMPTE_DEFAUT = "unaffected"
 
 def _chemin_engine():
     return os.path.join(
@@ -46,6 +55,16 @@ class ConcordeImportWizard(models.TransientModel):
     journal_id = fields.Many2one(
         'account.journal', string="Journal Odoo par defaut",
         domain=[('type', '=', 'general')])
+    plan_file = fields.Binary(
+        string="Plan comptable Odoo (.xlsx) — création des comptes manquants",
+        required=False,
+        help="Nouveau plan comptable : les comptes requis par l'import mais "
+             "absents d'Odoo y sont lus (code + intitulé, colonne « Type » "
+             "optionnelle) et CRÉÉS automatiquement. Un compte requis mais "
+             "absent de ce fichier reste bloquant (aucun compte deviné). "
+             "En dry-run aucun compte n'est créé : le rapport liste ce qui "
+             "serait créé.")
+    plan_filename = fields.Char(string="Nom du fichier du plan comptable")
     mapping_file = fields.Binary(
         string="Fichier de mapping (Mapping Quadra Odoo .xlsx)",
         required=False,
@@ -133,6 +152,38 @@ class ConcordeImportWizard(models.TransientModel):
             lignes.append(
                 '<p>Mapping des comptes : %s</p>'
                 % html_escape(contexte['mapping_libelle']))
+        if contexte.get('plan_libelle'):
+            lignes.append(
+                '<p>Plan comptable : %s</p>'
+                % html_escape(contexte['plan_libelle']))
+        if contexte.get('correspondances_plan'):
+            ajoutes = contexte['correspondances_plan']
+            lignes.append(
+                '<p>Correspondances ajoutées depuis le plan comptable '
+                '(Quadra -> compte Odoo de même code, défini par le plan, '
+                'aucun compte deviné) : %d (%s)</p>'
+                % (len(ajoutes),
+                   html_escape(', '.join(ajoutes[:30]))
+                   + ('…' if len(ajoutes) > 30 else '')))
+        if contexte.get('comptes_a_creer'):
+            lignes.append(
+                '<p>Dry-run : %d compte(s) seraient créés depuis le plan '
+                'comptable : %s</p>'
+                % (len(contexte['comptes_a_creer']),
+                   html_escape(', '.join(contexte['comptes_a_creer'][:30]))
+                   + ('…' if len(contexte['comptes_a_creer']) > 30 else '')))
+        if contexte.get('comptes_crees'):
+            lignes.append(
+                '<p>Comptes créés depuis le plan comptable : %d (%s)</p>'
+                % (len(contexte['comptes_crees']),
+                   html_escape(', '.join(contexte['comptes_crees'][:30]))
+                   + ('…' if len(contexte['comptes_crees']) > 30 else '')))
+        if contexte.get('comptes_sans_type'):
+            lignes.append(
+                '<p style="color:#B06A2E;">Comptes créés sans type explicite '
+                '(type par défaut « %s » appliqué, aucun type deviné) : %s</p>'
+                % (TYPE_COMPTE_DEFAUT,
+                   html_escape(', '.join(contexte['comptes_sans_type'][:30]))))
         lignes.append('<ul>')
         for r in resultats:
             nom = html_escape(r.get('etape', '?'))
@@ -152,26 +203,81 @@ class ConcordeImportWizard(models.TransientModel):
             'target': 'current',
         }
 
+    def _completer_mapping_par_plan(self, brut, mapping_cfg, plan_comptes):
+        """Correspondances explicites ajoutées depuis le plan uploadé.
+
+        Pour chaque compte du fichier d'écritures absent du mapping mais
+        présent dans le plan comptable uploadé, la correspondance
+        Quadra -> compte Odoo de même code est ajoutée : le plan définit
+        ce compte (code + intitulé lus dans le fichier), rien n'est deviné.
+        Chaque ajout est tracé dans le rapport (Marceau : jamais muet).
+        Les comptes absents du mapping ET du plan restent en erreur
+        explicite côté moteur.
+        """
+        try:
+            texte = brut.decode('utf-8')
+        except UnicodeDecodeError as exc:
+            raise UserError(_(
+                "Fichier d'écritures illisible (encodage UTF-8 attendu) : %s")
+                % exc)
+        if 'dict' in mapping_cfg:
+            mapping = dict(mapping_cfg['dict'])
+        else:
+            mapping = charger_mapping(mapping_cfg['fichier'])
+        ajoutes = []
+        for ligne in texte.splitlines():
+            parties = ligne.split('\t')
+            if len(parties) < 5:
+                continue
+            compte = parties[4].strip()
+            if not compte:
+                continue
+            if compte not in mapping and compte in plan_comptes:
+                mapping[compte] = compte
+                if compte not in ajoutes:
+                    ajoutes.append(compte)
+        libelle = mapping_cfg.get('libelle', 'mapping')
+        if ajoutes:
+            libelle += _(" + %d correspondances ajoutées depuis le plan "
+                         "comptable (code identique)") % len(ajoutes)
+        return {'dict': mapping, 'libelle': libelle,
+                'correspondances_plan': ajoutes}
+
     def action_importer(self):
         self.ensure_one()
         brut = base64.b64decode(self.fec_file)
-        mapping_cfg = self._config_mapping()
-        moteur = MoteurConcorde(config=self._config_moteur(mapping_cfg))
+        mapping_cfg = None
         try:
+            mapping_cfg = self._config_mapping()
+            # Plan comptable uploadé (optionnel) : comptes {code: (nom, type)}.
+            plan_comptes = None
+            if self.plan_file:
+                plan_brut = base64.b64decode(self.plan_file)
+                plan_comptes = dictionnaire_plan(charger_plan_xlsx(
+                    plan_brut, nom_fichier=self.plan_filename or ''))
             # Convertisseur Excel -> FEC : les exports d'ecritures .xlsx
             # (Quadra et assimiles) sont convertis en FEC standard avant
             # le pipeline. Erreur explicite si le classeur est illisible
             # ou incomplet (Marceau : jamais muet).
             if (self.fec_filename or '').lower().endswith(('.xlsx', '.xls')):
                 brut = xlsx_vers_fec(brut, nom_fichier=self.fec_filename)
+            # Plan uploadé : correspondances explicites pour les comptes
+            # absents du mapping (code identique, défini par le plan).
+            if plan_comptes is not None:
+                mapping_cfg = self._completer_mapping_par_plan(
+                    brut, mapping_cfg, plan_comptes)
+            moteur = MoteurConcorde(config=self._config_moteur(mapping_cfg))
             contexte = moteur.executer(brut)
             contexte['mapping_libelle'] = mapping_cfg.get('libelle')
+            contexte['correspondances_plan'] = mapping_cfg.get(
+                'correspondances_plan', [])
         except Exception as exc:
             record = self.env['concorde.import'].create({
                 'name': self.fec_filename or 'FEC',
                 'fec_filename': self.fec_filename,
                 'fec_file': self.fec_file,
-                'mapping_source': mapping_cfg.get('libelle', ''),
+                'mapping_source': (mapping_cfg or {}).get('libelle', ''),
+                'plan_source': self.plan_filename or '',
                 'state': 'erreur',
                 'rapport_html': self._html_erreur(exc),
             })
@@ -182,22 +288,10 @@ class ConcordeImportWizard(models.TransientModel):
         if len(resultats) > 4:
             stats = resultats[4]['resultat'].get('stats', {})
         canon = resultats[2]['resultat']['canon']
-        record = self.env['concorde.import'].create({
-            'name': self.fec_filename or 'FEC',
-            'fec_filename': self.fec_filename,
-            'fec_file': self.fec_file,
-            'journal_id': self.journal_id.id,
-            'state': 'analyse_ok',
-            'nb_lignes': stats.get('nb_lignes', 0),
-            'nb_paires': stats.get('nb_paires', 0),
-            'nb_anomalies': stats.get('nb_anomalies', 0),
-            'total_debit': stats.get('total_debit', 0) / 100.0,
-            'total_credit': stats.get('total_credit', 0) / 100.0,
-            'empreinte_guardian': contexte.get('empreinte_guardian', ''),
-            'mapping_source': contexte.get('mapping_libelle', ''),
-            'rapport_html': self._html_rapport(resultats, contexte),
-        })
 
+        # --- comptes requis, comptes manquants, creation depuis le plan ---
+        # Tout est calculé AVANT la fiche : le rapport rendu doit refléter
+        # exactement ce que CONCORDE a fait (jamais muet).
         ecritures = self._grouper_ecritures(canon)
         comptes = sorted({l.compte for lignes in ecritures.values() for l in lignes})
         Account = self.env['account.account']
@@ -211,15 +305,75 @@ class ConcordeImportWizard(models.TransientModel):
                 par_code[code] = acct
             else:
                 manquants.append(code)
-        if manquants:
-            record.comptes_manquants = ', '.join(manquants)
-        record.nb_ecritures = len(ecritures)
+
+        # Plan comptable uploadé : création automatique des comptes
+        # manquants (code + intitulé lus dans le fichier, jamais devinés).
+        # En dry-run aucune création : le rapport liste ce qui serait créé.
+        comptes_crees = []
+        comptes_a_creer = []
+        sans_type = []
+        if plan_comptes is not None:
+            non_couverts = []
+            for code in manquants:
+                if code in plan_comptes:
+                    if self.dry_run:
+                        comptes_a_creer.append(code)
+                    else:
+                        nom, typ = plan_comptes[code]
+                        vals = {'code': code, 'name': nom}
+                        if typ:
+                            vals['account_type'] = typ
+                        else:
+                            # type non déterminé dans le fichier : type Odoo
+                            # par défaut explicite, tracé dans le rapport.
+                            vals['account_type'] = TYPE_COMPTE_DEFAUT
+                            sans_type.append(code)
+                        acct = Account.create(vals)
+                        par_code[code] = acct
+                        comptes_crees.append(code)
+                else:
+                    non_couverts.append(code)
+            manquants = non_couverts
+
+        plan_libelle = ''
+        if plan_comptes is not None:
+            plan_libelle = "%s (%d comptes)" % (
+                self.plan_filename or 'plan.xlsx', len(plan_comptes))
+        contexte['plan_libelle'] = plan_libelle
+        if comptes_a_creer:
+            contexte['comptes_a_creer'] = comptes_a_creer
+        if comptes_crees:
+            contexte['comptes_crees'] = comptes_crees
+        if sans_type:
+            contexte['comptes_sans_type'] = sans_type
+
+        record = self.env['concorde.import'].create({
+            'name': self.fec_filename or 'FEC',
+            'fec_filename': self.fec_filename,
+            'fec_file': self.fec_file,
+            'journal_id': self.journal_id.id,
+            'state': 'analyse_ok',
+            'nb_lignes': stats.get('nb_lignes', 0),
+            'nb_paires': stats.get('nb_paires', 0),
+            'nb_anomalies': stats.get('nb_anomalies', 0),
+            'total_debit': stats.get('total_debit', 0) / 100.0,
+            'total_credit': stats.get('total_credit', 0) / 100.0,
+            'empreinte_guardian': contexte.get('empreinte_guardian', ''),
+            'mapping_source': contexte.get('mapping_libelle', ''),
+            'plan_source': contexte.get('plan_libelle', ''),
+            'nb_comptes_crees': len(comptes_crees),
+            'comptes_crees': ', '.join(comptes_crees),
+            'comptes_manquants': ', '.join(manquants),
+            'nb_ecritures': len(ecritures),
+            'rapport_html': self._html_rapport(resultats, contexte),
+        })
 
         if not self.dry_run and not self.journal_id:
             raise UserError(_("Choisissez un journal Odoo pour un import reel (ou activez le dry-run)."))
         if manquants and not self.dry_run:
             raise UserError(_(
-                "Comptes Odoo absents - CONCORDE ne devine jamais un compte : %s")
+                "Comptes Odoo absents (et absents du plan comptable uploadé) - "
+                "CONCORDE ne devine jamais un compte : %s")
                 % ', '.join(manquants[:30]))
 
         nb_creees = 0

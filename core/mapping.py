@@ -68,43 +68,19 @@ def _index_colonne(lettres):
     return n - 1
 
 
-def _colonne_cellule(c, rang):
-    """Index de colonne d'une cellule : référence ('B17') ou rang d'apparition."""
-    ref = c.get("r") or ""
-    lettres = "".join(ch for ch in ref if ch.isalpha()).upper()
-    if lettres:
-        return _index_colonne(lettres)
-    return rang
+def lire_feuille_xlsx(brut, nom_fichier="", quoi="classeur"):
+    """Ouvre un .xlsx (octets) -> (nom_feuille, racine XML, valeur(c)).
 
-
-def _compte_txt(v):
-    """Numéro de compte -> texte propre (jamais '10130000.0')."""
-    if isinstance(v, bool):
-        return ""
-    if isinstance(v, float):
-        v = int(v) if v.is_integer() else v
-    s = str(v).strip()
-    if s.endswith(".0") and s[:-2].isdigit():
-        s = s[:-2]
-    return s
-
-
-def charger_mapping_xlsx(brut, nom_fichier=""):
-    """Charge un mapping depuis un classeur Excel .xlsx (octets).
-
-    Attend un en-tête avec une colonne « Numéro » (compte Quadra) et une
-    colonne « Odoo Acct » (compte Odoo cible) — mise en page du fichier
-    « Mapping Quadra Odoo » du client. Erreurs explicites sinon (Marceau :
-    jamais muet, aucun compte deviné).
+    Lecteur stdlib partagé par le mapping et le plan comptable. Erreurs
+    explicites (Marceau : jamais muet).
     """
     def _err(message):
         raise ErreurMapping(
-            "Fichier de mapping %r : %s" % (nom_fichier or "xlsx", message))
+            "Fichier %s %r : %s" % (quoi, nom_fichier or "xlsx", message))
 
     if not isinstance(brut, (bytes, bytearray)) or not bytes(brut).startswith(b"PK"):
         _err("contenu .xlsx invalide (archive zip attendue). "
              "Re-exportez le fichier depuis Excel.")
-
     try:
         zf = zipfile.ZipFile(io.BytesIO(bytes(brut)))
     except Exception as exc:
@@ -118,7 +94,6 @@ def charger_mapping_xlsx(brut, nom_fichier=""):
     else:
         sst = []
 
-    # première feuille déclarée du classeur
     feuille = None
     if "xl/workbook.xml" in zf.namelist() and "xl/_rels/workbook.xml.rels" in zf.namelist():
         wb = ET.fromstring(zf.read("xl/workbook.xml"))
@@ -161,6 +136,45 @@ def charger_mapping_xlsx(brut, nom_fichier=""):
             return int(f) if f.is_integer() else f
         return v.text
 
+    return feuille, racine, _valeur
+
+
+def _colonne_cellule(c, rang):
+    """Index de colonne d'une cellule : référence ('B17') ou rang d'apparition."""
+    ref = c.get("r") or ""
+    lettres = "".join(ch for ch in ref if ch.isalpha()).upper()
+    if lettres:
+        return _index_colonne(lettres)
+    return rang
+
+
+def _compte_txt(v):
+    """Numéro de compte -> texte propre (jamais '10130000.0')."""
+    if isinstance(v, bool):
+        return ""
+    if isinstance(v, float):
+        v = int(v) if v.is_integer() else v
+    s = str(v).strip()
+    if s.endswith(".0") and s[:-2].isdigit():
+        s = s[:-2]
+    return s
+
+
+def charger_mapping_xlsx(brut, nom_fichier=""):
+    """Charge un mapping depuis un classeur Excel .xlsx (octets).
+
+    Attend un en-tête avec une colonne « Numéro » (compte Quadra) et une
+    colonne « Odoo Acct » (compte Odoo cible) — mise en page du fichier
+    « Mapping Quadra Odoo » du client. Erreurs explicites sinon (Marceau :
+    jamais muet, aucun compte deviné).
+    """
+    def _err(message):
+        raise ErreurMapping(
+            "Fichier de mapping %r : %s" % (nom_fichier or "xlsx", message))
+
+    feuille, racine, _valeur = lire_feuille_xlsx(
+        brut, nom_fichier, quoi="de mapping")
+
     def _valeurs_ligne(row):
         vals = {}
         for rang, c in enumerate(row.iter(NS_MAIN + "c")):
@@ -172,9 +186,11 @@ def charger_mapping_xlsx(brut, nom_fichier=""):
 
     lignes = list(racine.iter(NS_MAIN + "row"))
 
-    # 1. détection de l'en-tête (parmi les 50 premières lignes)
+    # 1. détection de l'en-tête (parmi les 50 premières lignes) : colonnes
+    # et INDEX de la ligne d'en-tête (la lecture commence après elle).
     col_quadra = col_odoo = None
-    for row in lignes[:50]:
+    idx_entete = None
+    for idx, row in enumerate(lignes[:50]):
         entetes = {}
         for col, val in _valeurs_ligne(row).items():
             entetes[_norm_entete(val)] = col
@@ -185,22 +201,18 @@ def charger_mapping_xlsx(brut, nom_fichier=""):
                     and col_odoo is None:
                 col_odoo = col
         if col_quadra is not None and col_odoo is not None:
+            idx_entete = idx
             break
     if col_quadra is None or col_odoo is None:
         _err("en-tête introuvable — colonnes attendues « Numéro » (compte "
              "Quadra) et « Odoo Acct » (compte Odoo). Vérifiez que le fichier "
              "est bien l'export « Mapping Quadra Odoo ».")
 
-    # 2. lecture des correspondances (lignes situées après l'en-tête)
+    # 2. lecture des correspondances (strictement après la ligne d'en-tête)
     mapping = {}
     doublons = {}
-    apres = False
-    for row in lignes:
+    for row in lignes[idx_entete + 1:]:
         vals = _valeurs_ligne(row)
-        if not apres:
-            if col_quadra in vals or col_odoo in vals:
-                apres = True
-            continue
         q = _compte_txt(vals.get(col_quadra, "") or "")
         o = _compte_txt(vals.get(col_odoo, "") or "")
         if not q:

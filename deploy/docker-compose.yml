@@ -27,8 +27,8 @@ services:
       postgres:
         condition: service_healthy
     ports:
-      - "8017:8069"          # interface web Odoo 17 (prod CONCORDE)
-      - "8021:8072"          # longpolling Odoo 17 (8018 libere pour Odoo 18)
+      - "8017:8069"
+      - "8021:8072"
     environment:
       HOST: postgres
       USER: ${POSTGRES_USER:-odoo}
@@ -54,10 +54,10 @@ services:
       HOST: postgres
       USER: ${POSTGRES_USER:-odoo}
       PASSWORD: ${POSTGRES_PASSWORD:-CHANGEZ_MOI}
-      DB_NAME: odoo18
       ADMIN_PASSWD: ${ADMIN_PASSWD:-CHANGEZ_MOI_ADMIN}
     volumes:
       - odoo18data:/var/lib/odoo
+    command: odoo --db-filter=^odoo18$ -d odoo18 --http-interface=0.0.0.0
 
   odoo19:
     image: odoo:19
@@ -72,10 +72,10 @@ services:
       HOST: postgres
       USER: ${POSTGRES_USER:-odoo}
       PASSWORD: ${POSTGRES_PASSWORD:-CHANGEZ_MOI}
-      DB_NAME: odoo19
       ADMIN_PASSWD: ${ADMIN_PASSWD:-CHANGEZ_MOI_ADMIN}
     volumes:
       - odoo19data:/var/lib/odoo
+    command: odoo --db-filter=^odoo19$ -d odoo19 --http-interface=0.0.0.0
 
   odoo20:
     image: odoo:20
@@ -90,10 +90,10 @@ services:
       HOST: postgres
       USER: ${POSTGRES_USER:-odoo}
       PASSWORD: ${POSTGRES_PASSWORD:-CHANGEZ_MOI}
-      DB_NAME: odoo20
       ADMIN_PASSWD: ${ADMIN_PASSWD:-CHANGEZ_MOI_ADMIN}
     volumes:
       - odoo20data:/var/lib/odoo
+    command: odoo --db-filter=^odoo20$ -d odoo20 --http-interface=0.0.0.0
 
 volumes:
   pgdata:

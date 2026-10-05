@@ -15,21 +15,38 @@ for ver in ('18', '19', '20'):
     shutil.copytree(SRC, dst)
     mp = os.path.join(dst, '__manifest__.py')
     txt = open(mp, encoding='utf-8').read()
-    # remplacer la valeur de version, quel que soit le style de quotes
-    txt = re.sub("(version['\"]?\\s*[:=]\\s*['\"])[0-9]+\\.0\\.[0-9.]+",
+    txt = re.sub("(['\"]version['\"]?\\s*[:=]\\s*['\"])[0-9]+\\.0\\.[0-9.]+",
                  lambda m: m.group(1) + ver + '.0.1.0', txt)
-    # filet de securite : remplacement litteral des deux styles
     for q in ("'", '"'):
         for old in ('17.0.1.0', '17.0.1.0.0'):
             txt = txt.replace(q + old + q, q + ver + '.0.1.0' + q)
+    # --- vues : Odoo 18+ : <tree> devient <list> ; sous-liste move_ids -> vue par defaut
+    vp = os.path.join(dst, 'views', 'concorde_views.xml')
+    if os.path.isfile(vp):
+        v = open(vp, encoding='utf-8').read()
+        v = re.sub(r'<field name="move_ids">.*?</field>', '<field name="move_ids"/>', v, flags=re.S)
+        v = v.replace('<tree>', '<list>').replace('</tree>', '</list>')
+        open(vp, 'w', encoding='utf-8').write(v)
+    # --- Odoo 20 : ir.model.access devient ir.access (fichier ET manifest)
+    if ver == '20':
+        sp = os.path.join(dst, 'security', 'ir.model.access.csv')
+        if os.path.isfile(sp):
+            lines = []
+            for line in open(sp, encoding='utf-8').read().splitlines():
+                if not line.strip() or line.startswith('#'):
+                    lines.append(line)
+                    continue
+                parts = line.split(',')
+                # Odoo 20 : ir.access n'a plus les colonnes perm_* ; on garde id, name, model_id:id, group_id:id
+                keep = [p for p in parts if not p.strip().startswith('perm_')]
+                lines.append(','.join(keep))
+            c = '\n'.join(lines) + '\n'
+            c = c.replace('ir.model.access', 'ir.access')
+            open(os.path.join(dst, 'security', 'ir.access.csv'), 'w', encoding='utf-8').write(c)
+            os.remove(sp)
+        txt = txt.replace('security/ir.model.access.csv', 'security/ir.access.csv')
     open(mp, 'w', encoding='utf-8').write(txt)
     ok = (ver + '.0.1.0') in txt
-    if int(ver) >= 19:
-        vp = os.path.join(dst, 'views', 'concorde_views.xml')
-        if os.path.isfile(vp):
-            v = open(vp, encoding='utf-8').read()
-            v = v.replace('<tree>', '<list>').replace('</tree>', '</list>')
-            open(vp, 'w', encoding='utf-8').write(v)
     print('OK addons%s/concorde (manifest %s.0.1.0 : %s)' % (ver, ver, ok))
 PYEOF
 echo "=== ADDONS PAR VERSION GENERES ==="

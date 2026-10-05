@@ -64,8 +64,12 @@ class MoteurConcorde:
 
     def _mapper_comptes(self, donnees):
         from .mapping import mapper_comptes
-        chemin = (self.config.get("mapping") or {}).get("fichier")
-        return mapper_comptes(donnees, chemin)
+        cfg = self.config.get("mapping") or {}
+        if isinstance(cfg.get("dict"), dict):
+            # mapping charge en memoire (ex. fichier Mapping Quadra Odoo.xlsx
+            # uploadé dans l'assistant) : prioritaire sur le fichier JSON.
+            return mapper_comptes(donnees, cfg["dict"])
+        return mapper_comptes(donnees, cfg.get("fichier"))
 
     def executer(self, donnees=None):
         """Exécute le pipeline complet. Chaque résultat porte son explication Marceau."""

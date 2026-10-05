@@ -4,6 +4,10 @@
 Accepte un FEC texte Quadra OU un export d'ecritures Excel (.xlsx),
 converti en FEC standard par engine.xlsx_vers_fec avant le pipeline.
 
+Mapping des comptes : le fichier client « Mapping Quadra Odoo.xlsx » peut
+etre uploadé dans l'assistant (prioritaire sur le JSON embarqué). Colonnes
+attendues « Numero » et « Odoo Acct » ; erreurs explicites sinon.
+
 Pipeline complet embarque : FEC -> equilibre -> mapping -> lettrage -> rapport.
 Guardian : self-check bloquant, audit chaine SHA-256. Marceau : jamais muet.
 Idempotence : une ecriture FEC deja importee (ref. FEC journal-ecriture)
@@ -18,6 +22,7 @@ from odoo.exceptions import UserError
 from odoo.tools import html_escape
 
 from odoo.addons.concorde.engine.moteur import MoteurConcorde
+from odoo.addons.concorde.engine.mapping import charger_mapping_xlsx
 from odoo.addons.concorde.engine.xlsx_vers_fec import xlsx_vers_fec
 
 def _chemin_engine():
@@ -41,6 +46,14 @@ class ConcordeImportWizard(models.TransientModel):
     journal_id = fields.Many2one(
         'account.journal', string="Journal Odoo par defaut",
         domain=[('type', '=', 'general')])
+    mapping_file = fields.Binary(
+        string="Fichier de mapping (Mapping Quadra Odoo .xlsx)",
+        required=False,
+        help="Correspondances des comptes Quadra -> Odoo. Colonnes attendues : "
+             "« Numéro » (compte Quadra) et « Odoo Acct » (compte Odoo cible). "
+             "Prioritaire sur le mapping JSON embarqué. Un compte absent du "
+             "mapping reste bloquant (aucun compte deviné).")
+    mapping_filename = fields.Char(string="Nom du fichier de mapping")
 
     @api.model
     def _default_journal(self):
@@ -59,7 +72,7 @@ class ConcordeImportWizard(models.TransientModel):
             vals['journal_id'] = journal.id if journal else False
         return vals
 
-    def _config_moteur(self):
+    def _config_moteur(self, mapping_cfg=None):
         return {
             'noyau': {'guardian': {'journal': '/var/concorde/guardian'}},
             'pipeline': [
@@ -73,9 +86,29 @@ class ConcordeImportWizard(models.TransientModel):
                  'fonction': 'lettrer'},
                 {'nom': 'rapport', 'fonction': 'rapport'},
             ],
-            'mapping': {
-                'fichier': os.path.join(
-                    _chemin_engine(), 'mapping_quadra_odoo.json')},
+            'mapping': mapping_cfg or self._config_mapping(),
+        }
+
+    def _config_mapping(self):
+        """Mapping du pipeline : fichier uploadé (prioritaire) ou JSON embarqué.
+
+        Le fichier client « Mapping Quadra Odoo.xlsx » est lu par le moteur
+        (engine.mapping.charger_mapping_xlsx, stdlib uniquement). Toute erreur
+        de lecture est explicite (Marceau : jamais muet).
+        """
+        if self.mapping_file:
+            brut = base64.b64decode(self.mapping_file)
+            mapping = charger_mapping_xlsx(
+                brut, nom_fichier=self.mapping_filename or '')
+            return {
+                'dict': mapping,
+                'libelle': "%s (%d correspondances)" % (
+                    self.mapping_filename or 'mapping.xlsx', len(mapping)),
+            }
+        return {
+            'fichier': os.path.join(
+                _chemin_engine(), 'mapping_quadra_odoo.json'),
+            'libelle': 'mapping_quadra_odoo.json (embarqué)',
         }
 
     def _grouper_ecritures(self, canon):
@@ -96,6 +129,10 @@ class ConcordeImportWizard(models.TransientModel):
         else:
             etat = "ALERTE : chaine d'audit invalide"
         lignes = ['<p><b>Pipeline CONCORDE</b> - Guardian : %s</p>' % etat]
+        if contexte.get('mapping_libelle'):
+            lignes.append(
+                '<p>Mapping des comptes : %s</p>'
+                % html_escape(contexte['mapping_libelle']))
         lignes.append('<ul>')
         for r in resultats:
             nom = html_escape(r.get('etape', '?'))
@@ -118,7 +155,8 @@ class ConcordeImportWizard(models.TransientModel):
     def action_importer(self):
         self.ensure_one()
         brut = base64.b64decode(self.fec_file)
-        moteur = MoteurConcorde(config=self._config_moteur())
+        mapping_cfg = self._config_mapping()
+        moteur = MoteurConcorde(config=self._config_moteur(mapping_cfg))
         try:
             # Convertisseur Excel -> FEC : les exports d'ecritures .xlsx
             # (Quadra et assimiles) sont convertis en FEC standard avant
@@ -127,11 +165,13 @@ class ConcordeImportWizard(models.TransientModel):
             if (self.fec_filename or '').lower().endswith(('.xlsx', '.xls')):
                 brut = xlsx_vers_fec(brut, nom_fichier=self.fec_filename)
             contexte = moteur.executer(brut)
+            contexte['mapping_libelle'] = mapping_cfg.get('libelle')
         except Exception as exc:
             record = self.env['concorde.import'].create({
                 'name': self.fec_filename or 'FEC',
                 'fec_filename': self.fec_filename,
                 'fec_file': self.fec_file,
+                'mapping_source': mapping_cfg.get('libelle', ''),
                 'state': 'erreur',
                 'rapport_html': self._html_erreur(exc),
             })
@@ -154,6 +194,7 @@ class ConcordeImportWizard(models.TransientModel):
             'total_debit': stats.get('total_debit', 0) / 100.0,
             'total_credit': stats.get('total_credit', 0) / 100.0,
             'empreinte_guardian': contexte.get('empreinte_guardian', ''),
+            'mapping_source': contexte.get('mapping_libelle', ''),
             'rapport_html': self._html_rapport(resultats, contexte),
         })
 

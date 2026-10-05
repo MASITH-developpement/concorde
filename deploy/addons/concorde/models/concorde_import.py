@@ -24,6 +24,7 @@ class ConcordeImport(models.Model):
     total_debit = fields.Float(string="Total débit")
     total_credit = fields.Float(string="Total crédit")
     empreinte_guardian = fields.Char(string="Empreinte Guardian (SHA-256)")
+    mapping_source = fields.Char(string="Mapping des comptes (source)")
     comptes_manquants = fields.Text(string="Comptes Odoo manquants")
     rapport_html = fields.Html(string="Rapport pipeline", sanitize=False)
     move_ids = fields.One2many('account.move', 'concorde_import_id', string="Écritures créées")

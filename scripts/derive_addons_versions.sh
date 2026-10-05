@@ -24,6 +24,15 @@ for ver in ('18', '19', '20'):
             txt = txt.replace(q + old + q, q + ver + '.0.1.0' + q)
     open(mp, 'w', encoding='utf-8').write(txt)
     ok = (ver + '.0.1.0') in txt
+    if ver == '20':
+        # Odoo 20 : ir.model.access devient ir.access (modele + nom de fichier)
+        sp = os.path.join(dst, 'security', 'ir.model.access.csv')
+        if os.path.isfile(sp):
+            c = open(sp, encoding='utf-8').read()
+            c = c.replace('ir.model.access', 'ir.access')
+            np2 = os.path.join(dst, 'security', 'ir.access.csv')
+            open(np2, 'w', encoding='utf-8').write(c)
+            os.remove(sp)
     if int(ver) >= 19:
         vp = os.path.join(dst, 'views', 'concorde_views.xml')
         if os.path.isfile(vp):

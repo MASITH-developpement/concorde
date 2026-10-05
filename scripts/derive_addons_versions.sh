@@ -1,27 +1,35 @@
 #!/bin/bash
-# CONCORDE — derivation des addons par version Odoo (18/19/20) a partir de la source 17
+# CONCORDE — derivation des addons par version Odoo (18/19/20) depuis la source 17
 # La source de verite reste deploy/addons/concorde (genere par install_module.sh)
 set -e
 cd /opt/concorde/deploy
 SRC=addons/concorde
 [ -d "$SRC" ] || { echo "ERREUR : $SRC absent ; lancez d'abord scripts/install_module.sh"; exit 1; }
-derive() {
-  VER=$1   # ex. 19
-  DST=addons$VER/concorde
-  rm -rf "$DST"
-  mkdir -p addons$VER
-  cp -r "$SRC" "$DST"
-  # 1) version du manifest pour la serie cible
-  sed -i "s/'version': *'17\.0\.[0-9.]*/'version': '$VER.0.1.0'/" "$DST/__manifest__.py"
-  sed -i "s/\"version\": *\"17\.0\.[0-9.]*/\"version\": \"$VER.0.1.0\/" "$DST/__manifest__.py"
-  # 2) vues : <tree> devient <list> a partir d'Odoo 19
-  if [ "$VER" -ge 19 ]; then
-    sed -i 's/<tree>/<list>/g; s<\/tree><</list><g' "$DST/views/concorde_views.xml" 2>/dev/null || true
-    sed -i 's#</tree>#</list>#g' "$DST/views/concorde_views.xml" 2>/dev/null || true
-  fi
-  echo "OK addons$VER/concorde (version $VER.0.1.0)"
-}
-derive 18
-derive 19
-derive 20
+python3 - <<'PYEOF'
+import re, shutil, os
+SRC = 'addons/concorde'
+for ver in ('18', '19', '20'):
+    dst = 'addons%s/concorde' % ver
+    if os.path.isdir('addons' + ver):
+        shutil.rmtree('addons' + ver)
+    shutil.copytree(SRC, dst)
+    mp = os.path.join(dst, '__manifest__.py')
+    txt = open(mp, encoding='utf-8').read()
+    # remplacer la valeur de version, quel que soit le style de quotes
+    txt = re.sub("(version['\"]?\\s*[:=]\\s*['\"])[0-9]+\\.0\\.[0-9.]+",
+                 lambda m: m.group(1) + ver + '.0.1.0', txt)
+    # filet de securite : remplacement litteral des deux styles
+    for q in ("'", '"'):
+        for old in ('17.0.1.0', '17.0.1.0.0'):
+            txt = txt.replace(q + old + q, q + ver + '.0.1.0' + q)
+    open(mp, 'w', encoding='utf-8').write(txt)
+    ok = (ver + '.0.1.0') in txt
+    if int(ver) >= 19:
+        vp = os.path.join(dst, 'views', 'concorde_views.xml')
+        if os.path.isfile(vp):
+            v = open(vp, encoding='utf-8').read()
+            v = v.replace('<tree>', '<list>').replace('</tree>', '</list>')
+            open(vp, 'w', encoding='utf-8').write(v)
+    print('OK addons%s/concorde (manifest %s.0.1.0 : %s)' % (ver, ver, ok))
+PYEOF
 echo "=== ADDONS PAR VERSION GENERES ==="

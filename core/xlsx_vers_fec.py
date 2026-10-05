@@ -12,6 +12,7 @@ Regles CONCORDE :
 - Dates normalisees en AAAAMMJJ (format FEC obligatoire)
 """
 import io
+import logging
 import re
 import unicodedata
 import zipfile
@@ -24,6 +25,9 @@ try:
     from openpyxl import load_workbook
 except ImportError:  # pragma: no cover
     load_workbook = None
+
+
+_LOGGER = logging.getLogger(__name__)
 
 
 class ErreurFEC(ValueError):
@@ -364,15 +368,13 @@ def _lire_xlsx_stdlib(brut, nom_fichier=""):
 
 # ---- Export "Liste des ecritures" Cegid Quadra ----
 # Ce format n'a pas de numero d'ecriture : NumUniq identifie chaque LIGNE.
-# Regroupement explicite en ecritures equilibrees : accumulation
-# sequentielle des lignes (meme journal, meme date) jusqu'a ce que le
-# cumul debit egale le cumul credit au centime (tolerance 0). Aucun
-# regroupement devine : un groupe non solde = erreur explicite.
+# Les lignes d'une meme ecriture ne sont pas contigues dans l'export :
+# regroupement par CASCADES explicites (journal+date+libelle, puis
+# journal+date, puis journal), chaque niveau solde au centime pres
+# (tolerance 0). Un residu non solde = erreur explicite, jamais muette.
 
 QUADRA_OBLIGATOIRES = ["Periode", "Jour", "JournalCode", "CompteNum",
                        "EcritureLib", "Debit", "Credit", "NumUniq"]
-QUADRA_MAX_LIGNES_GROUPE = 1000
-
 
 def _trouver_entete_quadra(rows):
     """Detecte l'en-tete d'un export Cegid Quadra. Retourne
@@ -420,9 +422,19 @@ def _date_quadra(periode, jour, contexte):
 def _convertir_quadra(rows, idx, colonnes, nom_fichier):
     """Convertit un export Cegid Quadra en FEC standard.
 
-    Regroupement en ecritures equilibrees : coupe des que le cumul
-    debit == cumul credit (meme journal + meme date). Le numero
-    d'ecriture retenu est le NumUniq de la premiere ligne du groupe.
+    Regroupement en ecritures equilibrees par CASCADES EXPLICITES
+    (tolerance 0, jamais muet) :
+
+      1. (journal, date, libelle) -> une ecriture si le groupe est solde ;
+      2. groupes non soldes consolides par (journal, date) -> une
+         ecriture consolidee si le cumul s'equilibre ;
+      3. reste consolide par journal seul (une ecriture par journal,
+         date = premiere ligne du journal) ;
+      4. desequilibre residuel = ErreurFEC explicite.
+
+    Le numero d'ecriture retenu est le NumUniq de la premiere ligne du
+    groupe. Aucun groupement devine : chaque niveau de la cascade est
+    tracé (logging) et un residu non solde est une erreur explicite.
     """
     def val(row, champ):
         j = colonnes.get(champ)
@@ -430,50 +442,8 @@ def _convertir_quadra(rows, idx, colonnes, nom_fichier):
             return None
         return row[j]
 
-    out = ["\t".join(CHAMPS_FEC)]
-    nb_lignes = 0
-    nb_ecritures = 0
-    # groupe en cours
-    g_lignes = []       # lignes FEC en attente de numerotation
-    g_journal = None
-    g_date = None
-    g_debit = 0
-    g_credit = 0
-    g_premier = None    # NumUniq de la premiere ligne
-
-    def soldage_err():
-        return ErreurFEC(
-            "Ecriture non soldee apres %d lignes (journal %s, date %s, "
-            "NumUniq %s..%s, debit %d != credit %d centimes) : CONCORDE "
-            "ne cree jamais une ecriture desequilibree. Verifiez "
-            "l'export Quadra (tranchee complete, meme journal/date)." %
-            (len(g_lignes), g_journal, g_date, g_premier,
-             g_lignes[-1]["numuniq"] if g_lignes else "?",
-             g_debit, g_credit))
-
-    def clorre_groupe():
-        nonlocal nb_lignes, g_lignes, g_journal, g_date
-        nonlocal g_debit, g_credit, g_premier
-        # Lignes strictement identiques (compte/montants/libelle) dans la
-        # meme ecriture : l'idempotence canonique les fusionnerait et
-        # desequilibrerait l'ecriture. On distingue les occurrences par
-        # leur NumUniq, appose au libelle (jamais silencieusement).
-        vus = set()
-        for d in g_lignes:
-            f = d["fec"]
-            cle = (f["CompteNum"], f["Debit"], f["Credit"], f["EcritureLib"])
-            if cle in vus:
-                f["EcritureLib"] = "%s [%s]" % (f["EcritureLib"], d["numuniq"])
-            else:
-                vus.add(cle)
-        for d in g_lignes:
-            ligne = dict(d["fec"])
-            ligne["EcritureNum"] = g_premier
-            out.append("\t".join(ligne[c] for c in CHAMPS_FEC))
-            nb_lignes += 1
-        g_lignes, g_journal, g_date = [], None, None
-        g_debit, g_credit, g_premier = 0, 0, None
-
+    # ---- passe 0 : lecture et validation de toutes les lignes ----
+    lignes = []
     for row in rows[idx + 1:]:
         if row is None:
             continue
@@ -505,17 +475,14 @@ def _convertir_quadra(rows, idx, colonnes, nom_fichier):
         date_ecr = _date_quadra(val(row, "Periode"), val(row, "Jour"),
                                 "NumUniq %s" % numuniq)
         libelle = _nettoyer_texte(val(row, "EcritureLib"))
-
-        # regroupement : un groupe ne peut pas couvrir deux journaux
-        # ni deux dates ; un groupe non solde est une erreur explicite.
-        if g_lignes and (journal != g_journal or date_ecr != g_date):
-            raise soldage_err()
-        if len(g_lignes) >= QUADRA_MAX_LIGNES_GROUPE:
-            raise soldage_err()
-        if not g_lignes:
-            g_journal, g_date, g_premier = journal, date_ecr, numuniq
-        g_lignes.append({
+        lignes.append({
             "numuniq": numuniq,
+            "ordre": len(lignes),
+            "journal": journal,
+            "date": date_ecr,
+            "libelle": libelle or ("Ecriture %s" % numuniq),
+            "debit": debit_c,
+            "credit": credit_c,
             "fec": {
                 "JournalCode": journal,
                 "JournalLib": journal,
@@ -537,20 +504,123 @@ def _convertir_quadra(rows, idx, colonnes, nom_fichier):
                 "Idevise": "",
             },
         })
-        g_debit += debit_c
-        g_credit += credit_c
-        if g_debit == g_credit:
-            clorre_groupe()
-            nb_ecritures += 1
 
-    if g_lignes:
-        raise soldage_err()
-
-    if nb_lignes == 0:
+    if not lignes:
         raise ErreurFEC(
             "Aucune ligne d'ecriture exploitable dans %r apres l'en-tete "
             "(ligne %d)." % (nom_fichier, idx + 1))
+
+    # ---- cascades : regroupements explicites, du plus fin au plus large ----
+    # Un groupe = liste de lignes + cumuls. Soldé = debit == credit.
+    def consolider(cles):
+        """Regroupe les lignes restantes par cles(row)->tuple.
+        Retourne {tuple_cle: [lignes]}, l'ordre d'apparition preserve."""
+        groupes = {}
+        for l in lignes:
+            if l.get("_groupe") is not None:
+                continue  # deja prise par une cascade precedente
+            k = tuple(cles(l))
+            groupes.setdefault(k, []).append(l)
+        return groupes
+
+    def cumul(g):
+        return sum(l["debit"] for l in g), sum(l["credit"] for l in g)
+
+    ecritures = []  # [(premiere ligne du groupe, [lignes])]
+
+    # Cascade 1 : (journal, date, libelle)
+    g1 = consolider(lambda l: (l["journal"], l["date"], l["libelle"]))
+    restantes = []
+    for k, g in g1.items():
+        d, c = cumul(g)
+        if d == c:
+            ecritures.append((g[0], g))
+            for l in g:
+                l["_groupe"] = 1
+        else:
+            restantes.extend(g)
+
+    # Cascade 2 : (journal, date) — seulement sur ce qui reste
+    if restantes:
+        _LOGGER.info(
+            "Quadra %s : cascade 1 laisse %d ligne(s) non soldee(s), "
+            "consolidation par (journal, date).",
+            nom_fichier, len(restantes))
+        g2 = consolider(lambda l: (l["journal"], l["date"]))
+        restantes = []
+        for k, g in g2.items():
+            d, c = cumul(g)
+            if d == c:
+                ecritures.append((g[0], g))
+                for l in g:
+                    l["_groupe"] = 2
+            else:
+                restantes.extend(g)
+
+    # Cascade 3 : journal seul — une ecriture consolidee par journal
+    if restantes:
+        _LOGGER.warning(
+            "Quadra %s : %d ligne(s) encore non soldee(s) apres "
+            "consolidation par (journal, date) ; consolidation finale par "
+            "journal (une ecriture regroupee par journal, date = premiere "
+            "ligne).",
+            nom_fichier, len(restantes))
+        g3 = consolider(lambda l: (l["journal"],))
+        restantes = []
+        for k, g in g3.items():
+            d, c = cumul(g)
+            if d == c:
+                ecritures.append((g[0], g))
+                for l in g:
+                    l["_groupe"] = 3
+            else:
+                restantes.extend(g)
+
+    # Cascade 4 : residu = erreur explicite (tolerance 0)
+    if restantes:
+        par_journal = {}
+        for l in restantes:
+            par_journal.setdefault(l["journal"], [0, 0, 0])
+            par_journal[l["journal"]][0] += l["debit"]
+            par_journal[l["journal"]][1] += l["credit"]
+            par_journal[l["journal"]][2] += 1
+        detail = ", ".join(
+            "%s : %d ligne(s), debit %d != credit %d centimes (ecart %d)" %
+            (j, v[2], v[0], v[1], v[0] - v[1])
+            for j, v in sorted(par_journal.items()))
+        raise ErreurFEC(
+            "Lignes non soldables dans %r apres les cascades "
+            "(journal+date+libelle, journal+date, journal) : CONCORDE ne "
+            "cree jamais une ecriture desequilibree. Detail par journal : "
+            "%s. Verifiez l'export Quadra (tranchee complete)." %
+            (nom_fichier, detail))
+
+    # ---- emission : ordre d'apparition dans le fichier, doublons distincts ----
+    ecritures.sort(key=lambda e: e[0]["ordre"])
+    out = ["\t".join(CHAMPS_FEC)]
+    nb_lignes = 0
+    for premiere, groupe in ecritures:
+        ecriture_num = premiere["numuniq"]
+        # Lignes strictement identiques (compte/montants/libelle) dans la
+        # meme ecriture : l'idempotence canonique les fusionnerait et
+        # desequilibrerait l'ecriture. On distingue les occurrences par
+        # leur NumUniq, appose au libelle (jamais silencieusement).
+        vus = set()
+        for l in groupe:
+            f = l["fec"]
+            cle = (f["CompteNum"], f["Debit"], f["Credit"], f["EcritureLib"])
+            if cle in vus:
+                f["EcritureLib"] = "%s [%s]" % (f["EcritureLib"], l["numuniq"])
+            else:
+                vus.add(cle)
+        for l in groupe:
+            ligne = dict(l["fec"])
+            ligne["EcritureNum"] = ecriture_num
+            out.append("\t".join(ligne[c] for c in CHAMPS_FEC))
+            nb_lignes += 1
+
     return ("\n".join(out) + "\n").encode("utf-8")
+
 
 def xlsx_vers_fec(brut: bytes, nom_fichier: str = "") -> bytes:
     """Convertit un classeur xlsx (bytes) en texte FEC (bytes UTF-8).

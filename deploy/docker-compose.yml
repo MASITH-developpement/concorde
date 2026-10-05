@@ -1,5 +1,5 @@
 # CONCORDE v1.0 — déploiement Docker (c) MASITH / Stéphane Moreau
-# Serveur de production : Odoo 18 Community + PostgreSQL 16
+# PostgreSQL 16 + Odoo 17 (prod, port 8017) + Odoo 20 CE (tests, port 8020)
 # Usage : docker compose up -d
 
 services:
@@ -27,8 +27,8 @@ services:
       postgres:
         condition: service_healthy
     ports:
-      - "8069:8069"          # XML-RPC + interface web
-      - "8072:8072"          # longpolling
+      - "8017:8069"          # interface web Odoo 17 (prod CONCORDE)
+      - "8018:8072"          # longpolling Odoo 17
     environment:
       HOST: postgres
       USER: ${POSTGRES_USER:-odoo}
@@ -41,6 +41,25 @@ services:
       - ./addons:/mnt/extra-addons:ro
     command: odoo -c /etc/odoo/odoo.conf
 
+  odoo20:
+    image: odoo:20
+    container_name: concorde-odoo20
+    restart: unless-stopped
+    depends_on:
+      postgres:
+        condition: service_healthy
+    ports:
+      - "8020:8069"          # interface web Odoo 20 CE
+    environment:
+      HOST: postgres
+      USER: ${POSTGRES_USER:-odoo}
+      PASSWORD: ${POSTGRES_PASSWORD:-CHANGEZ_MOI}
+      DB_NAME: odoo20        # base separee pour Odoo 20
+      ADMIN_PASSWD: ${ADMIN_PASSWD:-CHANGEZ_MOI_ADMIN}
+    volumes:
+      - odoo20data:/var/lib/odoo
+
 volumes:
   pgdata:
   odoodata:
+  odoo20data:

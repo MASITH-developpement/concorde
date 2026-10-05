@@ -1,5 +1,5 @@
 # CONCORDE v1.0 — déploiement Docker (c) MASITH / Stéphane Moreau
-# PostgreSQL 16 + Odoo 17 (prod, port 8017) + Odoo 20 CE (tests, port 8020)
+# PostgreSQL 16 + Odoo 17 (8017) + Odoo 18 (8018) + Odoo 19 (8019) + Odoo 20 (8020)
 # Usage : docker compose up -d
 
 services:
@@ -28,7 +28,7 @@ services:
         condition: service_healthy
     ports:
       - "8017:8069"          # interface web Odoo 17 (prod CONCORDE)
-      - "8018:8072"          # longpolling Odoo 17
+      - "8021:8072"          # longpolling Odoo 17 (8018 libere pour Odoo 18)
     environment:
       HOST: postgres
       USER: ${POSTGRES_USER:-odoo}
@@ -41,6 +41,42 @@ services:
       - ./addons:/mnt/extra-addons:ro
     command: odoo -c /etc/odoo/odoo.conf
 
+  odoo18:
+    image: odoo:18
+    container_name: concorde-odoo18
+    restart: unless-stopped
+    depends_on:
+      postgres:
+        condition: service_healthy
+    ports:
+      - "8018:8069"
+    environment:
+      HOST: postgres
+      USER: ${POSTGRES_USER:-odoo}
+      PASSWORD: ${POSTGRES_PASSWORD:-CHANGEZ_MOI}
+      DB_NAME: odoo18
+      ADMIN_PASSWD: ${ADMIN_PASSWD:-CHANGEZ_MOI_ADMIN}
+    volumes:
+      - odoo18data:/var/lib/odoo
+
+  odoo19:
+    image: odoo:19
+    container_name: concorde-odoo19
+    restart: unless-stopped
+    depends_on:
+      postgres:
+        condition: service_healthy
+    ports:
+      - "8019:8069"
+    environment:
+      HOST: postgres
+      USER: ${POSTGRES_USER:-odoo}
+      PASSWORD: ${POSTGRES_PASSWORD:-CHANGEZ_MOI}
+      DB_NAME: odoo19
+      ADMIN_PASSWD: ${ADMIN_PASSWD:-CHANGEZ_MOI_ADMIN}
+    volumes:
+      - odoo19data:/var/lib/odoo
+
   odoo20:
     image: odoo:20
     container_name: concorde-odoo20
@@ -49,12 +85,12 @@ services:
       postgres:
         condition: service_healthy
     ports:
-      - "8020:8069"          # interface web Odoo 20 CE
+      - "8020:8069"
     environment:
       HOST: postgres
       USER: ${POSTGRES_USER:-odoo}
       PASSWORD: ${POSTGRES_PASSWORD:-CHANGEZ_MOI}
-      DB_NAME: odoo20        # base separee pour Odoo 20
+      DB_NAME: odoo20
       ADMIN_PASSWD: ${ADMIN_PASSWD:-CHANGEZ_MOI_ADMIN}
     volumes:
       - odoo20data:/var/lib/odoo
@@ -62,4 +98,6 @@ services:
 volumes:
   pgdata:
   odoodata:
+  odoo18data:
+  odoo19data:
   odoo20data:

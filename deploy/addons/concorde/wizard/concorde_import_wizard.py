@@ -156,21 +156,37 @@ class ConcordeImportWizard(models.TransientModel):
         """
         if not valeur:
             return b''
-        if isinstance(valeur, bytes):
-            return valeur
         if isinstance(valeur, str):
-            return base64.b64decode(valeur)
-        # Odoo 20 : BinaryValue / BinaryValueAttachment (Buffer)
-        contenu = getattr(valeur, 'content', None)
-        if isinstance(contenu, bytes):
-            return contenu
-        try:
-            return bytes(valeur)  # BinaryValue.__bytes__ -> content
-        except Exception:
-            raise UserError(
-                _("Type de fichier inattendu (%r, attributs: %s) — "
-                  "contactez le support CONCORDE.")
-                % (type(valeur).__name__, sorted(dir(valeur))[:20]))
+            valeur = base64.b64decode(valeur)
+        elif not isinstance(valeur, bytes):
+            # Odoo 20 : BinaryValue / BinaryValueAttachment (Buffer)
+            contenu = getattr(valeur, 'content', None)
+            if isinstance(contenu, bytes):
+                valeur = contenu
+            else:
+                try:
+                    valeur = bytes(valeur)  # BinaryValue.__bytes__
+                except Exception:
+                    raise UserError(
+                        _("Type de fichier inattendu (%r, attributs: %s) — "
+                          "contactez le support CONCORDE.")
+                        % (type(valeur).__name__, sorted(dir(valeur))[:20]))
+        # Anti-double-encodage : certains montages rendent le fichier
+        # encode en base64 UNE FOIS DE TROP (observe sur Odoo 17 : le
+        # parser recevait '55 45 73 44 42 42 51 41' = ASCII 'UEsDBBQA',
+        # qui est la base64 de 'PK\x03\x04\x14\x00' — le debut du vrai
+        # .xlsx). Si le contenu commence par la base64 de l'en-tete zip,
+        # on deballe les couches superflues (max 3) pour rendre les
+        # octets reels du fichier. Un vrai fichier ne commence jamais
+        # par 'UEsDB' : ce prefixe est un marqueur de double encodage.
+        for _ in range(3):
+            if isinstance(valeur, bytes) and valeur[:5] == b'UEsDB':
+                valeur = base64.b64decode(valeur)
+            elif isinstance(valeur, str) and valeur[:5] == 'UEsDB':
+                valeur = base64.b64decode(valeur)
+            else:
+                break
+        return valeur
 
     def _b64_pour_stockage(self, valeur):
         """Valeur stockable dans un champ Binary (str base64), tous Odoo.

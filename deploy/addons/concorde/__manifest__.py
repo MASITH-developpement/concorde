@@ -1,7 +1,7 @@
 # CONCORDE v1.0 — (c) MASITH / Stéphane Moreau. Tous droits réservés.
 {
     'name': 'CONCORDE',
-    'version': '17.0.1.4.1',
+    'version': '17.0.1.4.2',
     'category': 'Accounting/Accounting',
     'summary': "Passerelle de liaison comptable universelle — import FEC Quadra vers Odoo 17",
     'description': """

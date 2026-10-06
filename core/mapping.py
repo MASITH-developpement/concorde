@@ -79,8 +79,29 @@ def lire_feuille_xlsx(brut, nom_fichier="", quoi="classeur"):
             "Fichier %s %r : %s" % (quoi, nom_fichier or "xlsx", message))
 
     if not isinstance(brut, (bytes, bytearray)) or not bytes(brut).startswith(b"PK"):
-        _err("contenu .xlsx invalide (archive zip attendue). "
-             "Re-exportez le fichier depuis Excel.")
+        # Diagnostic explicite : dire ce qui a été reçu, pas juste le refus.
+        # (Marceau : jamais muet — un .xlsx EST une archive zip ; un contenu
+        # non-zip signifie un .xls binaire, un CSV renommé ou un fichier
+        # corrompu/téléchargé incomplètement.)
+        tete = bytes(brut or b"")[:8]
+        if tete.startswith(b"\xd0\xcf\x11\xe0"):
+            cause = ("vieux format .xls (Excel 97-2003, signature OLE2) détecté — "
+                     "réexportez le fichier depuis Excel au format "
+                     "« Classeur Excel (*.xlsx) ».")
+        elif tete.startswith(b"PK"):
+            cause = ("archive zip invalide ou incomplète — retéléchargez/"
+                     "recopiez le fichier, il est tronqué.")
+        elif not tete:
+            cause = ("fichier vide (0 octet) — vérifiez le fichier joint.")
+        else:
+            extrait = "".join(chr(b) if 32 <= b < 127 else "." for b in tete)
+            cause = ("contenu non-xlsx détecté (premiers octets : %r = %s) — "
+                     "un .xlsx est une archive zip (PK). Il s'agit probablement "
+                     "d'un .xls binaire, d'un CSV renommé ou d'un autre "
+                     "fichier. Réexportez depuis Excel au format "
+                     "« Classeur Excel (*.xlsx) »."
+                     % (" ".join("%02x" % b for b in tete), extrait))
+        _err(cause)
     try:
         zf = zipfile.ZipFile(io.BytesIO(bytes(brut)))
     except Exception as exc:

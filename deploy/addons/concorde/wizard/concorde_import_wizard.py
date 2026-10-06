@@ -112,6 +112,39 @@ class ConcordeImportWizard(models.TransientModel):
             'mapping': mapping_cfg or self._config_mapping(),
         }
 
+    def _lire_binaire(self, valeur):
+        """Rend le contenu brut (bytes) d'un champ Binary, tous Odoo.
+
+        Odoo <= 19 : la lecture rend une chaîne base64 -> decoder.
+        Odoo >= 20 : la lecture rend directement les octets bruts -> utiliser
+        tels quels. (Preuve du bug : base64.b64decode(octets_bruts) avec
+        validate=False jette silencieusement les octets hors alphabet et
+        produit des déchets déterministes par fichier — c'est ce qui
+        donnait les « premiers octets 3c a4 83 16 » etc., alors que le
+        filestore contenait le fichier intact.) Jamais muet : une valeur
+        inattendue lève une erreur explicite.
+        """
+        if not valeur:
+            return b''
+        if isinstance(valeur, bytes):
+            return valeur
+        if isinstance(valeur, str):
+            return base64.b64decode(valeur)
+        raise UserError(
+            _("Type de fichier inattendu (%s) — contactez le support CONCORDE.")
+            % type(valeur).__name__)
+
+    def _b64_pour_stockage(self, valeur):
+        """Valeur stockable dans un champ Binary (str base64), tous Odoo.
+
+        Odoo <= 19 rend une str base64 (a renvoyer telle quelle) ; Odoo >= 20
+        rend des octets bruts (a re-encoder). Utilise pour re-stocker le
+        fichier dans les fiches concorde.import.
+        """
+        if isinstance(valeur, str) or valeur in (None, False):
+            return valeur
+        return base64.b64encode(bytes(valeur)).decode()
+
     def _config_mapping(self):
         """Mapping du pipeline : fichier uploadé (prioritaire) ou JSON embarqué.
 
@@ -120,7 +153,7 @@ class ConcordeImportWizard(models.TransientModel):
         de lecture est explicite (Marceau : jamais muet).
         """
         if self.mapping_file:
-            brut = base64.b64decode(self.mapping_file)
+            brut = self._lire_binaire(self.mapping_file)
             mapping = charger_mapping_xlsx(
                 brut, nom_fichier=self.mapping_filename or '')
             return {
@@ -316,14 +349,14 @@ class ConcordeImportWizard(models.TransientModel):
         """
         self.ensure_one()
         version = str(getattr(version_info, "major", 17))
-        brut = base64.b64decode(self.fec_file)
+        brut = self._lire_binaire(self.fec_file)
         mapping_cfg = None
         try:
             mapping_cfg = self._config_mapping()
             plan_comptes = None
             if self.plan_file:
                 plan_comptes = dictionnaire_plan(charger_plan_xlsx(
-                    base64.b64decode(self.plan_file),
+                    self._lire_binaire(self.plan_file),
                     nom_fichier=self.plan_filename or ''))
             if (self.fec_filename or '').lower().endswith(('.xlsx', '.xls')):
                 brut = xlsx_vers_fec(brut, nom_fichier=self.fec_filename)
@@ -335,7 +368,7 @@ class ConcordeImportWizard(models.TransientModel):
             record = self.env['concorde.import'].create({
                 'name': self.fec_filename or 'FEC',
                 'fec_filename': self.fec_filename,
-                'fec_file': self.fec_file,
+                'fec_file': self._b64_pour_stockage(self.fec_file),
                 'mapping_source': (mapping_cfg or {}).get('libelle', ''),
                 'plan_source': self.plan_filename or '',
                 'state': 'erreur',
@@ -364,14 +397,14 @@ class ConcordeImportWizard(models.TransientModel):
 
     def action_importer(self):
         self.ensure_one()
-        brut = base64.b64decode(self.fec_file)
+        brut = self._lire_binaire(self.fec_file)
         mapping_cfg = None
         try:
             mapping_cfg = self._config_mapping()
             # Plan comptable uploadé (optionnel) : comptes {code: (nom, type)}.
             plan_comptes = None
             if self.plan_file:
-                plan_brut = base64.b64decode(self.plan_file)
+                plan_brut = self._lire_binaire(self.plan_file)
                 plan_comptes = dictionnaire_plan(charger_plan_xlsx(
                     plan_brut, nom_fichier=self.plan_filename or ''))
             # Convertisseur Excel -> FEC : les exports d'ecritures .xlsx
@@ -398,7 +431,7 @@ class ConcordeImportWizard(models.TransientModel):
             record = self.env['concorde.import'].create({
                 'name': self.fec_filename or 'FEC',
                 'fec_filename': self.fec_filename,
-                'fec_file': self.fec_file,
+                'fec_file': self._b64_pour_stockage(self.fec_file),
                 'mapping_source': (mapping_cfg or {}).get('libelle', ''),
                 'plan_source': self.plan_filename or '',
                 'state': 'erreur',
@@ -486,7 +519,7 @@ class ConcordeImportWizard(models.TransientModel):
         record = self.env['concorde.import'].create({
             'name': self.fec_filename or 'FEC',
             'fec_filename': self.fec_filename,
-            'fec_file': self.fec_file,
+            'fec_file': self._b64_pour_stockage(self.fec_file),
             'journal_id': self.journal_id.id,
             'state': 'analyse_ok',
             'nb_lignes': stats.get('nb_lignes', 0),

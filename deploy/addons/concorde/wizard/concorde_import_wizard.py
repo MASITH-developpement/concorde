@@ -395,11 +395,35 @@ class ConcordeImportWizard(models.TransientModel):
             z.writestr('comptes_odoo%s.csv' % version, csv_comptes)
             z.writestr('ecritures_odoo%s.csv' % version, csv_ecritures)
         nom = 'concorde_export_odoo%s.zip' % version
-        attachment = self.env['ir.attachment'].create({
+        # Odoo 20 : 'datas' est IGNORE (ir_attachment._check_contents :
+        # "Use raw, datas has beeen removed" + values.pop('datas')) — il
+        # faut ecrire 'raw' (bytes : exception explicite du champ raw, les
+        # octets sont bruts). Odoo <= 19 : 'datas' en str base64 fonctionne.
+        majeur = getattr(version_info, 'major', 17) or 17
+        attachment_vals = {
             'name': nom,
-            'datas': base64.b64encode(buf.getvalue()),
             'mimetype': 'application/zip',
-        })
+        }
+        if majeur >= 20:
+            attachment_vals['raw'] = buf.getvalue()
+        else:
+            attachment_vals['datas'] = base64.b64encode(
+                buf.getvalue()).decode()
+        attachment = self.env['ir.attachment'].create(attachment_vals)
+        # Marceau : jamais muet — verifier que le zip reellement stocke
+        # n'est PAS vide (un export vide doit echouer explicitement, pas
+        # livrer un fichier de 0 octet).
+        taille_stockee = 0
+        try:
+            taille_stockee = attachment.raw.size if hasattr(
+                attachment.raw, 'size') else len(attachment.raw or b'')
+        except Exception:
+            taille_stockee = len(base64.b64decode(attachment.datas or ''))
+        if taille_stockee != len(buf.getvalue()):
+            raise UserError(
+                _("Export zip incomplet : %d octets stockés sur %d attendus "
+                  "— contactez le support CONCORDE.")
+                % (taille_stockee, len(buf.getvalue())))
         return {
             'type': 'ir.actions.act_url',
             'url': '/web/content/%s?download=true' % attachment.id,

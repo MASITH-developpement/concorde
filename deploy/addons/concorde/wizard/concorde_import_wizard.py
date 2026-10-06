@@ -30,9 +30,34 @@ from odoo.addons.concorde.engine.plan_comptable import (
 from odoo.addons.concorde.engine.xlsx_vers_fec import xlsx_vers_fec
 
 # Type de compte Odoo appliqué aux comptes créés depuis le plan uploadé
-# quand aucune colonne « Type » exploitable n'existe. Choix explicite et
-# tracé dans le rapport (Marceau : jamais muet, jamais deviné).
-TYPE_COMPTE_DEFAUT = "unaffected"
+# quand aucune colonne « Type » exploitable n'existe : type explicite déduit
+# de la classe du plan comptable français (règles ci-dessous, tracées dans
+# le rapport). Marceau : jamais muet, jamais deviné en silence.
+TYPES_PAR_CLASSE = {
+    "1": "equity",
+    "2": "asset_current",
+    "3": "asset_current",
+    "4": "liability_current",   # affiné ci-dessous : 40x/41x
+    "03": "asset_receivable",   # comptes de tiers Quadra (030/035 clients)
+    "5": "asset_cash",
+    "6": "expense",
+    "7": "income",
+    "8": "off_balance",
+    "9": "off_balance",
+}
+TYPE_COMPTE_DEFAUT = "equity_unaffected"
+
+
+def _type_compte_odoo(code):
+    """Type de compte Odoo valide déduit de la classe (1-9)."""
+    c = (code or "").strip()
+    if c.startswith("03"):
+        return "asset_receivable"
+    if c.startswith("40"):
+        return "liability_payable"
+    if c.startswith(("41", "416", "419")):
+        return "asset_receivable"
+    return TYPES_PAR_CLASSE.get(c[:1], TYPE_COMPTE_DEFAUT)
 
 def _chemin_engine():
     return os.path.join(
@@ -393,9 +418,9 @@ class ConcordeImportWizard(models.TransientModel):
             if typ:
                 vals['account_type'] = typ
             else:
-                # type non déterminé : type Odoo par défaut explicite,
-                # tracé dans le rapport.
-                vals['account_type'] = TYPE_COMPTE_DEFAUT
+                # type non déterminé dans le plan : type Odoo explicite
+                # déduit de la classe du compte, tracé dans le rapport.
+                vals['account_type'] = _type_compte_odoo(code)
                 sans_type.append(code)
             acct = Account.create(vals)
             par_code[code] = acct

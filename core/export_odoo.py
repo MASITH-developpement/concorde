@@ -173,6 +173,13 @@ def generer_csv_ecritures(lignes, version):
     lignes : itérable de LigneEcriture (déjà mappées). La première ligne
     de chaque écriture porte les colonnes parent (journal, date, ref),
     les suivantes uniquement les lignes d'écriture.
+
+    ROBUSTESSE INTER-VERSIONS : la colonne Journal contient le NOM du
+    journal (celui du journaux_odooXX.csv, cf. type_journal), PAS son
+    code. L'import natif Odoo (17 a 20) associe les champs relationnels
+    par NOM par defaut : avec le code ('52'), l'import echouait en
+    'No match found' sur toutes les versions. Le nom rend le mapping
+    automatique — aucune intervention manuelle n'est necessaire.
     """
     if version not in TYPES_PAR_VERSION:
         raise ErreurExport(
@@ -189,11 +196,12 @@ def generer_csv_ecritures(lignes, version):
                 "Journal Items/Debit", "Journal Items/Credit"])
     for (jcode, enum, date), lignes_e in ecritures.items():
         ref = "FEC %s-%s" % (jcode, enum)
+        jnom = type_journal(jcode)[0]
         premiere = True
         for l in lignes_e:
             if l.debit == 0 and l.credit == 0:
                 continue
-            parent = [jcode, date.strftime("%d/%m/%Y"), ref,
+            parent = [jnom, date.strftime("%d/%m/%Y"), ref,
                       (l.libelle or "CONCORDE")[:200]] if premiere else [""] * 4
             w.writerow(parent + [
                 l.compte, (l.libelle or "CONCORDE")[:200],

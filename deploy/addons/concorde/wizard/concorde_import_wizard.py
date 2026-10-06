@@ -33,6 +33,7 @@ from odoo.addons.concorde.engine.export_odoo import (
     TYPE_COMPTE_DEFAUT,
     generer_csv_comptes,
     generer_csv_ecritures,
+    generer_csv_journaux,
     type_compte,
 )
 from odoo.addons.concorde.engine.xlsx_vers_fec import xlsx_vers_fec
@@ -417,10 +418,32 @@ class ConcordeImportWizard(models.TransientModel):
         libelles = contexte.get('libelles_comptes', {})
         csv_comptes = generer_csv_comptes(canon.lignes, libelles, version)
         csv_ecritures = generer_csv_ecritures(canon.lignes, version)
+        csv_journaux = generer_csv_journaux(canon.lignes, version)
+        nb_ecritures = len({
+            (l.journal_code, l.ecriture_num, l.date_ecriture)
+            for l in canon.lignes})
+        lisezmoi = (
+            "CONCORDE — Export pour l'import natif Odoo %s\n"
+            "===============================================\n\n"
+            "Ordre d'import OBLIGATOIRE :\n"
+            "  1. journaux_odoo%s.csv  (Comptabilite > Configuration > "
+            "Journaux > importer)\n"
+            "  2. comptes_odoo%s.csv   (Comptabilite > Configuration > "
+            "Plan comptable > importer)\n"
+            "  3. ecritures_odoo%s.csv (liste des ecritures, menu "
+            "engrenage > importer ; activer le mode developpeur si "
+            "l'entree est absente)\n\n"
+            "Contenu : %d ecritures, %d lignes.\n"
+            "Le lettrage n'est pas transmettre par l'import natif "
+            "Odoo : les rapprochements se font dans Odoo ensuite.\n"
+            % (version, version, version, version, nb_ecritures,
+               len(canon.lignes))).encode('utf-8')
         buf = io.BytesIO()
         with zipfile.ZipFile(buf, 'w', zipfile.ZIP_DEFLATED) as z:
+            z.writestr('journaux_odoo%s.csv' % version, csv_journaux)
             z.writestr('comptes_odoo%s.csv' % version, csv_comptes)
             z.writestr('ecritures_odoo%s.csv' % version, csv_ecritures)
+            z.writestr('LISEZMOI.txt', lisezmoi)
         nom = 'concorde_export_odoo%s.zip' % version
         # Odoo 20 : 'datas' est IGNORE (ir_attachment._check_contents :
         # "Use raw, datas has beeen removed" + values.pop('datas')) — il

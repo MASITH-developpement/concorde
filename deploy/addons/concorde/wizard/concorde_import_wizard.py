@@ -38,6 +38,33 @@ from odoo.addons.concorde.engine.export_odoo import (
 from odoo.addons.concorde.engine.xlsx_vers_fec import xlsx_vers_fec
 from odoo.release import version_info
 
+
+def _version_majeure_odoo():
+    """Numéro de version majeure d'Odoo, robuste toutes versions.
+
+    Odoo <= 19 : version_info est un namedtuple -> .major et [0] marchent.
+    Odoo 20 : version_info est un simple TUPLE (odoo/release.py :
+    version_info = (20, 0, 0, FINAL, 0, '')) -> .major n'existe PAS et
+    getattr(..., 'major', 17) retombait TOUJOURS sur 17, meme sur une
+    instance 20 : mauvais nom de zip, CSV au format de la mauvaise
+    version et mauvais choix raw/datas. [0] marche pour les deux formes.
+    Jamais muet : echec explicite si la version est illisible.
+    """
+    try:
+        return int(version_info[0])
+    except (TypeError, ValueError, IndexError):
+        majeur = getattr(version_info, 'major', None)
+        if majeur is not None:
+            return int(majeur)
+        import re as _re
+        from odoo.release import version as _version_odoo
+        m = _re.match(r'(\d+)\.', _version_odoo or '')
+        if m:
+            return int(m.group(1))
+        raise UserError(
+            _("Version d'Odoo illisible (%r) — contactez le support CONCORDE.")
+            % (version_info,))
+
 def _chemin_engine():
     return os.path.join(
         os.path.dirname(os.path.dirname(os.path.abspath(__file__))), 'engine')
@@ -359,7 +386,7 @@ class ConcordeImportWizard(models.TransientModel):
         rapport d'erreur s'affiche en cas de problème de pipeline).
         """
         self.ensure_one()
-        version = str(getattr(version_info, "major", 17))
+        version = str(_version_majeure_odoo())
         brut = self._lire_binaire(self.fec_file)
         mapping_cfg = None
         try:
@@ -399,7 +426,7 @@ class ConcordeImportWizard(models.TransientModel):
         # "Use raw, datas has beeen removed" + values.pop('datas')) — il
         # faut ecrire 'raw' (bytes : exception explicite du champ raw, les
         # octets sont bruts). Odoo <= 19 : 'datas' en str base64 fonctionne.
-        majeur = getattr(version_info, 'major', 17) or 17
+        majeur = _version_majeure_odoo()
         attachment_vals = {
             'name': nom,
             'mimetype': 'application/zip',

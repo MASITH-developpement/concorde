@@ -14,7 +14,9 @@ Idempotence : une ecriture FEC deja importee (ref. FEC journal-ecriture)
 n'est jamais reimportee. Compte Odoo absent = blocage (aucun compte devine).
 """
 import base64
+import io
 import os
+import zipfile
 from collections import OrderedDict
 
 from odoo import _, api, fields, models
@@ -27,37 +29,14 @@ from odoo.addons.concorde.engine.plan_comptable import (
     charger_plan_xlsx,
     dictionnaire_plan,
 )
+from odoo.addons.concorde.engine.export_odoo import (
+    TYPE_COMPTE_DEFAUT,
+    generer_csv_comptes,
+    generer_csv_ecritures,
+    type_compte,
+)
 from odoo.addons.concorde.engine.xlsx_vers_fec import xlsx_vers_fec
-
-# Type de compte Odoo appliqué aux comptes créés depuis le plan uploadé
-# quand aucune colonne « Type » exploitable n'existe : type explicite déduit
-# de la classe du plan comptable français (règles ci-dessous, tracées dans
-# le rapport). Marceau : jamais muet, jamais deviné en silence.
-TYPES_PAR_CLASSE = {
-    "1": "equity",
-    "2": "asset_current",
-    "3": "asset_current",
-    "4": "liability_current",   # affiné ci-dessous : 40x/41x
-    "03": "asset_receivable",   # comptes de tiers Quadra (030/035 clients)
-    "5": "asset_cash",
-    "6": "expense",
-    "7": "income",
-    "8": "off_balance",
-    "9": "off_balance",
-}
-TYPE_COMPTE_DEFAUT = "equity_unaffected"
-
-
-def _type_compte_odoo(code):
-    """Type de compte Odoo valide déduit de la classe (1-9)."""
-    c = (code or "").strip()
-    if c.startswith("03"):
-        return "asset_receivable"
-    if c.startswith("40"):
-        return "liability_payable"
-    if c.startswith(("41", "416", "419")):
-        return "asset_receivable"
-    return TYPES_PAR_CLASSE.get(c[:1], TYPE_COMPTE_DEFAUT)
+from odoo.release import version_info
 
 def _chemin_engine():
     return os.path.join(
@@ -324,6 +303,65 @@ class ConcordeImportWizard(models.TransientModel):
                 'correspondances_auto': hors_plan,
                 'libelles': libelles}
 
+
+    def action_exporter(self):
+        """Exporte les écritures au format d'import standard d'Odoo.
+
+        Chaque instance CONCORDE exporte pour SA version d'Odoo (déduite
+        de odoo.release) : deux CSV (comptes puis écritures) que
+        l'assistant d'import natif d'Odoo ingère — utile pour Odoo Online
+        où aucun module ne peut être installé. Aucun compte ni écriture
+        n'est créé : l'export est un dry-run intégral (jamais muet, le
+        rapport d'erreur s'affiche en cas de problème de pipeline).
+        """
+        self.ensure_one()
+        version = str(getattr(version_info, "major", 17))
+        brut = base64.b64decode(self.fec_file)
+        mapping_cfg = None
+        try:
+            mapping_cfg = self._config_mapping()
+            plan_comptes = None
+            if self.plan_file:
+                plan_comptes = dictionnaire_plan(charger_plan_xlsx(
+                    base64.b64decode(self.plan_file),
+                    nom_fichier=self.plan_filename or ''))
+            if (self.fec_filename or '').lower().endswith(('.xlsx', '.xls')):
+                brut = xlsx_vers_fec(brut, nom_fichier=self.fec_filename)
+            mapping_cfg = self._completer_mapping(
+                brut, mapping_cfg, plan_comptes)
+            moteur = MoteurConcorde(config=self._config_moteur(mapping_cfg))
+            contexte = moteur.executer(brut)
+        except Exception as exc:
+            record = self.env['concorde.import'].create({
+                'name': self.fec_filename or 'FEC',
+                'fec_filename': self.fec_filename,
+                'fec_file': self.fec_file,
+                'mapping_source': (mapping_cfg or {}).get('libelle', ''),
+                'plan_source': self.plan_filename or '',
+                'state': 'erreur',
+                'rapport_html': self._html_erreur(exc),
+            })
+            return self._retour_fiche(record)
+        canon = contexte['resultats'][2]['resultat']['canon']
+        libelles = contexte.get('libelles_comptes', {})
+        csv_comptes = generer_csv_comptes(canon.lignes, libelles, version)
+        csv_ecritures = generer_csv_ecritures(canon.lignes, version)
+        buf = io.BytesIO()
+        with zipfile.ZipFile(buf, 'w', zipfile.ZIP_DEFLATED) as z:
+            z.writestr('comptes_odoo%s.csv' % version, csv_comptes)
+            z.writestr('ecritures_odoo%s.csv' % version, csv_ecritures)
+        nom = 'concorde_export_odoo%s.zip' % version
+        attachment = self.env['ir.attachment'].create({
+            'name': nom,
+            'datas': base64.b64encode(buf.getvalue()),
+            'mimetype': 'application/zip',
+        })
+        return {
+            'type': 'ir.actions.act_url',
+            'url': '/web/content/%s?download=true' % attachment.id,
+            'target': 'self',
+        }
+
     def action_importer(self):
         self.ensure_one()
         brut = base64.b64decode(self.fec_file)
@@ -420,7 +458,7 @@ class ConcordeImportWizard(models.TransientModel):
             else:
                 # type non déterminé dans le plan : type Odoo explicite
                 # déduit de la classe du compte, tracé dans le rapport.
-                vals['account_type'] = _type_compte_odoo(code)
+                vals['account_type'] = type_compte(code)
                 sans_type.append(code)
             acct = Account.create(vals)
             par_code[code] = acct

@@ -89,6 +89,9 @@
                 <footer>
                     <button string="Analyser et importer" name="action_importer"
                             type="object" class="btn-primary"/>
+                    <button string="Exporter (CSV import Odoo)" name="action_exporter"
+                            type="object" class="btn-secondary"
+                            help="Génère les fichiers d'import standard de cette version d'Odoo (comptes + écritures) — aucun compte ni écriture n'est créé"/>
                     <button string="Annuler" special="cancel" class="btn-secondary"/>
                 </footer>
             </form>

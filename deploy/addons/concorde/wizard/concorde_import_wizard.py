@@ -116,13 +116,15 @@ class ConcordeImportWizard(models.TransientModel):
         """Rend le contenu brut (bytes) d'un champ Binary, tous Odoo.
 
         Odoo <= 19 : la lecture rend une chaîne base64 -> decoder.
-        Odoo >= 20 : la lecture rend directement les octets bruts -> utiliser
-        tels quels. (Preuve du bug : base64.b64decode(octets_bruts) avec
-        validate=False jette silencieusement les octets hors alphabet et
-        produit des déchets déterministes par fichier — c'est ce qui
-        donnait les « premiers octets 3c a4 83 16 » etc., alors que le
-        filestore contenait le fichier intact.) Jamais muet : une valeur
-        inattendue lève une erreur explicite.
+        Odoo 20 : la lecture rend un BinaryValue (BinaryBytes ou
+        BinaryValueAttachment, cf. odoo/tools/binary.py et
+        odoo/orm/fields_binary.py) — un proxy paresseux dont .content
+        donne les octets et qui supporte bytes(). (Preuve du bug 20 :
+        base64.b64decode() sur la valeur avec validate=False jette
+        silencieusement les octets hors alphabet et produit des déchets
+        déterministes par fichier — les « 3c a4 83 16 » etc. — alors que
+        le filestore contenait les fichiers intacts.) Jamais muet : une
+        valeur inattendue lève une erreur explicite avec son type.
         """
         if not valeur:
             return b''
@@ -130,20 +132,29 @@ class ConcordeImportWizard(models.TransientModel):
             return valeur
         if isinstance(valeur, str):
             return base64.b64decode(valeur)
-        raise UserError(
-            _("Type de fichier inattendu (%s) — contactez le support CONCORDE.")
-            % type(valeur).__name__)
+        # Odoo 20 : BinaryValue / BinaryValueAttachment (Buffer)
+        contenu = getattr(valeur, 'content', None)
+        if isinstance(contenu, bytes):
+            return contenu
+        try:
+            return bytes(valeur)  # BinaryValue.__bytes__ -> content
+        except Exception:
+            raise UserError(
+                _("Type de fichier inattendu (%r, attributs: %s) — "
+                  "contactez le support CONCORDE.")
+                % (type(valeur).__name__, sorted(dir(valeur))[:20]))
 
     def _b64_pour_stockage(self, valeur):
         """Valeur stockable dans un champ Binary (str base64), tous Odoo.
 
-        Odoo <= 19 rend une str base64 (a renvoyer telle quelle) ; Odoo >= 20
-        rend des octets bruts (a re-encoder). Utilise pour re-stocker le
-        fichier dans les fiches concorde.import.
+        Odoo <= 19 rend une str base64 ; Odoo 20 rend un BinaryValue (proxy).
+        Dans tous les cas, on repart du contenu brut et on l'encode en
+        base64 — utilisable pour les create()/write() de Binary sur toutes
+        les versions.
         """
         if isinstance(valeur, str) or valeur in (None, False):
             return valeur
-        return base64.b64encode(bytes(valeur)).decode()
+        return base64.b64encode(self._lire_binaire(valeur)).decode()
 
     def _config_mapping(self):
         """Mapping du pipeline : fichier uploadé (prioritaire) ou JSON embarqué.

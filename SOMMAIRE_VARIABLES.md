@@ -11,6 +11,10 @@ Avant d'en créer une, vérifier (casse ignorée) qu'elle n'existe pas déjà.
 | `_couche_superflue` | `deploy/addons/concorde/wizard/concorde_import_wizard.py` | Compteur (non utilisé) des couches base64 en trop retirées par `_lire_binaire`, 3 au maximum |
 | `RACINE_DEPOT` | `tests/test_assistant_import.py` | Dossier racine du dépôt |
 | `DOSSIER_MODULE` | `tests/test_assistant_import.py` | Dossier du module Odoo `deploy/addons/concorde` |
+| `OCTETS_DEBUT_ZIP` | `tests/test_assistant_import.py` | En-tête d'un fichier zip (.xlsx), attendu après décodage |
+| `modeles_odoo` | `tests/test_assistant_import.py` | Espace `odoo.models` simulé |
+| `module_exceptions` | `tests/test_assistant_import.py` | Module `odoo.exceptions` simulé |
+| `contenu_lu` | `tests/test_assistant_import.py` | Octets rendus par `_lire_binaire` |
 | `TYPES_CHAMPS_ODOO` | `tests/test_assistant_import.py` | Types de champs Odoo simulés par `champ_bouchon` |
 | `ErreurUtilisateurBouchon` | `tests/test_assistant_import.py` | Remplace `odoo.exceptions.UserError` |
 | `champ_bouchon` | `tests/test_assistant_import.py` | Remplace un constructeur de champ Odoo |

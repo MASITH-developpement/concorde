@@ -16,6 +16,7 @@ import unittest
 
 RACINE_DEPOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 DOSSIER_MODULE = os.path.join(RACINE_DEPOT, "deploy", "addons", "concorde")
+OCTETS_DEBUT_ZIP = b"PK\x03\x04"
 TYPES_CHAMPS_ODOO = (
     "Binary",
     "Boolean",
@@ -76,8 +77,10 @@ def installer_bouchons_odoo():
     module_odoo.fields = types.SimpleNamespace(
         **{type_champ: champ_bouchon for type_champ in TYPES_CHAMPS_ODOO}
     )
-    module_odoo.models = types.SimpleNamespace(TransientModel=object, Model=object)
-    creer_module_bouchon("odoo.exceptions").UserError = ErreurUtilisateurBouchon
+    modeles_odoo = types.SimpleNamespace(TransientModel=object, Model=object)
+    module_odoo.models = modeles_odoo
+    module_exceptions = creer_module_bouchon("odoo.exceptions")
+    module_exceptions.UserError = ErreurUtilisateurBouchon
     creer_module_bouchon("odoo.tools").html_escape = html.escape
     module_release = creer_module_bouchon("odoo.release")
     module_release.version_info = (17, 0, 0, "final", 0, "")
@@ -125,11 +128,13 @@ class TestLireBinaire(unittest.TestCase):
 
     def test_base64_simple_decode(self):
         """Une chaîne base64 (Odoo <= 19) rend les octets du fichier."""
-        self.assertEqual(self.assistant._lire_binaire("UEsDBA=="), b"PK\x03\x04")
+        contenu_lu = self.assistant._lire_binaire("UEsDBA==")
+        self.assertEqual(contenu_lu, OCTETS_DEBUT_ZIP)
 
     def test_double_encodage_deballe(self):
         """Un contenu encodé deux fois en base64 rend les octets réels."""
-        self.assertEqual(self.assistant._lire_binaire("VUVzREJBPT0="), b"PK\x03\x04")
+        contenu_lu = self.assistant._lire_binaire("VUVzREJBPT0=")
+        self.assertEqual(contenu_lu, OCTETS_DEBUT_ZIP)
 
 
 if __name__ == "__main__":

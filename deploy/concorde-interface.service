@@ -1,7 +1,7 @@
 # CONCORDE — interface web (ADR-0002). Écoute sur 127.0.0.1:18090, Caddy fait le HTTPS.
 # Installation :
 #   sudo cp deploy/concorde-interface.service /etc/systemd/system/
-#   sudo python3 scripts/concorde_interface_mdp.py        # mot de passe
+#   sudo python3 -m scripts.concorde_interface_mdp        # mot de passe
 #   sudo systemctl daemon-reload && sudo systemctl enable --now concorde-interface
 [Unit]
 Description=CONCORDE - interface web
@@ -23,7 +23,7 @@ Environment=PGHOST=172.18.0.2
 Environment=CONCORDE_UI_PORT=18090
 Environment=CONCORDE_UI_DONNEES=/var/lib/concorde-interface
 Environment=PYTHONUNBUFFERED=1
-ExecStart=/usr/bin/python3 /opt/concorde/interface/serveur.py
+ExecStart=/usr/bin/python3 -m interface.serveur
 Restart=on-failure
 RestartSec=5
 StateDirectory=concorde-interface

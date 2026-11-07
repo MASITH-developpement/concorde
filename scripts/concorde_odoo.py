@@ -9,9 +9,9 @@ Deux sources de lecture, mêmes résultats (ADR-0001) :
                     Clé API : variable ODOO_API_KEY (jamais en argument).
 
 Exemples (depuis la racine du dépôt) :
-  python3 scripts/concorde_odoo.py --source sql --base testalbhade \\
+  python3 -m scripts.concorde_odoo --source sql --base testalbhade \\
       telecharger --format fec xlsx csv --du 2025-01-01 --au 2025-12-31 -o sorties/
-  python3 scripts/concorde_odoo.py --source xmlrpc --url https://client.odoo.com \\
+  python3 -m scripts.concorde_odoo --source xmlrpc --url https://client.odoo.com \\
       --base client --user compta@client.fr analyser --json analyse.json
 
 Codes retour : 0 = conforme / fait, 1 = erreur, 2 = anomalies relevées.
@@ -22,15 +22,13 @@ import os
 import sys
 from datetime import date
 
-sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
-
-from core.analyser import rendu_texte                                # noqa: E402
-from core.guardian import Guardian                                  # noqa: E402
-from core.odoo_source import (                                      # noqa: E402
+from core.analyser import rendu_texte
+from core.guardian import Guardian
+from core.odoo_source import (
     ErreurSource, SourceSqlOdoo17, SourceXmlRpcOdoo17)
-from core.passerelle import (                                       # noqa: E402
+from core.passerelle import (
     FORMATS, OBJETS, analyser_source, telecharger)
-from core.telecharger import ErreurFec                              # noqa: E402
+from core.telecharger import ErreurFec
 
 
 def _date(texte):

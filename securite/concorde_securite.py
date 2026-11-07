@@ -30,9 +30,7 @@ import sys
 import time
 from datetime import datetime
 
-RACINE = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
-sys.path.insert(0, RACINE)
-from core.analyser import Rapport                                   # noqa: E402
+from core.analyser import Rapport
 
 SORTIE = os.environ.get("CONCORDE_SECURITE_DOSSIER", "/var/lib/concorde-securite")
 CONFIG = os.environ.get("CONCORDE_SECURITE_CONFIG", "/etc/concorde/securite.json")

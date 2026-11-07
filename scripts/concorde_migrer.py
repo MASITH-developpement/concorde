@@ -6,7 +6,7 @@ Sans option : portes 1 à 5, rien n'est écrit dans une base.
 --tester : porte 6 en plus — envoi dans la base de TEST du serveur (CONCORDE_TEST_*),
            relecture et comparaison au centime. --reinitialiser-test la remet vierge avant.
 
-  python3 scripts/concorde_migrer.py FICHIER.fec -o lots/client_2025 \\
+  python3 -m scripts.concorde_migrer FICHIER.fec -o lots/client_2025 \\
       [--table table_comptes.xlsx | --comptes-identiques] [--filtres filtres.json] \\
       [--filtre '{"nom": "AN janvier", "journaux": ["AN"], "du": "2025-01-01", "au": "2025-01-31"}']
 
@@ -22,11 +22,9 @@ import json
 import os
 import sys
 
-sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
-
-from core.journal import Journal                                   # noqa: E402
-from core.migration.circuit import PORTES, executer                # noqa: E402
-from core.migration.correspondance import ErreurTable, charger_table  # noqa: E402
+from core.journal import Journal
+from core.migration.circuit import PORTES, executer
+from core.migration.correspondance import ErreurTable, charger_table
 
 COULEURS = {"etape": "\033[1m", "ok": "\033[32m", "alerte": "\033[33m", "erreur": "\033[31m",
             "detail": "\033[2m", "info": ""}

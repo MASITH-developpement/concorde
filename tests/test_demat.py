@@ -2,14 +2,10 @@
 # Tests du contrôle de dématérialisation (core/demat.py) sur une base Odoo simulée.
 import base64
 import fnmatch
-import os
-import sys
 import unittest
 from datetime import date
 
-sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
-
-from core.demat import (ALERTE, BLOQUANT, ControleDemat, centimes_odoo,   # noqa: E402
+from core.demat import (ALERTE, BLOQUANT, ControleDemat, centimes_odoo,
                         pdf_contient_xml, rendu_html, rendu_texte, siren_valide,
                         siret_valide, tva_fr_valide)
 

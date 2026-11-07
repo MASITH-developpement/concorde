@@ -5,7 +5,7 @@
 Écrit l'empreinte scrypt (jamais le mot de passe) dans le fichier
 d'environnement du service, puis il faut redémarrer le service :
 
-  sudo python3 scripts/concorde_interface_mdp.py            # saisie masquée
+  sudo python3 -m scripts.concorde_interface_mdp            # saisie masquée
   sudo systemctl restart concorde-interface
 
 Option --generer : tire un mot de passe aléatoire et l'affiche UNE fois.
@@ -16,9 +16,7 @@ import os
 import secrets
 import sys
 
-sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
-
-from interface.auth import hacher  # noqa: E402
+from interface.auth import hacher
 
 FICHIER = "/etc/concorde/interface.env"
 

@@ -6,7 +6,8 @@ After=docker.service
 [Service]
 Type=oneshot
 User=root
-ExecStart=/usr/bin/python3 /opt/concorde/securite/concorde_securite.py controle
+WorkingDirectory=/opt/concorde
+ExecStart=/usr/bin/python3 -m securite.concorde_securite controle
 # Code retour 2 = constat bloquant : ce n'est pas un échec du service.
 SuccessExitStatus=2
 Nice=10

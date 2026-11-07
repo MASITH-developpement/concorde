@@ -42,6 +42,9 @@ FEC (Quadra, ISO-8859-1) ─► importer_fec ─► verifier_equilibre ─► ma
 
 ## Utilisation
 
+Toutes les commandes se lancent depuis la racine du dépôt (`cd /opt/concorde`) :
+les scripts sont des modules (`python3 -m scripts.<nom>`).
+
 ```bash
 python3 -m unittest tests.test_moteur tests.test_demat tests.test_odoo_donnees tests.test_interface tests.test_surveillance tests.test_migration tests.test_bases_locales tests.test_injection tests.test_comparaison tests.test_rapport_jour   # tests complets
 python3 samples/generateur_fec_test.py fec_test.txt  # FEC synthétique type Quadra
@@ -84,7 +87,7 @@ Jamais muet : une analyse tronquée (plafond de factures) est signalée.
 
 ```bash
 export ODOO_API_KEY="..."     # jamais en argument (visible dans ps / l'historique)
-python3 scripts/check_dematerialisation.py --url https://mon-odoo.fr --db mabase \
+python3 -m scripts.check_dematerialisation --url https://mon-odoo.fr --db mabase \
     --user contact@masith.fr --days 30 [--json rapport.json] [--sans-pdf]
 # code retour : 0 conforme, 1 erreur de connexion, 2 anomalies
 ```
@@ -102,11 +105,11 @@ Commande `scripts/concorde_odoo.py` — ADR-0001. Deux sources de **lecture**, m
 
 ```bash
 # Télécharger : FEC DGFiP, classeur xlsx (une feuille par objet), CSV d'import Odoo
-python3 scripts/concorde_odoo.py --source sql --base testalbhade \
+python3 -m scripts.concorde_odoo --source sql --base testalbhade \
     telecharger --format fec xlsx csv --du 2025-01-01 --au 2025-12-31 -o sorties/
 
 # Analyser : équilibre au centime, dates futures, doublons, tiers sans SIREN/TVA…
-python3 scripts/concorde_odoo.py --source sql --base testalbhade analyser --json analyse.json
+python3 -m scripts.concorde_odoo --source sql --base testalbhade analyser --json analyse.json
 # code retour : 0 conforme, 1 erreur, 2 anomalies
 ```
 
@@ -122,7 +125,7 @@ python3 scripts/concorde_odoo.py --source sql --base testalbhade analyser --json
 
 ```bash
 # --table : table arbitrée par le comptable (ou --comptes-identiques, choix explicite)
-python3 scripts/concorde_migrer.py FEC_CLIENT.txt -o lots/client_2025 \
+python3 -m scripts.concorde_migrer FEC_CLIENT.txt -o lots/client_2025 \
     --table table_comptes.xlsx \
     --filtre '{"nom": "À-nouveaux janvier", "journaux": ["AN"], "du": "2025-01-01", "au": "2025-01-31"}' \
     --filtre '{"nom": "Lignes nulles", "portee": "lignes_nulles"}'
@@ -149,7 +152,7 @@ viennent ensuite.
 Écran **Comparer** de l'interface, ou :
 
 ```bash
-python3 scripts/concorde_comparer.py --a testalbhade --b testalbhade_cmp \
+python3 -m scripts.concorde_comparer --a testalbhade --b testalbhade_cmp \
     --du 2025-11-01 --au 2025-11-30 [--brouillons] [--date-copie 2026-10-14T18:01:57] -o dossier
 ```
 
@@ -162,7 +165,7 @@ Surveillance automatique toutes les 15 min (`CONCORDE_UI_SURVEILLANCE`) : anomal
 Un seul utilisateur. Service `concorde-interface` (127.0.0.1:18090, Caddy fait le HTTPS).
 
 ```bash
-sudo python3 scripts/concorde_interface_mdp.py     # changer le mot de passe (saisie masquée)
+sudo python3 -m scripts.concorde_interface_mdp     # changer le mot de passe (saisie masquée)
 sudo systemctl restart concorde-interface
 journalctl -u concorde-interface -f                # journal
 ```

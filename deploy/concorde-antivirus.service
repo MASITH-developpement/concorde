@@ -7,7 +7,8 @@ After=docker.service clamav-freshclam.service
 [Service]
 Type=oneshot
 User=root
-ExecStart=/usr/bin/python3 /opt/concorde/securite/concorde_securite.py antivirus
+WorkingDirectory=/opt/concorde
+ExecStart=/usr/bin/python3 -m securite.concorde_securite antivirus
 SuccessExitStatus=2
 Nice=19
 IOSchedulingClass=idle

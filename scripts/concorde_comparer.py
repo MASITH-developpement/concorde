@@ -2,7 +2,7 @@
 # CONCORDE — (c) MASITH / Stéphane Moreau. Tous droits réservés.
 """Vérifier, analyser et comparer deux bases Odoo 17 sur une période — lecture seule.
 
-  python3 scripts/concorde_comparer.py --a testalbhade --b testalbhade_cmp \\
+  python3 -m scripts.concorde_comparer --a testalbhade --b testalbhade_cmp \\
       --du 2025-11-01 --au 2025-11-30 [--brouillons] [--date-copie 2026-10-14T18:01:57] \\
       [-o dossier]
 
@@ -10,15 +10,12 @@ Bases du serveur en SQL (PGHOST, PGUSER, PGPASSWORD). Codes retour : 0 = identiq
 2 = différences ou anomalies, 1 = erreur.
 """
 import argparse
-import os
 import sys
 from datetime import date
 
-sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
-
-from core.comparaison import comparer_bases                        # noqa: E402
-from core.journal import Journal                                   # noqa: E402
-from core.odoo_source import SourceSqlOdoo17                       # noqa: E402
+from core.comparaison import comparer_bases
+from core.journal import Journal
+from core.odoo_source import SourceSqlOdoo17
 
 
 def afficher(ev):

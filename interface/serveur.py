@@ -48,24 +48,21 @@ from http.cookies import SimpleCookie
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from urllib.parse import parse_qs, urlparse
 
-RACINE = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
-if RACINE not in sys.path:
-    sys.path.insert(0, RACINE)
 
-from core import bases_locales                                       # noqa: E402
-from core import rapport_jour                                        # noqa: E402
-from core.comparaison import comparer_bases                          # noqa: E402
-from core.comptes import alertes_balance, grand_livre                 # noqa: E402
-from core.guardian import Guardian                                   # noqa: E402
-from core.journal import Journal, duree_texte, nombre_texte          # noqa: E402
-from core.marceau import Marceau                                     # noqa: E402
-from core.odoo_source import (                                       # noqa: E402
+from core import bases_locales
+from core import rapport_jour
+from core.comparaison import comparer_bases
+from core.comptes import alertes_balance, grand_livre
+from core.guardian import Guardian
+from core.journal import Journal, duree_texte, nombre_texte
+from core.marceau import Marceau
+from core.odoo_source import (
     ETATS, ErreurSource, SourceSqlOdoo17, SourceXmlRpcOdoo17)
-from core.passerelle import FORMATS, OBJETS, analyser_source, telecharger  # noqa: E402
-from core.surveillance import (                                      # noqa: E402
+from core.passerelle import FORMATS, OBJETS, analyser_source, telecharger
+from core.surveillance import (
     DOSSIER_SECURITE, CentreAlertes, comparer_instantanes, constats_securite,
     controles_techniques, depuis_24h)
-from interface.auth import Sessions, verifier                        # noqa: E402
+from interface.auth import Sessions, verifier
 
 STATIQUE = os.path.join(os.path.dirname(os.path.abspath(__file__)), "static")
 COOKIE = "concorde_session"

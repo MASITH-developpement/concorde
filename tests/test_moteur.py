@@ -1,10 +1,7 @@
 # CONCORDE v1.0 — (c) MASITH / Stéphane Moreau. Tous droits réservés.
 # Tests unitaires — tolérance Concordance 0,00 EUR.
 import os
-import sys
 import unittest
-
-sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 from core.canonical import Canonique, LigneEcriture, vers_centimes, ErreurMontant
 from core.fec_parser import parse_fec, ErreurFEC

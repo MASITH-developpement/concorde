@@ -9,21 +9,19 @@ validés explicitement contre la liste de la version. Le pipeline CONCORDE
 hors d'Odoo.
 
 Usage (depuis la racine du dépôt) :
-  python3 scripts/export_odoo_online.py ECRITURES.fec|ECRITURES.xlsx \
+  python3 -m scripts.export_odoo_online ECRITURES.fec|ECRITURES.xlsx \
       [-m mapping.xlsx] [-v 17|18|19|20] [-o dossier_sortie]
 """
 import argparse
 import os
 import sys
 
-sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
-
-from core.export_odoo import (                                # noqa: E402
+from core.export_odoo import (
     TYPES_PAR_VERSION, generer_csv_comptes, generer_csv_ecritures)
-from core.fec_parser import parse_fec                        # noqa: E402
-from core.mapping import charger_mapping, charger_mapping_xlsx  # noqa: E402
-from core.moteur import verifier_equilibre                   # noqa: E402
-from core.xlsx_vers_fec import xlsx_vers_fec                 # noqa: E402
+from core.fec_parser import parse_fec
+from core.mapping import charger_mapping, charger_mapping_xlsx
+from core.moteur import verifier_equilibre
+from core.xlsx_vers_fec import xlsx_vers_fec
 
 
 def lire_compte_libs(brut_fec, mapping):

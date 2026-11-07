@@ -8,7 +8,7 @@ CONCORDE > Contrôle dématérialisation dans Odoo.
 
 Utilisation (depuis la racine du dépôt) :
   export ODOO_API_KEY="votre-cle-api"        # jamais en argument de ligne de commande
-  python3 scripts/check_dematerialisation.py \\
+  python3 -m scripts.check_dematerialisation \\
       --url https://mon-odoo.example.com --db mabase \\
       --user contact@masith.fr --days 30 [--json rapport.json] [--sans-pdf]
 
@@ -19,9 +19,7 @@ import json
 import os
 import sys
 
-sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
-
-from core.demat import (                                      # noqa: E402
+from core.demat import (
     MAX_FACTURES_DEFAUT, MAX_PDF_INSPECTES_DEFAUT, ControleDemat, SourceXmlRpc,
     rendu_texte)
 

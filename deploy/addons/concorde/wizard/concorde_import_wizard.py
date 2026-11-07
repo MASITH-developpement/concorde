@@ -179,7 +179,7 @@ class ConcordeImportWizard(models.TransientModel):
         # on deballe les couches superflues (max 3) pour rendre les
         # octets reels du fichier. Un vrai fichier ne commence jamais
         # par 'UEsDB' : ce prefixe est un marqueur de double encodage.
-        for _ in range(3):
+        for _couche_superflue in range(3):
             if isinstance(valeur, bytes) and valeur[:5] == b'UEsDB':
                 valeur = base64.b64decode(valeur)
             elif isinstance(valeur, str) and valeur[:5] == 'UEsDB':

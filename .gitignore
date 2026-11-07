@@ -1,0 +1,6 @@
+# Secrets locaux (mots de passe PostgreSQL / Odoo) : jamais dans git.
+.env
+*.env
+# Fichiers générés par Python.
+__pycache__/
+*.pyc

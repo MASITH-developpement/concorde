@@ -5,6 +5,7 @@ Avant d'en créer une, vérifier (casse ignorée) qu'elle n'existe pas déjà.
 
 > Sommaire commencé le 07/11/2026 (version 1.4.10) : il ne liste que les variables
 > créées depuis. Les variables plus anciennes restent à y reporter.
+> `core/bases_locales.py` et `tests/test_bases_locales.py` arrivent avec la version 1.5.0.
 
 | Variable | Fichier | Rôle |
 |---|---|---|
@@ -32,3 +33,9 @@ Avant d'en créer une, vérifier (casse ignorée) qu'elle n'existe pas déjà.
 | `spec_assistant` | `tests/test_assistant_import.py` | Spécification d'import de l'assistant |
 | `module_assistant` | `tests/test_assistant_import.py` | Module de l'assistant chargé |
 | `erreur_levee` | `tests/test_assistant_import.py` | Erreur capturée par le test |
+| `_identifiant_sql` | `core/bases_locales.py` | Routine : vérifie un nom de base (`_NOM_VALIDE`) et le rend entre guillemets pour le SQL |
+| `nom_base` | `core/bases_locales.py` | Paramètre de `_identifiant_sql` : nom de base ou de modèle |
+| `nom_conforme` | `core/bases_locales.py` | Résultat de la vérification du nom dans `_identifiant_sql` |
+| `identifiant_modele` | `core/bases_locales.py` | Nom du modèle vierge vérifié, calculé avant toute suppression dans `reinitialiser` |
+| `connexion_espion` | `tests/test_bases_locales.py` | Fausse connexion qui enregistre le SQL exécuté |
+| `modeles_pieges` | `tests/test_bases_locales.py` | Modèle au nom piégé (guillemet + DROP) |

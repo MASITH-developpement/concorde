@@ -28,6 +28,7 @@ Lancement manuel :
 Lancement systemd (recommandé, voir INSTALL.md) :
     systemctl enable --now concorde-webhook
 """
+
 import hashlib
 import hmac
 import json
@@ -53,7 +54,9 @@ def signature_valable(corps: bytes, entete: str) -> bool:
     """Vérifie X-Hub-Signature-256 : 'sha256=<hmac_hex>'."""
     if not SECRET or not entete or not entete.startswith("sha256="):
         return False
-    attendu = hmac.new(SECRET.encode("utf-8"), corps, hashlib.sha256).hexdigest()
+    attendu = hmac.new(
+        SECRET.encode("utf-8"), corps, hashlib.sha256
+    ).hexdigest()
     return hmac.compare_digest(attendu, entete.split("=", 1)[1].strip())
 
 
@@ -67,7 +70,9 @@ def deployer() -> tuple:
         etapes.append(["docker", "image", "prune", "-f"])
     sortie = []
     for etape in etapes:
-        r = subprocess.run(etape, cwd=RACINE, capture_output=True, text=True, timeout=600)
+        r = subprocess.run(
+            etape, cwd=RACINE, capture_output=True, text=True, timeout=600
+        )
         sortie.append("$ %s\n%s%s" % (" ".join(etape), r.stdout, r.stderr))
         if r.returncode != 0:
             return False, "\n".join(sortie)
@@ -82,7 +87,9 @@ class Gestionnaire(BaseHTTPRequestHandler):
             return
         longueur = int(self.headers.get("Content-Length", "0"))
         corps = self.rfile.read(longueur)
-        if not signature_valable(corps, self.headers.get("X-Hub-Signature-256", "")):
+        if not signature_valable(
+            corps, self.headers.get("X-Hub-Signature-256", "")
+        ):
             journaliser("REFUS : signature HMAC invalide ou absente")
             self.send_response(403)
             self.end_headers()
@@ -95,13 +102,18 @@ class Gestionnaire(BaseHTTPRequestHandler):
             self.end_headers()
             return
         if payload.get("ref") not in (None, "refs/heads/main"):
-            journaliser("IGNORÉ : ref=%s (seule main déploie)" % payload.get("ref"))
+            journaliser(
+                "IGNORÉ : ref=%s (seule main déploie)" % payload.get("ref")
+            )
             self.send_response(200)
             self.end_headers()
             self.wfile.write(b"ignorer: hors main")
             return
         ok, sortie = deployer()
-        journaliser("PUSH main — déploiement %s\n%s" % ("OK" if ok else "ÉCHEC", sortie))
+        journaliser(
+            "PUSH main — déploiement %s\n%s"
+            % ("OK" if ok else "ÉCHEC", sortie)
+        )
         self.send_response(200 if ok else 500)
         self.end_headers()
         self.wfile.write(b"deploiement ok" if ok else b"deploiement echec")
@@ -118,11 +130,15 @@ class Gestionnaire(BaseHTTPRequestHandler):
 
 def main():
     if not SECRET:
-        print("ERREUR : CONCORDE_WEBHOOK_SECRET manquant. "
-              "Générez un secret (ex. `openssl rand -hex 32`) et exportez-le.")
+        print(
+            "ERREUR : CONCORDE_WEBHOOK_SECRET manquant. "
+            "Générez un secret (ex. `openssl rand -hex 32`) et exportez-le."
+        )
         sys.exit(1)
     journaliser("concorde-webhook démarré sur le port %d" % PORT)
-    print("concorde-webhook actif sur le port %d (racine: %s)" % (PORT, RACINE))
+    print(
+        "concorde-webhook actif sur le port %d (racine: %s)" % (PORT, RACINE)
+    )
     HTTPServer(("0.0.0.0", PORT), Gestionnaire).serve_forever()
 
 

@@ -13,6 +13,7 @@ Une ligne (dict) :
 
 Une écriture = (journal_code, ecriture) : c'est la clé partout dans le circuit.
 """
+
 from collections import OrderedDict
 
 from ..xlsx_ecrire import euros_texte
@@ -24,10 +25,12 @@ def cle_ecriture(l):
 
 class Lot:
     def __init__(self, source, lignes):
-        self.source = source            # {type, nom, empreinte, encodage, separateur, ...}
+        self.source = (
+            source  # {type, nom, empreinte, encodage, separateur, ...}
+        )
         self.lignes = lignes
-        self.retirees = []              # [(ligne, motif)] — porte 3 bis
-        self.illisibles = []            # [(n, texte, motif)] — porte 1
+        self.retirees = []  # [(ligne, motif)] — porte 3 bis
+        self.illisibles = []  # [(n, texte, motif)] — porte 1
 
     def ecritures(self):
         """OrderedDict clé -> [lignes], dans l'ordre du fichier."""
@@ -40,8 +43,12 @@ class Lot:
         lignes = self.lignes if lignes is None else lignes
         d = sum(l["debit"] for l in lignes)
         c = sum(l["credit"] for l in lignes)
-        return {"lignes": len(lignes), "ecritures": len({cle_ecriture(l) for l in lignes}),
-                "debit": d, "credit": c}
+        return {
+            "lignes": len(lignes),
+            "ecritures": len({cle_ecriture(l) for l in lignes}),
+            "debit": d,
+            "credit": c,
+        }
 
     def balance_par_compte(self, cible=False):
         """{compte: solde en centimes} — comptes source, ou cible après correspondance."""
@@ -54,4 +61,8 @@ class Lot:
 
 def totaux_texte(t):
     return "%s lignes, %s écritures, D %s / C %s" % (
-        t["lignes"], t["ecritures"], euros_texte(t["debit"], ","), euros_texte(t["credit"], ","))
+        t["lignes"],
+        t["ecritures"],
+        euros_texte(t["debit"], ","),
+        euros_texte(t["credit"], ","),
+    )

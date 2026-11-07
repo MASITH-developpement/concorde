@@ -1,0 +1,14 @@
+# Configuration des outils de qualité CONCORDE.
+# Règle : aucun assouplissement. Seuls les dossiers générés ou tiers sont exclus.
+
+[tool.black]
+line-length = 79  # = limite par défaut de flake8 (plus stricte que les 88 de black)
+extend-exclude = "deploy/(addons/concorde/engine|addons1[89]|addons20|addons/om_|addons/accounting_pdf_reports)"
+
+[tool.mypy]
+strict = true
+mypy_path = "stubs"
+exclude = ["deploy/addons/concorde/engine/", "deploy/addons1[89]/", "deploy/addons20/"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]

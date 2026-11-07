@@ -5,12 +5,21 @@ import fnmatch
 import unittest
 from datetime import date
 
-from core.demat import (ALERTE, BLOQUANT, ControleDemat, centimes_odoo,
-                        pdf_contient_xml, rendu_html, rendu_texte, siren_valide,
-                        siret_valide, tva_fr_valide)
+from core.demat import (
+    ALERTE,
+    BLOQUANT,
+    ControleDemat,
+    centimes_odoo,
+    pdf_contient_xml,
+    rendu_html,
+    rendu_texte,
+    siren_valide,
+    siret_valide,
+    tva_fr_valide,
+)
 
 AUJ = date(2026, 11, 2)
-SIREN_OK = "732829320"          # clé de Luhn valide
+SIREN_OK = "732829320"  # clé de Luhn valide
 TVA_OK = "FR44732829320"
 
 
@@ -29,12 +38,15 @@ def _cond(rec, cond):
     if op == "ilike":
         return str(val).lower() in str(v or "").lower()
     if op == "=ilike":
-        return fnmatch.fnmatch(str(v or "").lower(), str(val).lower().replace("%", "*"))
+        return fnmatch.fnmatch(
+            str(v or "").lower(), str(val).lower().replace("%", "*")
+        )
     raise AssertionError(op)
 
 
 def _eval(rec, domaine):
     """Évaluateur de domaine Odoo minimal (notation polonaise, '|' et ET implicite)."""
+
     def un(i):
         t = domaine[i]
         if t == "|":
@@ -42,6 +54,7 @@ def _eval(rec, domaine):
             b, i = un(i)
             return a or b, i
         return _cond(rec, t), i + 1
+
     i, ok = 0, True
     while i < len(domaine):
         r, i = un(i)
@@ -52,7 +65,9 @@ def _eval(rec, domaine):
 class SourceSimulee:
     """Fausse base Odoo : dict modele -> liste d'enregistrements."""
 
-    def __init__(self, donnees, modules=("account_edi_ubl_cii", "account_peppol")):
+    def __init__(
+        self, donnees, modules=("account_edi_ubl_cii", "account_peppol")
+    ):
         self.donnees = donnees
         self.modules = set(modules)
         self.appels = []
@@ -69,8 +84,10 @@ class SourceSimulee:
     def lire(self, modele, domaine, champs, offset=0, limit=None, ordre="id"):
         self.appels.append(modele)
         recs = [r for r in self.donnees.get(modele, []) if _eval(r, domaine)]
-        recs = recs[offset:offset + limit] if limit else recs[offset:]
-        return [{k: r.get(k, False) for k in list(champs) + ["id"]} for r in recs]
+        recs = recs[offset : offset + limit] if limit else recs[offset:]
+        return [
+            {k: r.get(k, False) for k in list(champs) + ["id"]} for r in recs
+        ]
 
     def modules_installes(self, noms):
         return self.modules & set(noms)
@@ -78,47 +95,119 @@ class SourceSimulee:
 
 def base(**surcharges):
     d = {
-        "res.company": [{"id": 1, "name": "MASITH", "country_code": "FR",
-                         "vat": TVA_OK, "company_registry": SIREN_OK}],
+        "res.company": [
+            {
+                "id": 1,
+                "name": "MASITH",
+                "country_code": "FR",
+                "vat": TVA_OK,
+                "company_registry": SIREN_OK,
+            }
+        ],
         "res.partner": [
-            {"id": 10, "name": "Client SA", "is_company": True, "country_code": "FR",
-             "vat": TVA_OK, "company_registry": SIREN_OK},
-            {"id": 11, "name": "Client sans SIREN", "is_company": True,
-             "country_code": "FR", "vat": "", "company_registry": ""},
-            {"id": 20, "name": "Fournisseur", "is_company": True, "country_code": "FR",
-             "vat": TVA_OK, "company_registry": SIREN_OK},
+            {
+                "id": 10,
+                "name": "Client SA",
+                "is_company": True,
+                "country_code": "FR",
+                "vat": TVA_OK,
+                "company_registry": SIREN_OK,
+            },
+            {
+                "id": 11,
+                "name": "Client sans SIREN",
+                "is_company": True,
+                "country_code": "FR",
+                "vat": "",
+                "company_registry": "",
+            },
+            {
+                "id": 20,
+                "name": "Fournisseur",
+                "is_company": True,
+                "country_code": "FR",
+                "vat": TVA_OK,
+                "company_registry": SIREN_OK,
+            },
         ],
         "account.move": [
-            {"id": 1, "name": "FAC/2026/001", "move_type": "out_invoice", "state": "posted",
-             "invoice_date": "2026-10-20", "amount_total": 120.0,
-             "commercial_partner_id": [10, "Client SA"], "ubl_cii_xml_id": [500, "x.xml"],
-             "peppol_move_state": "done", "is_move_sent": True},
-            {"id": 2, "name": "FAC/2026/002", "move_type": "out_invoice", "state": "posted",
-             "invoice_date": "2026-10-21", "amount_total": 60.0,
-             "commercial_partner_id": [10, "Client SA"], "ubl_cii_xml_id": False,
-             "invoice_pdf_report_id": [601, "FAC2.pdf"],
-             "peppol_move_state": "done", "is_move_sent": True},
-            {"id": 3, "name": "FACTU/2026/003", "move_type": "in_invoice", "state": "posted",
-             "ref": "F-1", "invoice_date": "2026-10-10", "create_date": "2026-10-10 10:00:00",
-             "amount_total": 50.0, "commercial_partner_id": [20, "Fournisseur"],
-             "ubl_cii_xml_id": False},
+            {
+                "id": 1,
+                "name": "FAC/2026/001",
+                "move_type": "out_invoice",
+                "state": "posted",
+                "invoice_date": "2026-10-20",
+                "amount_total": 120.0,
+                "commercial_partner_id": [10, "Client SA"],
+                "ubl_cii_xml_id": [500, "x.xml"],
+                "peppol_move_state": "done",
+                "is_move_sent": True,
+            },
+            {
+                "id": 2,
+                "name": "FAC/2026/002",
+                "move_type": "out_invoice",
+                "state": "posted",
+                "invoice_date": "2026-10-21",
+                "amount_total": 60.0,
+                "commercial_partner_id": [10, "Client SA"],
+                "ubl_cii_xml_id": False,
+                "invoice_pdf_report_id": [601, "FAC2.pdf"],
+                "peppol_move_state": "done",
+                "is_move_sent": True,
+            },
+            {
+                "id": 3,
+                "name": "FACTU/2026/003",
+                "move_type": "in_invoice",
+                "state": "posted",
+                "ref": "F-1",
+                "invoice_date": "2026-10-10",
+                "create_date": "2026-10-10 10:00:00",
+                "amount_total": 50.0,
+                "commercial_partner_id": [20, "Fournisseur"],
+                "ubl_cii_xml_id": False,
+            },
         ],
         "ir.attachment": [
-            {"id": 601, "res_model": "account.move", "res_id": 2, "name": "FAC2.pdf",
-             "mimetype": "application/pdf",
-             "datas": base64.b64encode(b"%PDF-1.7 ... /F (factur-x.xml) ...").decode()},
-            {"id": 602, "res_model": "account.move", "res_id": 3, "name": "facture.xml",
-             "mimetype": "application/xml", "datas": ""},
+            {
+                "id": 601,
+                "res_model": "account.move",
+                "res_id": 2,
+                "name": "FAC2.pdf",
+                "mimetype": "application/pdf",
+                "datas": base64.b64encode(
+                    b"%PDF-1.7 ... /F (factur-x.xml) ..."
+                ).decode(),
+            },
+            {
+                "id": 602,
+                "res_model": "account.move",
+                "res_id": 3,
+                "name": "facture.xml",
+                "mimetype": "application/xml",
+                "datas": "",
+            },
         ],
-        "account.edi.format": [{"id": 1, "name": "Factur-X", "code": "facturx_1_0_05"}],
+        "account.edi.format": [
+            {"id": 1, "name": "Factur-X", "code": "facturx_1_0_05"}
+        ],
     }
     d.update(surcharges)
     return d
 
 
 def lancer(donnees, **kw):
-    return ControleDemat(SourceSimulee(donnees, **kw.pop("src_kw", {})),
-                         jours=30, aujourd_hui=AUJ, **kw).executer().en_dict()
+    return (
+        ControleDemat(
+            SourceSimulee(donnees, **kw.pop("src_kw", {})),
+            jours=30,
+            aujourd_hui=AUJ,
+            **kw
+        )
+        .executer()
+        .en_dict()
+    )
 
 
 def codes(rapport):
@@ -129,7 +218,7 @@ class TestIdentifiants(unittest.TestCase):
     def test_siren_siret_tva(self):
         self.assertTrue(siren_valide(SIREN_OK))
         self.assertFalse(siren_valide("732829321"))
-        self.assertTrue(siren_valide("356000000"))       # La Poste
+        self.assertTrue(siren_valide("356000000"))  # La Poste
         self.assertTrue(siret_valide("73282932000074"))
         self.assertFalse(siret_valide("73282932000075"))
         self.assertTrue(tva_fr_valide(TVA_OK))
@@ -142,9 +231,13 @@ class TestIdentifiants(unittest.TestCase):
         self.assertEqual(centimes_odoo(False), 0)
 
     def test_pdf(self):
-        self.assertTrue(pdf_contient_xml(base64.b64encode(b"%PDF x Factur-X.xml")))
+        self.assertTrue(
+            pdf_contient_xml(base64.b64encode(b"%PDF x Factur-X.xml"))
+        )
         self.assertFalse(pdf_contient_xml(base64.b64encode(b"%PDF sans xml")))
-        self.assertFalse(pdf_contient_xml(base64.b64encode(b"pas un pdf factur-x.xml")))
+        self.assertFalse(
+            pdf_contient_xml(base64.b64encode(b"pas un pdf factur-x.xml"))
+        )
         self.assertFalse(pdf_contient_xml("@@@"))
 
 
@@ -153,13 +246,17 @@ class TestControle(unittest.TestCase):
         r = lancer(base())
         self.assertEqual(r["statut"], "conforme", r["anomalies"])
         self.assertEqual(r["infos"]["emission_total"], 2)
-        self.assertEqual(r["infos"]["emission_avec_xml"], 2)   # dont 1 via PDF Factur-X
+        self.assertEqual(
+            r["infos"]["emission_avec_xml"], 2
+        )  # dont 1 via PDF Factur-X
         self.assertEqual(r["infos"]["reception_avec_xml"], 1)
         self.assertEqual(r["infos"]["reception_taux_electronique"], "100 %")
         self.assertEqual(len(r["empreinte"]), 64)
 
     def test_empreinte_deterministe(self):
-        self.assertEqual(lancer(base())["empreinte"], lancer(base())["empreinte"])
+        self.assertEqual(
+            lancer(base())["empreinte"], lancer(base())["empreinte"]
+        )
 
     def test_sans_inspection_pdf(self):
         r = lancer(base(), inspecter_pdf=False)
@@ -173,8 +270,15 @@ class TestControle(unittest.TestCase):
 
     def test_societe_sans_siren_bloquant(self):
         d = base()
-        d["res.company"] = [{"id": 1, "name": "X", "country_code": "FR", "vat": "",
-                             "company_registry": ""}]
+        d["res.company"] = [
+            {
+                "id": 1,
+                "name": "X",
+                "country_code": "FR",
+                "vat": "",
+                "company_registry": "",
+            }
+        ]
         r = lancer(d)
         self.assertEqual(r["statut"], "non_conforme")
         self.assertEqual(codes(r)["societe_sans_siren"]["niveau"], BLOQUANT)
@@ -185,8 +289,10 @@ class TestControle(unittest.TestCase):
 
     def test_edi_et_peppol_en_erreur(self):
         d = base()
-        d["account.move"][0].update(edi_blocking_level="error",
-                                    edi_error_message="<p>XML <b>invalide</b></p>")
+        d["account.move"][0].update(
+            edi_blocking_level="error",
+            edi_error_message="<p>XML <b>invalide</b></p>",
+        )
         d["account.move"][1].update(peppol_move_state="error")
         c = codes(lancer(d))
         self.assertEqual(c["edi_erreur"]["niveau"], BLOQUANT)
@@ -195,14 +301,18 @@ class TestControle(unittest.TestCase):
 
     def test_client_b2b_sans_siren(self):
         d = base()
-        d["account.move"][0]["commercial_partner_id"] = [11, "Client sans SIREN"]
+        d["account.move"][0]["commercial_partner_id"] = [
+            11,
+            "Client sans SIREN",
+        ]
         c = codes(lancer(d))
         self.assertEqual(c["client_sans_siren"]["niveau"], ALERTE)
 
     def test_doublon_reception(self):
         d = base()
-        d["account.move"].append(dict(d["account.move"][2], id=4, name="FACTU/2026/004",
-                                      ref="f-1 "))
+        d["account.move"].append(
+            dict(d["account.move"][2], id=4, name="FACTU/2026/004", ref="f-1 ")
+        )
         c = codes(lancer(d))
         self.assertIn("doublon_probable", c)
 
@@ -214,9 +324,16 @@ class TestControle(unittest.TestCase):
 
     def test_brouillons_hors_emission(self):
         d = base()
-        d["account.move"].append({"id": 9, "name": "/", "move_type": "out_invoice",
-                                  "state": "draft", "invoice_date": "2026-10-25",
-                                  "commercial_partner_id": [11, "x"]})
+        d["account.move"].append(
+            {
+                "id": 9,
+                "name": "/",
+                "move_type": "out_invoice",
+                "state": "draft",
+                "invoice_date": "2026-10-25",
+                "commercial_partner_id": [11, "x"],
+            }
+        )
         r = lancer(d)
         self.assertEqual(r["infos"]["emission_total"], 2)
 

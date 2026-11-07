@@ -31,8 +31,11 @@ def _indente(ligne: str) -> int:
 
 def parse_yaml(texte: str):
     """Parse une chaîne YAML en structure Python (dict/listes imbriquées)."""
-    lignes = [l for l in texte.splitlines()
-              if l.strip() and not l.strip().startswith("#")]
+    lignes = [
+        l
+        for l in texte.splitlines()
+        if l.strip() and not l.strip().startswith("#")
+    ]
     if not lignes:
         return {}
 
@@ -40,9 +43,15 @@ def parse_yaml(texte: str):
         """Construit le sous-arbre démarrant à la ligne i, indentation minimale ind."""
         if lignes[i].lstrip().startswith("- "):
             resultat = []
-            while i < len(lignes) and _indente(lignes[i]) == ind and lignes[i].lstrip().startswith("- "):
+            while (
+                i < len(lignes)
+                and _indente(lignes[i]) == ind
+                and lignes[i].lstrip().startswith("- ")
+            ):
                 contenu = lignes[i].lstrip()[2:]
-                if ":" in contenu and not contenu.strip().startswith(("'", '"')):
+                if ":" in contenu and not contenu.strip().startswith(
+                    ("'", '"')
+                ):
                     # élément de liste-objet : "- cle: val"
                     obj = {}
                     cle, _, val = contenu.partition(":")
@@ -50,7 +59,11 @@ def parse_yaml(texte: str):
                     i += 1
                     # attributs suivants indentés sous le tiret
                     sous = ind + 2
-                    while i < len(lignes) and _indente(lignes[i]) >= sous and not lignes[i].lstrip().startswith("- "):
+                    while (
+                        i < len(lignes)
+                        and _indente(lignes[i]) >= sous
+                        and not lignes[i].lstrip().startswith("- ")
+                    ):
                         c, _, v = lignes[i].strip().partition(":")
                         obj[c.strip()] = _valeur(v) if v.strip() else ""
                         i += 1
@@ -75,7 +88,11 @@ def parse_yaml(texte: str):
                 if i < len(lignes) and _indente(lignes[i]) > ind:
                     sous, i = _bloc(i, _indente(lignes[i]))
                     resultat[cle] = sous
-                elif i < len(lignes) and _indente(lignes[i]) == ind and lignes[i].lstrip().startswith("- "):
+                elif (
+                    i < len(lignes)
+                    and _indente(lignes[i]) == ind
+                    and lignes[i].lstrip().startswith("- ")
+                ):
                     sous, i = _bloc(i, ind)
                     resultat[cle] = sous
                 else:

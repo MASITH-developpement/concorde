@@ -15,6 +15,7 @@ la casse/accents/séparateurs) :
              receivable/payable sinon non renseigné)
 Erreurs explicites à la moindre ambiguïté (Marceau : jamais muet).
 """
+
 from .mapping import (
     ErreurMapping,
     _compte_txt,
@@ -27,35 +28,82 @@ from xml.etree import ElementTree as ET
 NS_MAIN = "{http://schemas.openxmlformats.org/spreadsheetml/2006/main}"
 
 # en-têtes acceptés pour chaque rôle (déjà normalisés par _norm_entete)
-CLES_CODE = ("code", "numero", "compte", "accountcode", "codecompte",
-             "numerocompte", "ncompte", "comptenum", "num")
-CLES_INTITULE = ("intitule", "libelle", "nom", "name", "description",
-                 "accountname", "nomcompte", "intitulecompte", "libellecompte")
+CLES_CODE = (
+    "code",
+    "numero",
+    "compte",
+    "accountcode",
+    "codecompte",
+    "numerocompte",
+    "ncompte",
+    "comptenum",
+    "num",
+)
+CLES_INTITULE = (
+    "intitule",
+    "libelle",
+    "nom",
+    "name",
+    "description",
+    "accountname",
+    "nomcompte",
+    "intitulecompte",
+    "libellecompte",
+)
 CLES_TYPE = ("type", "typecompte", "accounttype", "account_type", "nature")
 
 # types Odoo account.account.account_type (17.0)
 TYPES_ACCOUNT = {
-    "receivable", "payable", "bank", "cash", "credit_card", "asset_current",
-    "asset_non_current", "asset_cash", "asset_fixed", "asset_receivable",
-    "liability_current", "liability_payable", "liability_non_current",
-    "equity", "equity_unallocated", "income", "income_other", "expense",
-    "expense_depreciation", "expense_direct_cost", "off_sheet",
+    "receivable",
+    "payable",
+    "bank",
+    "cash",
+    "credit_card",
+    "asset_current",
+    "asset_non_current",
+    "asset_cash",
+    "asset_fixed",
+    "asset_receivable",
+    "liability_current",
+    "liability_payable",
+    "liability_non_current",
+    "equity",
+    "equity_unallocated",
+    "income",
+    "income_other",
+    "expense",
+    "expense_depreciation",
+    "expense_direct_cost",
+    "off_sheet",
     "unaffected",
 }
 
 # libellés humains -> account_type Odoo
 CORRESP_TYPE = {
-    "client": "asset_receivable", "fournisseur": "liability_payable",
-    "receivable": "asset_receivable", "payable": "liability_payable",
-    "banque": "bank", "bank": "bank", "caisse": "cash", "cash": "cash",
-    "actif": "asset_current", "asset": "asset_current",
+    "client": "asset_receivable",
+    "fournisseur": "liability_payable",
+    "receivable": "asset_receivable",
+    "payable": "liability_payable",
+    "banque": "bank",
+    "bank": "bank",
+    "caisse": "cash",
+    "cash": "cash",
+    "actif": "asset_current",
+    "asset": "asset_current",
     "actifcirculant": "asset_current",
-    "immobilisation": "asset_fixed", "actifnoncirculant": "asset_fixed",
-    "passif": "liability_current", "liability": "liability_current",
+    "immobilisation": "asset_fixed",
+    "actifnoncirculant": "asset_fixed",
+    "passif": "liability_current",
+    "liability": "liability_current",
     "passifcirculant": "liability_current",
-    "capitauxpropres": "equity", "equity": "equity",
-    "produit": "income", "income": "income", "revenu": "income",
-    "charge": "expense", "expense": "expense", "depense": "expense",
+    "capitauxpropres": "equity",
+    "equity": "equity",
+    "produit": "income",
+    "income": "income",
+    "revenu": "income",
+    "charge": "expense",
+    "expense": "expense",
+    "depense": "expense",
     "nonaffecte": "unaffected",
 }
 
@@ -74,13 +122,16 @@ def charger_plan_xlsx(brut, nom_fichier=""):
               le wizard créera le compte sans type forcé, Odoo applique
               le type par défaut de la séquence).
     """
+
     def _err(message):
         raise ErreurPlanComptable(
             "Fichier du plan comptable %r : %s"
-            % (nom_fichier or "xlsx", message))
+            % (nom_fichier or "xlsx", message)
+        )
 
     feuille, racine, _valeur = lire_feuille_xlsx(
-        brut, nom_fichier, quoi="du plan comptable")
+        brut, nom_fichier, quoi="du plan comptable"
+    )
 
     def _valeurs_ligne(row):
         vals = {}
@@ -116,26 +167,34 @@ def charger_plan_xlsx(brut, nom_fichier=""):
             "en-tête introuvable — colonnes attendues : code du compte "
             "(« Code », « Numéro », « Compte »...) et intitulé "
             "(« Intitulé », « Libellé », « Nom »...). Envoyez un extrait "
-            "du fichier pour adapter la détection.")
+            "du fichier pour adapter la détection."
+        )
 
     # 2. lecture des comptes (strictement après la ligne d'en-tête)
     comptes = []
     vus = {}
-    for row in lignes[idx_entete + 1:]:
+    for row in lignes[idx_entete + 1 :]:
         vals = _valeurs_ligne(row)
         code = _compte_txt(vals.get(col_code, "") or "").strip()
         nom = str(vals.get(col_intitule, "") or "").strip()
-        type_txt = _compte_txt(vals.get(col_type, "") or "").strip() \
-            if col_type is not None else ""
+        type_txt = (
+            _compte_txt(vals.get(col_type, "") or "").strip()
+            if col_type is not None
+            else ""
+        )
         if not code:
             continue  # ligne vide / de présentation
         if not nom:
-            _err("compte %s sans intitulé — CONCORDE ne devine jamais "
-                 "un libellé de compte." % code)
+            _err(
+                "compte %s sans intitulé — CONCORDE ne devine jamais "
+                "un libellé de compte." % code
+            )
         typ = _resoudre_type(type_txt, code)
         if code in vus and vus[code] != (nom, typ):
-            _err("compte %s défini plusieurs fois avec des intitulés "
-                 "différents (%r / %r)." % (code, vus[code][0], nom))
+            _err(
+                "compte %s défini plusieurs fois avec des intitulés "
+                "différents (%r / %r)." % (code, vus[code][0], nom)
+            )
         vus[code] = (nom, typ)
         comptes.append({"code": code, "nom": nom, "type": typ})
     if not comptes:

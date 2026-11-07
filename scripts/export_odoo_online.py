@@ -12,12 +12,16 @@ Usage (depuis la racine du dépôt) :
   python3 -m scripts.export_odoo_online ECRITURES.fec|ECRITURES.xlsx \
       [-m mapping.xlsx] [-v 17|18|19|20] [-o dossier_sortie]
 """
+
 import argparse
 import os
 import sys
 
 from core.export_odoo import (
-    TYPES_PAR_VERSION, generer_csv_comptes, generer_csv_ecritures)
+    TYPES_PAR_VERSION,
+    generer_csv_comptes,
+    generer_csv_ecritures,
+)
 from core.fec_parser import parse_fec
 from core.mapping import charger_mapping, charger_mapping_xlsx
 from core.moteur import verifier_equilibre
@@ -54,15 +58,28 @@ def lire_compte_libs(brut_fec, mapping):
 def main():
     ap = argparse.ArgumentParser(
         description="Export CONCORDE vers fichiers d'import Odoo "
-                    "(17, 18, 19 ou 20)")
+        "(17, 18, 19 ou 20)"
+    )
     ap.add_argument("fichier", help="FEC (.fec/.txt) ou export (.xlsx)")
-    ap.add_argument("-m", "--mapping", default=None,
-                    help="Fichier de mapping (xlsx) ; sinon JSON embarqué")
-    ap.add_argument("-v", "--version", default="17",
-                    choices=sorted(TYPES_PAR_VERSION),
-                    help="Version d'Odoo cible (défaut : 17)")
-    ap.add_argument("-o", "--sortie", default=None,
-                    help="Dossier de sortie (défaut : export_odoo%s)")
+    ap.add_argument(
+        "-m",
+        "--mapping",
+        default=None,
+        help="Fichier de mapping (xlsx) ; sinon JSON embarqué",
+    )
+    ap.add_argument(
+        "-v",
+        "--version",
+        default="17",
+        choices=sorted(TYPES_PAR_VERSION),
+        help="Version d'Odoo cible (défaut : 17)",
+    )
+    ap.add_argument(
+        "-o",
+        "--sortie",
+        default=None,
+        help="Dossier de sortie (défaut : export_odoo%s)",
+    )
     args = ap.parse_args()
 
     sortie = args.sortie or ("export_odoo%s" % args.version)
@@ -73,19 +90,25 @@ def main():
     canon = parse_fec(brut)
     equi = verifier_equilibre(canon)
     if not equi["equilibre"]:
-        print("ERREUR : écritures non équilibrées (tolérance 0) — "
-              "débit %d / crédit %d (centimes), aucun export effectué."
-              % (equi["total_debit"], equi["total_credit"]))
+        print(
+            "ERREUR : écritures non équilibrées (tolérance 0) — "
+            "débit %d / crédit %d (centimes), aucun export effectué."
+            % (equi["total_debit"], equi["total_credit"])
+        )
         return 2
 
     if args.mapping:
         mapping = charger_mapping_xlsx(
             open(args.mapping, "rb").read(),
-            nom_fichier=os.path.basename(args.mapping))
+            nom_fichier=os.path.basename(args.mapping),
+        )
     else:
-        mapping = charger_mapping(os.path.join(
-            os.path.dirname(os.path.dirname(os.path.abspath(__file__))),
-            "mapping_quadra_odoo.json"))
+        mapping = charger_mapping(
+            os.path.join(
+                os.path.dirname(os.path.dirname(os.path.abspath(__file__))),
+                "mapping_quadra_odoo.json",
+            )
+        )
 
     # Correspondance identité pour les comptes absents du mapping (décision
     # client explicite) : compte Odoo de même code, créé depuis l'export.
@@ -110,17 +133,24 @@ def main():
     with open(p_ecr, "w", encoding="utf-8") as f:
         f.write(generer_csv_ecritures(canon.lignes, args.version))
 
-    nb_ecritures = len({(l.journal_code, l.ecriture_num, l.date_ecriture)
-                        for l in canon.lignes})
+    nb_ecritures = len(
+        {
+            (l.journal_code, l.ecriture_num, l.date_ecriture)
+            for l in canon.lignes
+        }
+    )
     nb_lignes = sum(1 for l in canon.lignes if l.debit or l.credit)
     print("Export Odoo %s : OK" % args.version)
     print("  Écritures : %d pièces, %d lignes" % (nb_ecritures, nb_lignes))
-    print("  Comptes   : %d (tous exportés — retirez ceux qui existent "
-          "déjà avant d'importer)"
-          % len({l.compte for l in canon.lignes}))
+    print(
+        "  Comptes   : %d (tous exportés — retirez ceux qui existent "
+        "déjà avant d'importer)" % len({l.compte for l in canon.lignes})
+    )
     if auto:
-        print("  Correspondances identité ajoutées (absents du mapping) : "
-              "%d : %s" % (len(auto), ", ".join(auto[:30])))
+        print(
+            "  Correspondances identité ajoutées (absents du mapping) : "
+            "%d : %s" % (len(auto), ", ".join(auto[:30]))
+        )
     print("  Fichiers  : %s" % p_comptes)
     print("             %s" % p_ecr)
     return 0

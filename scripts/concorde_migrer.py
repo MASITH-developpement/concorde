@@ -17,6 +17,7 @@ Filtres (JSON, une liste) — voir core/migration/filtres.py. Exemples :
 
 Codes retour : 0 = lot prêt (ou testé avec --tester), 2 = lot bloqué, 1 = erreur.
 """
+
 import argparse
 import json
 import os
@@ -26,8 +27,14 @@ from core.journal import Journal
 from core.migration.circuit import PORTES, executer
 from core.migration.correspondance import ErreurTable, charger_table
 
-COULEURS = {"etape": "\033[1m", "ok": "\033[32m", "alerte": "\033[33m", "erreur": "\033[31m",
-            "detail": "\033[2m", "info": ""}
+COULEURS = {
+    "etape": "\033[1m",
+    "ok": "\033[32m",
+    "alerte": "\033[33m",
+    "erreur": "\033[31m",
+    "detail": "\033[2m",
+    "info": "",
+}
 
 
 def afficher(ev):
@@ -37,20 +44,37 @@ def afficher(ev):
 
 
 def main(argv=None):
-    ap = argparse.ArgumentParser(description="CONCORDE — migration ERP -> Odoo, portes 1 à 5")
+    ap = argparse.ArgumentParser(
+        description="CONCORDE — migration ERP -> Odoo, portes 1 à 5"
+    )
     ap.add_argument("fichier", help="FEC de l'ERP source")
     ap.add_argument("-o", "--dossier", required=True, help="Dossier du lot")
     g = ap.add_mutually_exclusive_group()
-    g.add_argument("--table", help="Table de correspondance des comptes (xlsx, json, csv)")
-    g.add_argument("--comptes-identiques", action="store_true",
-                   help="Garder les numéros de comptes (choix explicite du comptable)")
+    g.add_argument(
+        "--table", help="Table de correspondance des comptes (xlsx, json, csv)"
+    )
+    g.add_argument(
+        "--comptes-identiques",
+        action="store_true",
+        help="Garder les numéros de comptes (choix explicite du comptable)",
+    )
     ap.add_argument("--filtres", help="Fichier JSON : liste de filtres")
-    ap.add_argument("--filtre", action="append", default=[],
-                    help="Un filtre en JSON (répétable)")
-    ap.add_argument("--tester", action="store_true",
-                    help="Porte 6 : envoyer dans la base de test du serveur et relire")
-    ap.add_argument("--reinitialiser-test", action="store_true",
-                    help="Remettre la base de test vierge avant l'envoi (sans sauvegarde)")
+    ap.add_argument(
+        "--filtre",
+        action="append",
+        default=[],
+        help="Un filtre en JSON (répétable)",
+    )
+    ap.add_argument(
+        "--tester",
+        action="store_true",
+        help="Porte 6 : envoyer dans la base de test du serveur et relire",
+    )
+    ap.add_argument(
+        "--reinitialiser-test",
+        action="store_true",
+        help="Remettre la base de test vierge avant l'envoi (sans sauvegarde)",
+    )
     args = ap.parse_args(argv)
 
     try:
@@ -72,11 +96,22 @@ def main(argv=None):
     journal = Journal(ecouteur=afficher)
     if args.reinitialiser_test:
         from core import bases_locales
+
         base = os.environ.get("CONCORDE_TEST_BASE", "")
         modeles = bases_locales.lister_modeles()
-        bases_locales.reinitialiser(base, base, [base], modeles, "", journal=journal)
-    r = executer(brut, os.path.basename(args.fichier), args.dossier, regles, table,
-                 args.comptes_identiques, journal=journal, tester=args.tester)
+        bases_locales.reinitialiser(
+            base, base, [base], modeles, "", journal=journal
+        )
+    r = executer(
+        brut,
+        os.path.basename(args.fichier),
+        args.dossier,
+        regles,
+        table,
+        args.comptes_identiques,
+        journal=journal,
+        tester=args.tester,
+    )
     print()
     for p in PORTES:
         print("  %-15s %s" % (p, r["portes"][p]["statut"].replace("_", " ")))

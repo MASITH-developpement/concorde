@@ -1,5 +1,6 @@
 # CONCORDE v1.0 — (c) MASITH / Stéphane Moreau. Tous droits réservés.
 """Tests de la porte 6 : envoi dans la base de test (faux Odoo) et relecture."""
+
 import os
 import unittest
 import xmlrpc.client
@@ -22,9 +23,15 @@ class FauxOdoo:
     """Odoo simulé : comptes, journaux, tiers, écritures, lettrage."""
 
     def __init__(self, refuser_compte=None):
-        self.donnees = {"account.account": [{"id": 1, "code": "512000", "reconcile": False}],
-                        "account.journal": [], "res.partner": [], "account.move": [],
-                        "account.move.line": []}
+        self.donnees = {
+            "account.account": [
+                {"id": 1, "code": "512000", "reconcile": False}
+            ],
+            "account.journal": [],
+            "res.partner": [],
+            "account.move": [],
+            "account.move.line": [],
+        }
         self.appels = []
         self.refuser_compte = refuser_compte
         self.seq = 100
@@ -63,7 +70,9 @@ class FauxOdoo:
                 if ml["id"] in args[0]:
                     ml["matching_number"] = "M%d" % args[0][0]
             # comme le vrai Odoo : la méthode ne renvoie rien -> erreur de transmission
-            raise xmlrpc.client.Fault(1, "TypeError: cannot marshal None unless allow_none")
+            raise xmlrpc.client.Fault(
+                1, "TypeError: cannot marshal None unless allow_none"
+            )
         raise AssertionError(methode)
 
     def _creer(self, modele, v):
@@ -71,12 +80,22 @@ class FauxOdoo:
         if modele == "account.move":
             for _, _, l in v["line_ids"]:
                 if l["account_id"] == self.refuser_compte:
-                    raise xmlrpc.client.Fault(2, "ValidationError: compte refusé")
-            self.donnees[modele].append({"id": i, "ref": v["ref"], "state": "draft"})
+                    raise xmlrpc.client.Fault(
+                        2, "ValidationError: compte refusé"
+                    )
+            self.donnees[modele].append(
+                {"id": i, "ref": v["ref"], "state": "draft"}
+            )
             for _, _, l in v["line_ids"]:
-                self.donnees["account.move.line"].append({
-                    "id": self._id(), "move_id": [i, v["ref"]], "debit": l["debit"],
-                    "credit": l["credit"], "matching_number": False})
+                self.donnees["account.move.line"].append(
+                    {
+                        "id": self._id(),
+                        "move_id": [i, v["ref"]],
+                        "debit": l["debit"],
+                        "credit": l["credit"],
+                        "matching_number": False,
+                    }
+                )
         else:
             self.donnees[modele].append(dict(v, id=i))
         return i
@@ -84,8 +103,14 @@ class FauxOdoo:
 
 def cible(odoo):
     os.environ["CONCORDE_TEST_BASE"] = "concorde_test"
-    return injection.CibleTest("http://127.0.0.1:8017", "concorde_test", "admin", "x",
-                               proxy_commun=FauxCommun(), proxy_objet=odoo)
+    return injection.CibleTest(
+        "http://127.0.0.1:8017",
+        "concorde_test",
+        "admin",
+        "x",
+        proxy_commun=FauxCommun(),
+        proxy_objet=odoo,
+    )
 
 
 def lot_pret():
@@ -98,10 +123,18 @@ class TestCible(unittest.TestCase):
     def test_seule_la_base_de_test(self):
         os.environ["CONCORDE_TEST_BASE"] = "concorde_test"
         with self.assertRaises(injection.ErreurInjection):
-            injection.CibleTest("http://127.0.0.1:8017", "alb_alpha", "a", "b",
-                                proxy_commun=FauxCommun(), proxy_objet=FauxOdoo())
+            injection.CibleTest(
+                "http://127.0.0.1:8017",
+                "alb_alpha",
+                "a",
+                "b",
+                proxy_commun=FauxCommun(),
+                proxy_objet=FauxOdoo(),
+            )
         with self.assertRaises(injection.ErreurInjection):
-            injection.CibleTest("https://client.odoo.com", "concorde_test", "a", "b")
+            injection.CibleTest(
+                "https://client.odoo.com", "concorde_test", "a", "b"
+            )
 
     def test_methodes_limitees(self):
         c = cible(FauxOdoo())
@@ -129,13 +162,23 @@ class TestEnvoi(unittest.TestCase):
         r = injection.envoyer(cible(odoo), lot_pret())
         self.assertEqual(r["erreurs"], [])
         self.assertEqual(r["creees"], 4)
-        self.assertEqual(len(r["preparation"]["comptes_crees"]), 6)    # 512000 existait
-        self.assertEqual(r["preparation"]["journaux_crees"], ["AN", "VE", "BQ", "OD"])
+        self.assertEqual(
+            len(r["preparation"]["comptes_crees"]), 6
+        )  # 512000 existait
+        self.assertEqual(
+            r["preparation"]["journaux_crees"], ["AN", "VE", "BQ", "OD"]
+        )
         self.assertEqual(r["preparation"]["tiers_crees"], 1)
-        self.assertTrue(all(m["state"] == "posted" for m in odoo.donnees["account.move"]))
-        debits = sorted(l["debit"] for l in odoo.donnees["account.move.line"] if l["debit"])
-        self.assertEqual(debits, [120.0, 120.0, 500.0, 1000.0])       # euros, pas centimes
-        self.assertEqual(r["lettrage"]["faites"], 1)                    # lettre A, vérifiée
+        self.assertTrue(
+            all(m["state"] == "posted" for m in odoo.donnees["account.move"])
+        )
+        debits = sorted(
+            l["debit"] for l in odoo.donnees["account.move.line"] if l["debit"]
+        )
+        self.assertEqual(
+            debits, [120.0, 120.0, 500.0, 1000.0]
+        )  # euros, pas centimes
+        self.assertEqual(r["lettrage"]["faites"], 1)  # lettre A, vérifiée
         refs = {m["ref"] for m in odoo.donnees["account.move"]}
         self.assertTrue(all(x.startswith("CONCORDE/") for x in refs))
 
@@ -186,6 +229,7 @@ class FausseConnexionRelecture:
 
             def fetchall(self):
                 return rangs
+
         return C()
 
 
@@ -194,9 +238,15 @@ class TestRelecture(unittest.TestCase):
         lid = injection.lot_id(lot)
         res = []
         for l in lot.lignes:
-            r = ["CONCORDE/%s/%s/%s" % (lid, l["journal_code"], l["ecriture"]), "posted",
-                 l["compte_cible"], l["tiers_ref"] or None, l["debit"] / 100, l["credit"] / 100,
-                 "A" if l["lettrage"] else None]
+            r = [
+                "CONCORDE/%s/%s/%s" % (lid, l["journal_code"], l["ecriture"]),
+                "posted",
+                l["compte_cible"],
+                l["tiers_ref"] or None,
+                l["debit"] / 100,
+                l["credit"] / 100,
+                "A" if l["lettrage"] else None,
+            ]
             res.append(r)
         if modifier:
             modifier(res)
@@ -211,12 +261,17 @@ class TestRelecture(unittest.TestCase):
         lot = lot_pret()
 
         def abimer(rs):
-            rs[0][4] = 999.99            # un montant
-            rs[1][1] = "draft"           # une écriture restée en brouillon
-            rs.pop()                     # une ligne perdue
-        r = injection.relire(lot, FausseConnexionRelecture(self.rangs(lot, abimer)))
+            rs[0][4] = 999.99  # un montant
+            rs[1][1] = "draft"  # une écriture restée en brouillon
+            rs.pop()  # une ligne perdue
+
+        r = injection.relire(
+            lot, FausseConnexionRelecture(self.rangs(lot, abimer))
+        )
         codes = {c["code"] for c in r.constats}
-        self.assertTrue({"TEST_ECART", "TEST_NON_VALIDEE", "TEST_ECART_COMPTE"} <= codes)
+        self.assertTrue(
+            {"TEST_ECART", "TEST_NON_VALIDEE", "TEST_ECART_COMPTE"} <= codes
+        )
 
 
 if __name__ == "__main__":

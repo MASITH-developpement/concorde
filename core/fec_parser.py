@@ -6,14 +6,22 @@
 - Préambule ignoré (jusqu'à 14 lignes) avant la ligne d'en-tête FEC
 - Refus strict des montants à plus de 2 décimales (pas d'arrondi silencieux)
 """
+
 from datetime import date
 
 from .canonical import Canonique, LigneEcriture, vers_centimes
 
 SEPARATEURS = ["\t", ";", "|"]
 MAX_PREAMBULE = 14
-CHAMPS_REQUIS = {"JournalCode", "EcritureNum", "EcritureDate",
-                 "CompteNum", "EcritureLib", "Debit", "Credit"}
+CHAMPS_REQUIS = {
+    "JournalCode",
+    "EcritureNum",
+    "EcritureDate",
+    "CompteNum",
+    "EcritureLib",
+    "Debit",
+    "Credit",
+}
 
 
 class ErreurFEC(ValueError):
@@ -49,10 +57,15 @@ def _trouver_entete(lignes):
     """Retourne (index_entete, liste_champs) en ignorant le préambule (<=14 lignes)."""
     for i, ligne in enumerate(lignes):
         if "JournalCode" in ligne and "EcritureNum" in ligne:
-            return i, [c.strip() for c in ligne.replace("\t", ";").replace("|", ";").split(";")]
+            return i, [
+                c.strip()
+                for c in ligne.replace("\t", ";").replace("|", ";").split(";")
+            ]
         if i >= MAX_PREAMBULE:
             break
-    raise ErreurFEC("Ligne d'en-tête FEC (JournalCode/EcritureNum) introuvable.")
+    raise ErreurFEC(
+        "Ligne d'en-tête FEC (JournalCode/EcritureNum) introuvable."
+    )
 
 
 def parse_fec(source) -> Canonique:
@@ -75,24 +88,28 @@ def parse_fec(source) -> Canonique:
     champs = [c.strip().strip('"') for c in lignes[idx].split(sep)]
     manquants = CHAMPS_REQUIS - set(champs)
     if manquants:
-        raise ErreurFEC("Champs FEC manquants : %s" % ", ".join(sorted(manquants)))
+        raise ErreurFEC(
+            "Champs FEC manquants : %s" % ", ".join(sorted(manquants))
+        )
 
     canon = Canonique()
     idxs = {c: champs.index(c) for c in champs}
-    for ligne in lignes[idx + 1:]:
+    for ligne in lignes[idx + 1 :]:
         vals = [v.strip().strip('"') for v in ligne.split(sep)]
         if len(vals) < len(champs):
             continue
         debit = vers_centimes(vals[idxs["Debit"]] or "0")
         credit = vers_centimes(vals[idxs["Credit"]] or "0")
-        canon.ajouter(LigneEcriture(
-            journal_code=vals[idxs["JournalCode"]],
-            ecriture_num=vals[idxs["EcritureNum"]],
-            date_ecriture=_parse_date(vals[idxs["EcritureDate"]]),
-            compte=vals[idxs["CompteNum"]],
-            libelle=vals[idxs["EcritureLib"]],
-            debit=debit,
-            credit=credit,
-            piece=vals[idxs["PieceRef"]] if "PieceRef" in idxs else "",
-        ))
+        canon.ajouter(
+            LigneEcriture(
+                journal_code=vals[idxs["JournalCode"]],
+                ecriture_num=vals[idxs["EcritureNum"]],
+                date_ecriture=_parse_date(vals[idxs["EcritureDate"]]),
+                compte=vals[idxs["CompteNum"]],
+                libelle=vals[idxs["EcritureLib"]],
+                debit=debit,
+                credit=credit,
+                piece=vals[idxs["PieceRef"]] if "PieceRef" in idxs else "",
+            )
+        )
     return canon

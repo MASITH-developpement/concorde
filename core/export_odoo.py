@@ -13,6 +13,7 @@ Valeurs account_type par version (documentation officielle Odoo) :
   expense_direct_cost, off_balance
 - 19/20 : identique + expense_other
 """
+
 import csv
 import io
 
@@ -20,36 +21,86 @@ from .canonical import LigneEcriture  # noqa: F401  (typage documentation)
 
 TYPES_PAR_VERSION = {
     "17": {
-        "asset_receivable", "asset_cash", "asset_current",
-        "asset_non_current", "asset_prepayments", "asset_fixed",
-        "liability_payable", "liability_credit_card", "liability_current",
-        "liability_non_current", "equity", "equity_unaffected", "income",
-        "income_other", "expense", "expense_depreciation",
-        "expense_direct_cost", "off_balance",
+        "asset_receivable",
+        "asset_cash",
+        "asset_current",
+        "asset_non_current",
+        "asset_prepayments",
+        "asset_fixed",
+        "liability_payable",
+        "liability_credit_card",
+        "liability_current",
+        "liability_non_current",
+        "equity",
+        "equity_unaffected",
+        "income",
+        "income_other",
+        "expense",
+        "expense_depreciation",
+        "expense_direct_cost",
+        "off_balance",
     },
     "18": {
-        "asset_receivable", "asset_cash", "asset_current",
-        "asset_non_current", "asset_prepayments", "asset_fixed",
-        "liability_payable", "liability_credit_card", "liability_current",
-        "liability_non_current", "equity", "equity_unaffected", "income",
-        "income_other", "expense", "expense_depreciation",
-        "expense_direct_cost", "off_balance",
+        "asset_receivable",
+        "asset_cash",
+        "asset_current",
+        "asset_non_current",
+        "asset_prepayments",
+        "asset_fixed",
+        "liability_payable",
+        "liability_credit_card",
+        "liability_current",
+        "liability_non_current",
+        "equity",
+        "equity_unaffected",
+        "income",
+        "income_other",
+        "expense",
+        "expense_depreciation",
+        "expense_direct_cost",
+        "off_balance",
     },
     "19": {
-        "asset_receivable", "asset_cash", "asset_current",
-        "asset_non_current", "asset_prepayments", "asset_fixed",
-        "liability_payable", "liability_credit_card", "liability_current",
-        "liability_non_current", "equity", "equity_unaffected", "income",
-        "income_other", "expense", "expense_other", "expense_depreciation",
-        "expense_direct_cost", "off_balance",
+        "asset_receivable",
+        "asset_cash",
+        "asset_current",
+        "asset_non_current",
+        "asset_prepayments",
+        "asset_fixed",
+        "liability_payable",
+        "liability_credit_card",
+        "liability_current",
+        "liability_non_current",
+        "equity",
+        "equity_unaffected",
+        "income",
+        "income_other",
+        "expense",
+        "expense_other",
+        "expense_depreciation",
+        "expense_direct_cost",
+        "off_balance",
     },
     "20": {
-        "asset_receivable", "asset_cash", "asset_current",
-        "asset_non_current", "asset_prepayments", "asset_fixed",
-        "liability_payable", "liability_credit_card", "liability_current",
-        "liability_non_current", "equity", "equity_unaffected", "income",
-        "income_other", "expense", "expense_other", "expense_depreciation",
-        "expense_direct_cost", "off_balance",
+        "asset_receivable",
+        "asset_cash",
+        "asset_current",
+        "asset_non_current",
+        "asset_prepayments",
+        "asset_fixed",
+        "liability_payable",
+        "liability_credit_card",
+        "liability_current",
+        "liability_non_current",
+        "equity",
+        "equity_unaffected",
+        "income",
+        "income_other",
+        "expense",
+        "expense_other",
+        "expense_depreciation",
+        "expense_direct_cost",
+        "off_balance",
     },
 }
 
@@ -59,8 +110,8 @@ TYPES_PAR_CLASSE = {
     "1": "equity",
     "2": "asset_current",
     "3": "asset_current",
-    "4": "liability_current",   # affiné ci-dessous : 40x/41x/03x
-    "03": "asset_receivable",   # comptes de tiers Quadra (030/035 clients)
+    "4": "liability_current",  # affiné ci-dessous : 40x/41x/03x
+    "03": "asset_receivable",  # comptes de tiers Quadra (030/035 clients)
     "5": "asset_cash",
     "6": "expense",
     "7": "income",
@@ -92,7 +143,8 @@ def _verifier_type(code, version):
         raise ErreurExport(
             "Version Odoo %s inconnue ou type %r non supporté par Odoo %s "
             "(compte %s) — CONCORDE ne devine jamais un type."
-            % (version, typ, version, code))
+            % (version, typ, version, code)
+        )
     return typ
 
 
@@ -106,7 +158,8 @@ def generer_csv_comptes(lignes, libelles, version):
     if version not in TYPES_PAR_VERSION:
         raise ErreurExport(
             "Version Odoo %r non supportée (attendues : %s)."
-            % (version, ", ".join(sorted(TYPES_PAR_VERSION))))
+            % (version, ", ".join(sorted(TYPES_PAR_VERSION)))
+        )
     comptes = sorted({l.compte for l in lignes})
     buf = io.StringIO()
     w = csv.writer(buf, lineterminator="\r\n")
@@ -156,7 +209,8 @@ def generer_csv_journaux(lignes, version):
     if version not in TYPES_PAR_VERSION:
         raise ErreurExport(
             "Version Odoo %r non supportée (attendues : %s)."
-            % (version, ", ".join(sorted(TYPES_PAR_VERSION))))
+            % (version, ", ".join(sorted(TYPES_PAR_VERSION)))
+        )
     codes = sorted({l.journal_code for l in lignes if l.journal_code})
     buf = io.StringIO()
     w = csv.writer(buf, lineterminator="\r\n")
@@ -184,16 +238,27 @@ def generer_csv_ecritures(lignes, version):
     if version not in TYPES_PAR_VERSION:
         raise ErreurExport(
             "Version Odoo %r non supportée (attendues : %s)."
-            % (version, ", ".join(sorted(TYPES_PAR_VERSION))))
+            % (version, ", ".join(sorted(TYPES_PAR_VERSION)))
+        )
     ecritures = {}
     for l in lignes:
         ecritures.setdefault(
-            (l.journal_code, l.ecriture_num, l.date_ecriture), []).append(l)
+            (l.journal_code, l.ecriture_num, l.date_ecriture), []
+        ).append(l)
     buf = io.StringIO()
     w = csv.writer(buf, lineterminator="\r\n")
-    w.writerow(["Journal", "Date", "Reference", "Journal Entry",
-                "Journal Items/Account Number", "Journal Items/Label",
-                "Journal Items/Debit", "Journal Items/Credit"])
+    w.writerow(
+        [
+            "Journal",
+            "Date",
+            "Reference",
+            "Journal Entry",
+            "Journal Items/Account Number",
+            "Journal Items/Label",
+            "Journal Items/Debit",
+            "Journal Items/Credit",
+        ]
+    )
     for (jcode, enum, date), lignes_e in ecritures.items():
         ref = "FEC %s-%s" % (jcode, enum)
         jnom = type_journal(jcode)[0]
@@ -201,11 +266,24 @@ def generer_csv_ecritures(lignes, version):
         for l in lignes_e:
             if l.debit == 0 and l.credit == 0:
                 continue
-            parent = [jnom, date.strftime("%d/%m/%Y"), ref,
-                      (l.libelle or "CONCORDE")[:200]] if premiere else [""] * 4
-            w.writerow(parent + [
-                l.compte, (l.libelle or "CONCORDE")[:200],
-                "%.2f" % (l.debit / 100.0),
-                "%.2f" % (l.credit / 100.0)])
+            parent = (
+                [
+                    jnom,
+                    date.strftime("%d/%m/%Y"),
+                    ref,
+                    (l.libelle or "CONCORDE")[:200],
+                ]
+                if premiere
+                else [""] * 4
+            )
+            w.writerow(
+                parent
+                + [
+                    l.compte,
+                    (l.libelle or "CONCORDE")[:200],
+                    "%.2f" % (l.debit / 100.0),
+                    "%.2f" % (l.credit / 100.0),
+                ]
+            )
             premiere = False
     return "\ufeff" + buf.getvalue()

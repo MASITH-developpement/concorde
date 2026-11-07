@@ -12,6 +12,7 @@ Règles :
   « Odoo Acct »).
 - Tolérance Concordance inchangée : le mapping ne touche jamais aux montants.
 """
+
 import io
 import json
 import re
@@ -25,7 +26,9 @@ class ErreurMapping(RuntimeError):
 
 
 NS_MAIN = "{http://schemas.openxmlformats.org/spreadsheetml/2006/main}"
-NS_REL = "{http://schemas.openxmlformats.org/officeDocument/2006/relationships}"
+NS_REL = (
+    "{http://schemas.openxmlformats.org/officeDocument/2006/relationships}"
+)
 
 
 def _norm_entete(texte):
@@ -40,20 +43,30 @@ def _norm_entete(texte):
 
 def charger_mapping(source):
     """Charge un mapping depuis un chemin JSON, une chaîne JSON, un dict ou une liste de tuples."""
-    if isinstance(source, str) and (source.lstrip().startswith("[") or source.lstrip().startswith("{")):
+    if isinstance(source, str) and (
+        source.lstrip().startswith("[") or source.lstrip().startswith("{")
+    ):
         rows = json.loads(source)
-        return {str(r["quadra"]).strip(): str(r["odoo"]).strip() for r in rows
-                if r.get("quadra") and r.get("odoo")}
+        return {
+            str(r["quadra"]).strip(): str(r["odoo"]).strip()
+            for r in rows
+            if r.get("quadra") and r.get("odoo")
+        }
     if isinstance(source, str):
         with open(source, "r", encoding="utf-8") as f:
             rows = json.load(f)
-        return {str(r["quadra"]).strip(): str(r["odoo"]).strip() for r in rows
-                if r.get("quadra") and r.get("odoo")}
+        return {
+            str(r["quadra"]).strip(): str(r["odoo"]).strip()
+            for r in rows
+            if r.get("quadra") and r.get("odoo")
+        }
     if isinstance(source, dict):
         return dict(source)
     if isinstance(source, (list, tuple)):
         return {str(q).strip(): str(o).strip() for q, o in source}
-    raise ErreurMapping("Source de mapping non supportée (JSON, chemin, dict, tuples).")
+    raise ErreurMapping(
+        "Source de mapping non supportée (JSON, chemin, dict, tuples)."
+    )
 
 
 def _index_colonne(lettres):
@@ -74,33 +87,43 @@ def lire_feuille_xlsx(brut, nom_fichier="", quoi="classeur"):
     Lecteur stdlib partagé par le mapping et le plan comptable. Erreurs
     explicites (Marceau : jamais muet).
     """
+
     def _err(message):
         raise ErreurMapping(
-            "Fichier %s %r : %s" % (quoi, nom_fichier or "xlsx", message))
+            "Fichier %s %r : %s" % (quoi, nom_fichier or "xlsx", message)
+        )
 
-    if not isinstance(brut, (bytes, bytearray)) or not bytes(brut).startswith(b"PK"):
+    if not isinstance(brut, (bytes, bytearray)) or not bytes(brut).startswith(
+        b"PK"
+    ):
         # Diagnostic explicite : dire ce qui a été reçu, pas juste le refus.
         # (Marceau : jamais muet — un .xlsx EST une archive zip ; un contenu
         # non-zip signifie un .xls binaire, un CSV renommé ou un fichier
         # corrompu/téléchargé incomplètement.)
         tete = bytes(brut or b"")[:8]
         if tete.startswith(b"\xd0\xcf\x11\xe0"):
-            cause = ("vieux format .xls (Excel 97-2003, signature OLE2) détecté — "
-                     "réexportez le fichier depuis Excel au format "
-                     "« Classeur Excel (*.xlsx) ».")
+            cause = (
+                "vieux format .xls (Excel 97-2003, signature OLE2) détecté — "
+                "réexportez le fichier depuis Excel au format "
+                "« Classeur Excel (*.xlsx) »."
+            )
         elif tete.startswith(b"PK"):
-            cause = ("archive zip invalide ou incomplète — retéléchargez/"
-                     "recopiez le fichier, il est tronqué.")
+            cause = (
+                "archive zip invalide ou incomplète — retéléchargez/"
+                "recopiez le fichier, il est tronqué."
+            )
         elif not tete:
-            cause = ("fichier vide (0 octet) — vérifiez le fichier joint.")
+            cause = "fichier vide (0 octet) — vérifiez le fichier joint."
         else:
             extrait = "".join(chr(b) if 32 <= b < 127 else "." for b in tete)
-            cause = ("contenu non-xlsx détecté (premiers octets : %r = %s) — "
-                     "un .xlsx est une archive zip (PK). Il s'agit probablement "
-                     "d'un .xls binaire, d'un CSV renommé ou d'un autre "
-                     "fichier. Réexportez depuis Excel au format "
-                     "« Classeur Excel (*.xlsx) »."
-                     % (" ".join("%02x" % b for b in tete), extrait))
+            cause = (
+                "contenu non-xlsx détecté (premiers octets : %r = %s) — "
+                "un .xlsx est une archive zip (PK). Il s'agit probablement "
+                "d'un .xls binaire, d'un CSV renommé ou d'un autre "
+                "fichier. Réexportez depuis Excel au format "
+                "« Classeur Excel (*.xlsx) »."
+                % (" ".join("%02x" % b for b in tete), extrait)
+            )
         _err(cause)
     try:
         zf = zipfile.ZipFile(io.BytesIO(bytes(brut)))
@@ -116,7 +139,10 @@ def lire_feuille_xlsx(brut, nom_fichier="", quoi="classeur"):
         sst = []
 
     feuille = None
-    if "xl/workbook.xml" in zf.namelist() and "xl/_rels/workbook.xml.rels" in zf.namelist():
+    if (
+        "xl/workbook.xml" in zf.namelist()
+        and "xl/_rels/workbook.xml.rels" in zf.namelist()
+    ):
         wb = ET.fromstring(zf.read("xl/workbook.xml"))
         rels = ET.fromstring(zf.read("xl/_rels/workbook.xml.rels"))
         cibles = {r.get("Id"): r.get("Target") for r in rels}
@@ -124,13 +150,18 @@ def lire_feuille_xlsx(brut, nom_fichier="", quoi="classeur"):
             cible = cibles.get(sheet.get(NS_REL + "id"))
             if not cible:
                 continue
-            nom = cible if cible.startswith("xl/") else "xl/" + cible.lstrip("/")
+            nom = (
+                cible if cible.startswith("xl/") else "xl/" + cible.lstrip("/")
+            )
             if nom in zf.namelist():
                 feuille = nom
                 break
     if feuille is None:
-        cand = sorted(n for n in zf.namelist()
-                      if re.match(r"xl/worksheets/sheet\d+\.xml$", n))
+        cand = sorted(
+            n
+            for n in zf.namelist()
+            if re.match(r"xl/worksheets/sheet\d+\.xml$", n)
+        )
         if not cand:
             _err("aucune feuille de calcul trouvée.")
         feuille = cand[0]
@@ -189,12 +220,15 @@ def charger_mapping_xlsx(brut, nom_fichier=""):
     « Mapping Quadra Odoo » du client. Erreurs explicites sinon (Marceau :
     jamais muet, aucun compte deviné).
     """
+
     def _err(message):
         raise ErreurMapping(
-            "Fichier de mapping %r : %s" % (nom_fichier or "xlsx", message))
+            "Fichier de mapping %r : %s" % (nom_fichier or "xlsx", message)
+        )
 
     feuille, racine, _valeur = lire_feuille_xlsx(
-        brut, nom_fichier, quoi="de mapping")
+        brut, nom_fichier, quoi="de mapping"
+    )
 
     def _valeurs_ligne(row):
         vals = {}
@@ -218,21 +252,26 @@ def charger_mapping_xlsx(brut, nom_fichier=""):
         for texte, col in entetes.items():
             if texte == "numero" and col_quadra is None:
                 col_quadra = col
-            if texte.startswith("odoo") and ("acct" in texte or "compte" in texte) \
-                    and col_odoo is None:
+            if (
+                texte.startswith("odoo")
+                and ("acct" in texte or "compte" in texte)
+                and col_odoo is None
+            ):
                 col_odoo = col
         if col_quadra is not None and col_odoo is not None:
             idx_entete = idx
             break
     if col_quadra is None or col_odoo is None:
-        _err("en-tête introuvable — colonnes attendues « Numéro » (compte "
-             "Quadra) et « Odoo Acct » (compte Odoo). Vérifiez que le fichier "
-             "est bien l'export « Mapping Quadra Odoo ».")
+        _err(
+            "en-tête introuvable — colonnes attendues « Numéro » (compte "
+            "Quadra) et « Odoo Acct » (compte Odoo). Vérifiez que le fichier "
+            "est bien l'export « Mapping Quadra Odoo »."
+        )
 
     # 2. lecture des correspondances (strictement après la ligne d'en-tête)
     mapping = {}
     doublons = {}
-    for row in lignes[idx_entete + 1:]:
+    for row in lignes[idx_entete + 1 :]:
         vals = _valeurs_ligne(row)
         q = _compte_txt(vals.get(col_quadra, "") or "")
         o = _compte_txt(vals.get(col_odoo, "") or "")
@@ -245,8 +284,10 @@ def charger_mapping_xlsx(brut, nom_fichier=""):
         else:
             mapping[q] = o
     if doublons:
-        detail = ", ".join("%s->%s" % (q, "/".join(sorted(s)))
-                           for q, s in sorted(doublons.items()))
+        detail = ", ".join(
+            "%s->%s" % (q, "/".join(sorted(s)))
+            for q, s in sorted(doublons.items())
+        )
         _err("comptes Quadra avec cibles Odoo contradictoires : %s" % detail)
     if not mapping:
         _err("aucune correspondance trouvée sous l'en-tête.")
@@ -256,12 +297,16 @@ def charger_mapping_xlsx(brut, nom_fichier=""):
 def mapper_comptes(donnees, mapping=None):
     """Étape pipeline : mappe les comptes Quadra vers Odoo sur toutes les lignes."""
     if mapping is None:
-        raise ErreurMapping("Aucun mapping fourni (fichier Mapping Quadra Odoo requis).")
+        raise ErreurMapping(
+            "Aucun mapping fourni (fichier Mapping Quadra Odoo requis)."
+        )
     if isinstance(mapping, (str, list, tuple)):
         mapping = charger_mapping(mapping)
 
     if isinstance(donnees, dict):
-        canon = donnees.get("canon") or donnees.get("resultat", {}).get("canon")
+        canon = donnees.get("canon") or donnees.get("resultat", {}).get(
+            "canon"
+        )
     else:
         canon = donnees
     if canon is None:
@@ -275,8 +320,16 @@ def mapper_comptes(donnees, mapping=None):
         else:
             l.compte = cible
     if inconnus:
-        detail = ", ".join("%s (x%s)" % (c, n) for c, n in sorted(inconnus.items()))
+        detail = ", ".join(
+            "%s (x%s)" % (c, n) for c, n in sorted(inconnus.items())
+        )
         raise ErreurMapping(
-            "Comptes Quadra absents du mapping Odoo — aucun compte deviné : %s" % detail)
-    return {"nb_lignes": len(canon), "nb_mappees": len(canon),
-            "inconnus": 0, "canon": canon}
+            "Comptes Quadra absents du mapping Odoo — aucun compte deviné : %s"
+            % detail
+        )
+    return {
+        "nb_lignes": len(canon),
+        "nb_mappees": len(canon),
+        "inconnus": 0,
+        "canon": canon,
+    }

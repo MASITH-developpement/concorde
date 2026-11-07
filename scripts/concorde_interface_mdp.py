@@ -10,6 +10,7 @@ d'environnement du service, puis il faut redémarrer le service :
 
 Option --generer : tire un mot de passe aléatoire et l'affiche UNE fois.
 """
+
 import argparse
 import getpass
 import os
@@ -24,7 +25,9 @@ FICHIER = "/etc/concorde/interface.env"
 def main():
     ap = argparse.ArgumentParser(description=__doc__.splitlines()[0])
     ap.add_argument("--fichier", default=FICHIER)
-    ap.add_argument("--generer", action="store_true", help="Mot de passe aléatoire")
+    ap.add_argument(
+        "--generer", action="store_true", help="Mot de passe aléatoire"
+    )
     args = ap.parse_args()
     if args.generer:
         mdp = secrets.token_urlsafe(15)

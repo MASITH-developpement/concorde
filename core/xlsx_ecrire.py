@@ -11,6 +11,7 @@ Valeurs acceptées dans une cellule :
   date           date Excel (numéro de série), format JJ/MM/AAAA
   None / ""      cellule vide
 """
+
 import zipfile
 from datetime import date, datetime
 from xml.sax.saxutils import escape
@@ -57,8 +58,10 @@ def _cellule(ref, v):
         v = v.date()
     if isinstance(v, date):
         return '<c r="%s" s="1"><v>%d</v></c>' % (ref, (v - _EPOQUE).days)
-    return '<c r="%s" t="inlineStr"><is><t xml:space="preserve">%s</t></is></c>' % (
-        ref, escape(_nettoyer(str(v))))
+    return (
+        '<c r="%s" t="inlineStr"><is><t xml:space="preserve">%s</t></is></c>'
+        % (ref, escape(_nettoyer(str(v))))
+    )
 
 
 _STYLES = """<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
@@ -92,66 +95,96 @@ def ecrire_xlsx(chemin, feuilles):
             nom = nom[:31]
             noms.append(nom)
             with z.open("xl/worksheets/sheet%d.xml" % i, "w") as f:
-                f.write(b'<?xml version="1.0" encoding="UTF-8" standalone="yes"?>'
-                        b'<worksheet xmlns="http://schemas.openxmlformats.org/'
-                        b'spreadsheetml/2006/main"><sheetViews><sheetView workbookViewId="0">'
-                        b'<pane ySplit="1" topLeftCell="A2" activePane="bottomLeft" '
-                        b'state="frozen"/></sheetView></sheetViews><sheetData>')
+                f.write(
+                    b'<?xml version="1.0" encoding="UTF-8" standalone="yes"?>'
+                    b'<worksheet xmlns="http://schemas.openxmlformats.org/'
+                    b'spreadsheetml/2006/main"><sheetViews><sheetView workbookViewId="0">'
+                    b'<pane ySplit="1" topLeftCell="A2" activePane="bottomLeft" '
+                    b'state="frozen"/></sheetView></sheetViews><sheetData>'
+                )
                 entete = "".join(
                     '<c r="%s1" s="3" t="inlineStr"><is><t>%s</t></is></c>'
-                    % (_col(j), escape(h)) for j, h in enumerate(entetes))
+                    % (_col(j), escape(h))
+                    for j, h in enumerate(entetes)
+                )
                 f.write(('<row r="1">%s</row>' % entete).encode("utf-8"))
                 n = 0
                 for n, ligne in enumerate(lignes, 1):
                     r = n + 1
-                    cellules = "".join(_cellule("%s%d" % (_col(j), r), v)
-                                       for j, v in enumerate(ligne))
-                    f.write(('<row r="%d">%s</row>' % (r, cellules)).encode("utf-8"))
+                    cellules = "".join(
+                        _cellule("%s%d" % (_col(j), r), v)
+                        for j, v in enumerate(ligne)
+                    )
+                    f.write(
+                        ('<row r="%d">%s</row>' % (r, cellules)).encode(
+                            "utf-8"
+                        )
+                    )
                 comptes[nom] = n
-                filtre = ('<autoFilter ref="A1:%s%d"/>' % (_col(len(entetes) - 1), n + 1)
-                          if entetes else "")
-                f.write(("</sheetData>%s</worksheet>" % filtre).encode("utf-8"))
-        z.writestr("[Content_Types].xml",
-                   '<?xml version="1.0" encoding="UTF-8" standalone="yes"?>'
-                   '<Types xmlns="http://schemas.openxmlformats.org/package/2006/content-types">'
-                   '<Default Extension="rels" ContentType="application/'
-                   'vnd.openxmlformats-package.relationships+xml"/>'
-                   '<Default Extension="xml" ContentType="application/xml"/>'
-                   '<Override PartName="/xl/workbook.xml" ContentType="application/'
-                   'vnd.openxmlformats-officedocument.spreadsheetml.sheet.main+xml"/>'
-                   '<Override PartName="/xl/styles.xml" ContentType="application/'
-                   'vnd.openxmlformats-officedocument.spreadsheetml.styles+xml"/>'
-                   + "".join('<Override PartName="/xl/worksheets/sheet%d.xml" '
-                             'ContentType="application/vnd.openxmlformats-officedocument.'
-                             'spreadsheetml.worksheet+xml"/>' % i
-                             for i in range(1, len(noms) + 1))
-                   + "</Types>")
-        z.writestr("_rels/.rels",
-                   '<?xml version="1.0" encoding="UTF-8" standalone="yes"?>'
-                   '<Relationships xmlns="http://schemas.openxmlformats.org/package/2006/'
-                   'relationships"><Relationship Id="rId1" Type="http://schemas.'
-                   'openxmlformats.org/officeDocument/2006/relationships/officeDocument" '
-                   'Target="xl/workbook.xml"/></Relationships>')
-        z.writestr("xl/workbook.xml",
-                   '<?xml version="1.0" encoding="UTF-8" standalone="yes"?>'
-                   '<workbook xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/'
-                   'main" xmlns:r="http://schemas.openxmlformats.org/officeDocument/2006/'
-                   'relationships"><sheets>'
-                   + "".join('<sheet name="%s" sheetId="%d" r:id="rId%d"/>'
-                             % (escape(n, {'"': "&quot;"}), i, i)
-                             for i, n in enumerate(noms, 1))
-                   + "</sheets></workbook>")
-        z.writestr("xl/_rels/workbook.xml.rels",
-                   '<?xml version="1.0" encoding="UTF-8" standalone="yes"?>'
-                   '<Relationships xmlns="http://schemas.openxmlformats.org/package/2006/'
-                   'relationships">'
-                   + "".join('<Relationship Id="rId%d" Type="http://schemas.openxmlformats.'
-                             'org/officeDocument/2006/relationships/worksheet" '
-                             'Target="worksheets/sheet%d.xml"/>' % (i, i)
-                             for i in range(1, len(noms) + 1))
-                   + '<Relationship Id="rId%d" Type="http://schemas.openxmlformats.org/'
-                     'officeDocument/2006/relationships/styles" Target="styles.xml"/>'
-                     % (len(noms) + 1)
-                   + "</Relationships>")
+                filtre = (
+                    '<autoFilter ref="A1:%s%d"/>'
+                    % (_col(len(entetes) - 1), n + 1)
+                    if entetes
+                    else ""
+                )
+                f.write(
+                    ("</sheetData>%s</worksheet>" % filtre).encode("utf-8")
+                )
+        z.writestr(
+            "[Content_Types].xml",
+            '<?xml version="1.0" encoding="UTF-8" standalone="yes"?>'
+            '<Types xmlns="http://schemas.openxmlformats.org/package/2006/content-types">'
+            '<Default Extension="rels" ContentType="application/'
+            'vnd.openxmlformats-package.relationships+xml"/>'
+            '<Default Extension="xml" ContentType="application/xml"/>'
+            '<Override PartName="/xl/workbook.xml" ContentType="application/'
+            'vnd.openxmlformats-officedocument.spreadsheetml.sheet.main+xml"/>'
+            '<Override PartName="/xl/styles.xml" ContentType="application/'
+            'vnd.openxmlformats-officedocument.spreadsheetml.styles+xml"/>'
+            + "".join(
+                '<Override PartName="/xl/worksheets/sheet%d.xml" '
+                'ContentType="application/vnd.openxmlformats-officedocument.'
+                'spreadsheetml.worksheet+xml"/>' % i
+                for i in range(1, len(noms) + 1)
+            )
+            + "</Types>",
+        )
+        z.writestr(
+            "_rels/.rels",
+            '<?xml version="1.0" encoding="UTF-8" standalone="yes"?>'
+            '<Relationships xmlns="http://schemas.openxmlformats.org/package/2006/'
+            'relationships"><Relationship Id="rId1" Type="http://schemas.'
+            'openxmlformats.org/officeDocument/2006/relationships/officeDocument" '
+            'Target="xl/workbook.xml"/></Relationships>',
+        )
+        z.writestr(
+            "xl/workbook.xml",
+            '<?xml version="1.0" encoding="UTF-8" standalone="yes"?>'
+            '<workbook xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/'
+            'main" xmlns:r="http://schemas.openxmlformats.org/officeDocument/2006/'
+            'relationships"><sheets>'
+            + "".join(
+                '<sheet name="%s" sheetId="%d" r:id="rId%d"/>'
+                % (escape(n, {'"': "&quot;"}), i, i)
+                for i, n in enumerate(noms, 1)
+            )
+            + "</sheets></workbook>",
+        )
+        z.writestr(
+            "xl/_rels/workbook.xml.rels",
+            '<?xml version="1.0" encoding="UTF-8" standalone="yes"?>'
+            '<Relationships xmlns="http://schemas.openxmlformats.org/package/2006/'
+            'relationships">'
+            + "".join(
+                '<Relationship Id="rId%d" Type="http://schemas.openxmlformats.'
+                'org/officeDocument/2006/relationships/worksheet" '
+                'Target="worksheets/sheet%d.xml"/>' % (i, i)
+                for i in range(1, len(noms) + 1)
+            )
+            + '<Relationship Id="rId%d" Type="http://schemas.openxmlformats.org/'
+            'officeDocument/2006/relationships/styles" Target="styles.xml"/>'
+            % (len(noms) + 1)
+            + "</Relationships>",
+        )
         z.writestr("xl/styles.xml", _STYLES)
     return comptes

@@ -29,6 +29,7 @@ Un filtre (dict, ou ligne YAML/JSON) — tous les critères donnés doivent êtr
 Garanties : chaque retrait est compté et chiffré au centime ; totaux après = totaux
 avant − retraits, vérifié ; les lignes retirées sont gardées (fichier à part).
 """
+
 from datetime import date
 
 from ..canonical import vers_centimes
@@ -37,9 +38,28 @@ from ..xlsx_ecrire import euros_texte
 from .lot import cle_ecriture
 
 PORTEES = ("ecritures", "lignes", "lignes_nulles")
-OPERATEURS = ("commence_par", "contient", "egal", "different", "vide", "non_vide")
-CRITERES = ("journaux", "comptes", "sauf_comptes", "analytique", "tiers", "libelle",
-            "piece", "montant_min", "montant_max", "du", "au", "conditions")
+OPERATEURS = (
+    "commence_par",
+    "contient",
+    "egal",
+    "different",
+    "vide",
+    "non_vide",
+)
+CRITERES = (
+    "journaux",
+    "comptes",
+    "sauf_comptes",
+    "analytique",
+    "tiers",
+    "libelle",
+    "piece",
+    "montant_min",
+    "montant_max",
+    "du",
+    "au",
+    "conditions",
+)
 
 
 class ErreurFiltre(ValueError):
@@ -52,16 +72,23 @@ def normaliser(f):
     f.setdefault("nom", "filtre")
     f["portee"] = f.get("portee") or "ecritures"
     if f["portee"] not in PORTEES:
-        raise ErreurFiltre("Filtre %r : portée inconnue %r (%s)."
-                           % (f["nom"], f["portee"], ", ".join(PORTEES)))
+        raise ErreurFiltre(
+            "Filtre %r : portée inconnue %r (%s)."
+            % (f["nom"], f["portee"], ", ".join(PORTEES))
+        )
     inconnus = set(f) - set(CRITERES) - {"nom", "portee"}
     if inconnus:
-        raise ErreurFiltre("Filtre %r : critère(s) inconnu(s) %s (attendus : %s)."
-                           % (f["nom"], ", ".join(sorted(inconnus)), ", ".join(CRITERES)))
+        raise ErreurFiltre(
+            "Filtre %r : critère(s) inconnu(s) %s (attendus : %s)."
+            % (f["nom"], ", ".join(sorted(inconnus)), ", ".join(CRITERES))
+        )
     for k in ("journaux", "comptes", "sauf_comptes", "analytique", "tiers"):
         v = f.get(k) or []
-        f[k] = [str(x).strip() for x in (v.split(",") if isinstance(v, str) else v)
-                if str(x).strip()]
+        f[k] = [
+            str(x).strip()
+            for x in (v.split(",") if isinstance(v, str) else v)
+            if str(x).strip()
+        ]
     f["libelle"] = (f.get("libelle") or "").strip().lower()
     f["piece"] = (f.get("piece") or "").strip()
     for k in ("montant_min", "montant_max"):
@@ -70,12 +97,19 @@ def normaliser(f):
     conds = []
     for c in f.get("conditions") or []:
         if c.get("op") not in OPERATEURS:
-            raise ErreurFiltre("Filtre %r : opérateur %r inconnu (%s)."
-                               % (f["nom"], c.get("op"), ", ".join(OPERATEURS)))
+            raise ErreurFiltre(
+                "Filtre %r : opérateur %r inconnu (%s)."
+                % (f["nom"], c.get("op"), ", ".join(OPERATEURS))
+            )
         if not c.get("champ"):
             raise ErreurFiltre("Filtre %r : condition sans champ." % f["nom"])
-        conds.append({"champ": c["champ"], "op": c["op"],
-                      "valeur": str(c.get("valeur", "")).strip().lower()})
+        conds.append(
+            {
+                "champ": c["champ"],
+                "op": c["op"],
+                "valeur": str(c.get("valeur", "")).strip().lower(),
+            }
+        )
     f["conditions"] = conds
     for k in ("du", "au"):
         v = f.get(k)
@@ -83,40 +117,62 @@ def normaliser(f):
     if f["du"] and f["au"] and f["du"] > f["au"]:
         raise ErreurFiltre("Filtre %r : début après la fin." % f["nom"])
     if f["portee"] == "lignes" and not f["comptes"]:
-        raise ErreurFiltre("Filtre %r : la portée « lignes » exige une liste de comptes."
-                           % f["nom"])
+        raise ErreurFiltre(
+            "Filtre %r : la portée « lignes » exige une liste de comptes."
+            % f["nom"]
+        )
     if f["portee"] in ("ecritures", "lignes") and not any(
-            f[k] for k in CRITERES if k != "sauf_comptes"):
-        raise ErreurFiltre("Filtre %r : sans journal, compte ni période, il retirerait "
-                           "tout le fichier." % f["nom"])
+        f[k] for k in CRITERES if k != "sauf_comptes"
+    ):
+        raise ErreurFiltre(
+            "Filtre %r : sans journal, compte ni période, il retirerait "
+            "tout le fichier." % f["nom"]
+        )
     return f
 
 
 def _condition(c, l):
-    v = str(l.get(c["champ"]) if l.get(c["champ"]) is not None else "").strip().lower()
-    return {"commence_par": lambda: v.startswith(c["valeur"]),
-            "contient": lambda: c["valeur"] in v,
-            "egal": lambda: v == c["valeur"],
-            "different": lambda: v != c["valeur"],
-            "vide": lambda: not v,
-            "non_vide": lambda: bool(v)}[c["op"]]()
+    v = (
+        str(l.get(c["champ"]) if l.get(c["champ"]) is not None else "")
+        .strip()
+        .lower()
+    )
+    return {
+        "commence_par": lambda: v.startswith(c["valeur"]),
+        "contient": lambda: c["valeur"] in v,
+        "egal": lambda: v == c["valeur"],
+        "different": lambda: v != c["valeur"],
+        "vide": lambda: not v,
+        "non_vide": lambda: bool(v),
+    }[c["op"]]()
 
 
 def _ligne_correspond(f, l):
     montant = l["debit"] or l["credit"]
     analytique = l.get("analytique") or ""
-    return ((not f["journaux"] or l["journal_code"] in f["journaux"])
-            and (not f["comptes"] or l["compte"].startswith(tuple(f["comptes"])))
-            and (not f["sauf_comptes"] or not l["compte"].startswith(tuple(f["sauf_comptes"])))
-            and (not f["analytique"] or any(analytique.startswith(a) for a in f["analytique"]))
-            and (not f["tiers"] or l.get("tiers_ref") in f["tiers"])
-            and (not f["libelle"] or f["libelle"] in (l.get("libelle") or "").lower())
-            and (not f["piece"] or (l.get("piece") or "").startswith(f["piece"]))
-            and (f["montant_min"] is None or montant >= f["montant_min"])
-            and (f["montant_max"] is None or montant <= f["montant_max"])
-            and (not f["du"] or l["date"] >= f["du"])
-            and (not f["au"] or l["date"] <= f["au"])
-            and all(_condition(c, l) for c in f["conditions"]))
+    return (
+        (not f["journaux"] or l["journal_code"] in f["journaux"])
+        and (not f["comptes"] or l["compte"].startswith(tuple(f["comptes"])))
+        and (
+            not f["sauf_comptes"]
+            or not l["compte"].startswith(tuple(f["sauf_comptes"]))
+        )
+        and (
+            not f["analytique"]
+            or any(analytique.startswith(a) for a in f["analytique"])
+        )
+        and (not f["tiers"] or l.get("tiers_ref") in f["tiers"])
+        and (
+            not f["libelle"]
+            or f["libelle"] in (l.get("libelle") or "").lower()
+        )
+        and (not f["piece"] or (l.get("piece") or "").startswith(f["piece"]))
+        and (f["montant_min"] is None or montant >= f["montant_min"])
+        and (f["montant_max"] is None or montant <= f["montant_max"])
+        and (not f["du"] or l["date"] >= f["du"])
+        and (not f["au"] or l["date"] <= f["au"])
+        and all(_condition(c, l) for c in f["conditions"])
+    )
 
 
 def appliquer(lot, filtres, journal=None):
@@ -130,36 +186,61 @@ def appliquer(lot, filtres, journal=None):
     for brut in filtres:
         f = normaliser(brut)
         if f["portee"] == "lignes_nulles":
-            retirees = [l for l in lot.lignes if not l["debit"] and not l["credit"]]
+            retirees = [
+                l for l in lot.lignes if not l["debit"] and not l["credit"]
+            ]
         elif f["portee"] == "lignes":
             retirees = [l for l in lot.lignes if _ligne_correspond(f, l)]
             soldes = {}
             for l in retirees:
-                soldes[cle_ecriture(l)] = soldes.get(cle_ecriture(l), 0) + l["debit"] - l["credit"]
-            coupees = ["%s/%s (%s €)" % (k[0], k[1], euros_texte(s, ","))
-                       for k, s in soldes.items() if s]
+                soldes[cle_ecriture(l)] = (
+                    soldes.get(cle_ecriture(l), 0) + l["debit"] - l["credit"]
+                )
+            coupees = [
+                "%s/%s (%s €)" % (k[0], k[1], euros_texte(s, ","))
+                for k, s in soldes.items()
+                if s
+            ]
             if coupees:
                 raise ErreurFiltre(
                     "Filtre %r refusé : retirer ces lignes déséquilibrerait %d écriture(s) : %s"
                     "%s. Retirez les écritures entières (portée « ecritures ») ou ajoutez "
-                    "la contrepartie au filtre." % (
-                        f["nom"], len(coupees), ", ".join(coupees[:5]),
-                        "…" if len(coupees) > 5 else ""))
+                    "la contrepartie au filtre."
+                    % (
+                        f["nom"],
+                        len(coupees),
+                        ", ".join(coupees[:5]),
+                        "…" if len(coupees) > 5 else "",
+                    )
+                )
         else:
-            cles = {cle_ecriture(l) for l in lot.lignes if _ligne_correspond(f, l)}
+            cles = {
+                cle_ecriture(l) for l in lot.lignes if _ligne_correspond(f, l)
+            }
             retirees = [l for l in lot.lignes if cle_ecriture(l) in cles]
         ids = {id(l) for l in retirees}
         lot.lignes = [l for l in lot.lignes if id(l) not in ids]
         lot.retirees.extend((l, f["nom"]) for l in retirees)
-        t = {"nom": f["nom"], "portee": f["portee"], "lignes": len(retirees),
-             "ecritures": len({cle_ecriture(l) for l in retirees}),
-             "debit": sum(l["debit"] for l in retirees),
-             "credit": sum(l["credit"] for l in retirees)}
+        t = {
+            "nom": f["nom"],
+            "portee": f["portee"],
+            "lignes": len(retirees),
+            "ecritures": len({cle_ecriture(l) for l in retirees}),
+            "debit": sum(l["debit"] for l in retirees),
+            "credit": sum(l["credit"] for l in retirees),
+        }
         rapport.append(t)
-        j.dire("Filtre « %s » : %s écriture(s), %s ligne(s) retirées — D %s / C %s €" % (
-            f["nom"], nombre_texte(t["ecritures"]), nombre_texte(t["lignes"]),
-            euros_texte(t["debit"], ","), euros_texte(t["credit"], ",")),
-            "alerte" if t["lignes"] else "detail")
+        j.dire(
+            "Filtre « %s » : %s écriture(s), %s ligne(s) retirées — D %s / C %s €"
+            % (
+                f["nom"],
+                nombre_texte(t["ecritures"]),
+                nombre_texte(t["lignes"]),
+                euros_texte(t["debit"], ","),
+                euros_texte(t["credit"], ","),
+            ),
+            "alerte" if t["lignes"] else "detail",
+        )
     apres = lot.totaux()
     retire_d = sum(t["debit"] for t in rapport)
     retire_c = sum(t["credit"] for t in rapport)
@@ -167,6 +248,9 @@ def appliquer(lot, filtres, journal=None):
     assert apres["debit"] == avant["debit"] - retire_d
     assert apres["credit"] == avant["credit"] - retire_c
     if rapport:
-        j.dire("Après filtres : %s lignes (avant %s), totaux vérifiés au centime" % (
-            nombre_texte(apres["lignes"]), nombre_texte(avant["lignes"])), "ok")
+        j.dire(
+            "Après filtres : %s lignes (avant %s), totaux vérifiés au centime"
+            % (nombre_texte(apres["lignes"]), nombre_texte(avant["lignes"])),
+            "ok",
+        )
     return {"avant": avant, "apres": apres, "filtres": rapport}

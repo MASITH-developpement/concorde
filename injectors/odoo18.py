@@ -12,6 +12,7 @@ Sécurités CONCORDE respectées :
 - Mode dry-run par défaut : rien n'est écrit dans Odoo sans dry_run=False explicite
 - Guardian : l'injecteur refuse de tourner sans self-check OK
 """
+
 from collections import defaultdict
 from decimal import Decimal
 
@@ -27,13 +28,20 @@ class InjecteurOdoo18:
 
     VERSION_CIBLE = "18"
 
-    def __init__(self, url=None, db=None, utilisateur=None, mot_de_passe=None,
-                 dry_run=True, guardian=None):
-        self.url = url            # ex. http://localhost:8069
+    def __init__(
+        self,
+        url=None,
+        db=None,
+        utilisateur=None,
+        mot_de_passe=None,
+        dry_run=True,
+        guardian=None,
+    ):
+        self.url = url  # ex. http://localhost:8069
         self.db = db
         self.utilisateur = utilisateur
         self.mot_de_passe = mot_de_passe
-        self.dry_run = dry_run    # True par défaut : aucune écriture dans Odoo
+        self.dry_run = dry_run  # True par défaut : aucune écriture dans Odoo
         self.guardian = guardian or Guardian()
         if not self.guardian.self_check_ok:
             self.guardian.self_check()  # bloquant
@@ -45,21 +53,34 @@ class InjecteurOdoo18:
         if self.dry_run:
             return None  # dry-run : aucune connexion nécessaire
         if not all([self.url, self.db, self.utilisateur, self.mot_de_passe]):
-            raise ErreurInjecteur("URL/base/utilisateur/mot de passe Odoo requis hors dry-run.")
+            raise ErreurInjecteur(
+                "URL/base/utilisateur/mot de passe Odoo requis hors dry-run."
+            )
         import xmlrpc.client
-        commun = xmlrpc.client.ServerProxy("{}/xmlrpc/2/common".format(self.url))
+
+        commun = xmlrpc.client.ServerProxy(
+            "{}/xmlrpc/2/common".format(self.url)
+        )
         # Odoo 18 : server_version() donne la version, on vérifie la cible
         try:
             version = commun.version().get("server_version", "")
             if version and not version.startswith(self.VERSION_CIBLE):
-                self.guardian.tracer("odoo18", "avertissement",
-                                     "version_odoo=%s (cible %s)" % (version, self.VERSION_CIBLE))
+                self.guardian.tracer(
+                    "odoo18",
+                    "avertissement",
+                    "version_odoo=%s (cible %s)"
+                    % (version, self.VERSION_CIBLE),
+                )
         except Exception:
             pass
-        self._uid = commun.authenticate(self.db, self.utilisateur, self.mot_de_passe, {})
+        self._uid = commun.authenticate(
+            self.db, self.utilisateur, self.mot_de_passe, {}
+        )
         if not self._uid:
             raise ErreurInjecteur("Authentification Odoo refusée.")
-        self._models = xmlrpc.client.ServerProxy("{}/xmlrpc/2/object".format(self.url))
+        self._models = xmlrpc.client.ServerProxy(
+            "{}/xmlrpc/2/object".format(self.url)
+        )
         self.guardian.tracer("odoo18", "connexion", "uid=%s" % self._uid)
         return self._uid
 
@@ -77,22 +98,27 @@ class InjecteurOdoo18:
             if debit != credit:
                 raise ErreurInjecteur(
                     "Écriture %s/%s déséquilibrée (%s vs %s centimes) — "
-                    "tolérance Concordance 0,00 €." % (journal, num, debit, credit))
-            ecritures.append({
-                "ref_ext": "CONCORDE/%s/%s" % (journal, num),
-                "journal": journal,
-                "numero": num,
-                "date": lignes[0].date_ecriture,
-                "libelle": lignes[0].libelle,
-                "lignes": lignes,
-                "total": debit,
-            })
+                    "tolérance Concordance 0,00 €."
+                    % (journal, num, debit, credit)
+                )
+            ecritures.append(
+                {
+                    "ref_ext": "CONCORDE/%s/%s" % (journal, num),
+                    "journal": journal,
+                    "numero": num,
+                    "date": lignes[0].date_ecriture,
+                    "libelle": lignes[0].libelle,
+                    "lignes": lignes,
+                    "total": debit,
+                }
+            )
         return ecritures
 
     @staticmethod
     def euros(centimes):
         """Centimes int -> euros pour Odoo. Calcul exact en Decimal ; le float n'apparaît
-        qu'à la frontière XML-RPC (2 décimales : valeur restituée exactement par Odoo)."""
+        qu'à la frontière XML-RPC (2 décimales : valeur restituée exactement par Odoo).
+        """
         return float(Decimal(int(centimes)) / 100)
 
     @classmethod
@@ -107,15 +133,23 @@ class InjecteurOdoo18:
         comptes, journaux = comptes or {}, journaux or {}
         lignes = []
         for l in ecriture["lignes"]:
-            lignes.append((0, 0, {
-                "name": l.libelle,
-                "account_id": comptes.get(l.compte, l.compte),
-                "debit": cls.euros(l.debit),
-                "credit": cls.euros(l.credit),
-            }))
+            lignes.append(
+                (
+                    0,
+                    0,
+                    {
+                        "name": l.libelle,
+                        "account_id": comptes.get(l.compte, l.compte),
+                        "debit": cls.euros(l.debit),
+                        "credit": cls.euros(l.credit),
+                    },
+                )
+            )
         return {
             "ref": ecriture["ref_ext"],
-            "journal_id": journaux.get(ecriture["journal"], ecriture["journal"]),
+            "journal_id": journaux.get(
+                ecriture["journal"], ecriture["journal"]
+            ),
             "date": ecriture["date"].strftime("%Y-%m-%d"),
             "move_type": "entry",
             "line_ids": lignes,
@@ -125,17 +159,38 @@ class InjecteurOdoo18:
         """{code: id} des comptes et journaux cibles. Code inconnu = refus (rien de deviné)."""
         codes_c = sorted({l.compte for e in ecritures for l in e["lignes"]})
         codes_j = sorted({e["journal"] for e in ecritures})
-        comptes = {c["code"]: c["id"] for c in self._models.execute_kw(
-            self.db, self._uid, self.mot_de_passe, "account.account", "search_read",
-            [[["code", "in", codes_c]]], {"fields": ["code"]})}
-        journaux = {j["code"]: j["id"] for j in self._models.execute_kw(
-            self.db, self._uid, self.mot_de_passe, "account.journal", "search_read",
-            [[["code", "in", codes_j]]], {"fields": ["code"]})}
-        manquants = ["compte " + c for c in codes_c if c not in comptes] + \
-                    ["journal " + j for j in codes_j if j not in journaux]
+        comptes = {
+            c["code"]: c["id"]
+            for c in self._models.execute_kw(
+                self.db,
+                self._uid,
+                self.mot_de_passe,
+                "account.account",
+                "search_read",
+                [[["code", "in", codes_c]]],
+                {"fields": ["code"]},
+            )
+        }
+        journaux = {
+            j["code"]: j["id"]
+            for j in self._models.execute_kw(
+                self.db,
+                self._uid,
+                self.mot_de_passe,
+                "account.journal",
+                "search_read",
+                [[["code", "in", codes_j]]],
+                {"fields": ["code"]},
+            )
+        }
+        manquants = ["compte " + c for c in codes_c if c not in comptes] + [
+            "journal " + j for j in codes_j if j not in journaux
+        ]
         if manquants:
-            raise ErreurInjecteur("Absents de la base Odoo cible (rien n'est créé ni deviné) : "
-                                  + ", ".join(manquants[:20]))
+            raise ErreurInjecteur(
+                "Absents de la base Odoo cible (rien n'est créé ni deviné) : "
+                + ", ".join(manquants[:20])
+            )
         return comptes, journaux
 
     # --- injection ------------------------------------------------------------
@@ -145,9 +200,14 @@ class InjecteurOdoo18:
             return set()
         refs = list(refs)
         existantes = self._models.execute_kw(
-            self.db, self._uid, self.mot_de_passe,
-            "account.move", "search_read",
-            [[["ref", "in", refs]]], {"fields": ["ref"]})
+            self.db,
+            self._uid,
+            self.mot_de_passe,
+            "account.move",
+            "search_read",
+            [[["ref", "in", refs]]],
+            {"fields": ["ref"]},
+        )
         return {e["ref"] for e in existantes}
 
     def injecter(self, canon):
@@ -155,33 +215,57 @@ class InjecteurOdoo18:
         if not canon.est_equilibre(tolerance=0):
             raise ErreurInjecteur(
                 "Journal déséquilibré (D=%s / C=%s centimes) — injection refusée, "
-                "tolérance Concordance 0,00 €." % (canon.total_debit, canon.total_credit))
+                "tolérance Concordance 0,00 €."
+                % (canon.total_debit, canon.total_credit)
+            )
         ecritures = self.regrouper_ecritures(canon)
         self.connecter()
         refs = [e["ref_ext"] for e in ecritures]
         deja = self._deja_importees(refs)
-        comptes, journaux = ({}, {}) if self.dry_run else self._resoudre(ecritures)
+        comptes, journaux = (
+            ({}, {}) if self.dry_run else self._resoudre(ecritures)
+        )
 
-        rapport = {"mode": "dry-run" if self.dry_run else "production",
-                   "cible": "odoo-%s" % self.VERSION_CIBLE,
-                   "nb_ecritures": len(ecritures),
-                   "deja_importees": sorted(deja),
-                   "injectees": [], "refusees": []}
+        rapport = {
+            "mode": "dry-run" if self.dry_run else "production",
+            "cible": "odoo-%s" % self.VERSION_CIBLE,
+            "nb_ecritures": len(ecritures),
+            "deja_importees": sorted(deja),
+            "injectees": [],
+            "refusees": [],
+        }
         for e in ecritures:
             if e["ref_ext"] in deja:
-                rapport["refusees"].append({"ref": e["ref_ext"], "motif": "idempotence"})
+                rapport["refusees"].append(
+                    {"ref": e["ref_ext"], "motif": "idempotence"}
+                )
                 continue
             payload = self.vers_payload_odoo(e, comptes, journaux)
             if self.dry_run:
                 rapport["injectees"].append(
-                    {"ref": e["ref_ext"], "simule": True,
-                     "total_centimes": e["total"], "nb_lignes": len(payload["line_ids"])})
+                    {
+                        "ref": e["ref_ext"],
+                        "simule": True,
+                        "total_centimes": e["total"],
+                        "nb_lignes": len(payload["line_ids"]),
+                    }
+                )
             else:
                 self.guardian.tracer("odoo18", "creation", e["ref_ext"])
                 self._models.execute_kw(
-                    self.db, self._uid, self.mot_de_passe,
-                    "account.move", "create", [payload])
-                rapport["injectees"].append({"ref": e["ref_ext"], "simule": False})
-        self.guardian.tracer("odoo18", "injection",
-                             "mode=%s ecritures=%s" % (rapport["mode"], len(ecritures)))
+                    self.db,
+                    self._uid,
+                    self.mot_de_passe,
+                    "account.move",
+                    "create",
+                    [payload],
+                )
+                rapport["injectees"].append(
+                    {"ref": e["ref_ext"], "simule": False}
+                )
+        self.guardian.tracer(
+            "odoo18",
+            "injection",
+            "mode=%s ecritures=%s" % (rapport["mode"], len(ecritures)),
+        )
         return rapport

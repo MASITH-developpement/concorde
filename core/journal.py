@@ -14,6 +14,7 @@ Niveaux : etape (début d'une étape), ok, info, detail, alerte, erreur.
 Le journal est sûr entre fils (l'interface le lit pendant qu'une tâche écrit)
 et borné (les plus anciens événements tombent au-delà de `taille_max`).
 """
+
 import threading
 import time
 from datetime import datetime
@@ -50,7 +51,9 @@ class _Etape:
     def __exit__(self, type_exc, exc, tb):
         d = duree_texte(time.monotonic() - self.debut)
         if exc is not None:
-            self.journal.dire("✗ %s — échec : %s (%s)" % (self.nom, exc, d), "erreur")
+            self.journal.dire(
+                "✗ %s — échec : %s (%s)" % (self.nom, exc, d), "erreur"
+            )
             return False
         suite = " — %s" % self.conclusion if self.conclusion else ""
         self.journal.dire("✓ %s%s (%s)" % (self.nom, suite, d), "ok")
@@ -62,14 +65,17 @@ class Journal:
         self._evenements = []
         self._verrou = threading.Lock()
         self._taille_max = taille_max
-        self._decalage = 0          # événements tombés (pour la lecture incrémentale)
+        self._decalage = 0  # événements tombés (pour la lecture incrémentale)
         self._ecouteur = ecouteur
 
     def dire(self, message, niveau="info"):
         if niveau not in NIVEAUX:
             niveau = "info"
-        ev = {"t": datetime.now().isoformat(timespec="seconds"), "niveau": niveau,
-              "message": message}
+        ev = {
+            "t": datetime.now().isoformat(timespec="seconds"),
+            "niveau": niveau,
+            "message": message,
+        }
         with self._verrou:
             self._evenements.append(ev)
             if len(self._evenements) > self._taille_max:

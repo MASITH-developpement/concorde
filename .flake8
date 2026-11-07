@@ -1,0 +1,12 @@
+# flake8 : règles par défaut, aucune désactivée. Exclusion des seuls dossiers
+# générés (engine/, addons18/19/20) ou tiers (om_*, accounting_pdf_reports).
+[flake8]
+exclude =
+    .git,
+    __pycache__,
+    deploy/addons/concorde/engine,
+    deploy/addons18,
+    deploy/addons19,
+    deploy/addons20,
+    deploy/addons/om_*,
+    deploy/addons/accounting_pdf_reports

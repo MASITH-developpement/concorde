@@ -5,6 +5,7 @@
 - Chaque étape du pipeline est enveloppée par Guardian (audit + rate limit)
 - Chaque donnée produite est liée à son explication Marceau
 """
+
 import importlib
 
 from .guardian import Guardian
@@ -16,7 +17,11 @@ class ErreurMoteur(RuntimeError):
 
 
 ETAPE_DEFAUT = [
-    {"nom": "importer_fec", "module": "core.fec_parser", "fonction": "parse_fec"},
+    {
+        "nom": "importer_fec",
+        "module": "core.fec_parser",
+        "fonction": "parse_fec",
+    },
     {"nom": "verifier_equilibre", "fonction": "verifier_equilibre"},
     {"nom": "lettrer", "module": "core.lettrage", "fonction": "lettrer"},
     {"nom": "rapport", "fonction": "rapport"},
@@ -25,15 +30,22 @@ ETAPE_DEFAUT = [
 
 def verifier_equilibre(canon):
     equilibre = canon.est_equilibre(tolerance=0)
-    return {"nb_lignes": len(canon), "equilibre": equilibre,
-            "total_debit": canon.total_debit, "total_credit": canon.total_credit,
-            "doublons_ignores": canon.doublons_ignores, "canon": canon}
+    return {
+        "nb_lignes": len(canon),
+        "equilibre": equilibre,
+        "total_debit": canon.total_debit,
+        "total_credit": canon.total_credit,
+        "doublons_ignores": canon.doublons_ignores,
+        "canon": canon,
+    }
 
 
 def rapport(contexte):
     if isinstance(contexte, tuple) and len(contexte) == 3:
         contexte = contexte[2]  # (paires, anomalies, stats)
-    stats = contexte.get("stats", contexte) if isinstance(contexte, dict) else {}
+    stats = (
+        contexte.get("stats", contexte) if isinstance(contexte, dict) else {}
+    )
     return {"stats": stats}
 
 
@@ -43,7 +55,10 @@ class MoteurConcorde:
     def __init__(self, config=None, guardian=None, marceau=None):
         self.config = config or {}
         self.guardian = guardian or Guardian(
-            journal_dir=self.config.get("guardian", {}).get("journal", "/var/concorde/guardian"))
+            journal_dir=self.config.get("guardian", {}).get(
+                "journal", "/var/concorde/guardian"
+            )
+        )
         if not self.guardian.self_check_ok:
             self.guardian.self_check()
         self.marceau = marceau or Marceau()
@@ -64,6 +79,7 @@ class MoteurConcorde:
 
     def _mapper_comptes(self, donnees):
         from .mapping import mapper_comptes
+
         cfg = self.config.get("mapping") or {}
         if isinstance(cfg.get("dict"), dict):
             # mapping charge en memoire (ex. fichier Mapping Quadra Odoo.xlsx
@@ -78,12 +94,16 @@ class MoteurConcorde:
         for etape in self.pipeline:
             nom = etape["nom"]
             fonction = self._resoudre(etape)
-            if nom == "mapper_comptes" and etape.get("fonction") == "mapper_comptes":
+            if (
+                nom == "mapper_comptes"
+                and etape.get("fonction") == "mapper_comptes"
+            ):
                 fonction = self._mapper_comptes
             resultat = self.guardian.envelopper_etape(nom, fonction, courant)
             explication = self.marceau.expliquer_etape(nom, resultat)
-            contexte["resultats"].append({"etape": nom, "resultat": resultat,
-                                          "marceau": explication})
+            contexte["resultats"].append(
+                {"etape": nom, "resultat": resultat, "marceau": explication}
+            )
             courant = resultat
         contexte["empreinte_guardian"] = self.guardian.empreinte_courante()
         contexte["audit_valide"] = self.guardian.verifier_chaine()

@@ -4,6 +4,7 @@
 Règle d'or : les montants sont TOUJOURS en centimes (int).
 Jamais de float, jamais d'arrondi silencieux.
 """
+
 from dataclasses import dataclass, field
 from datetime import date
 
@@ -27,7 +28,10 @@ def vers_centimes(texte) -> int:
     if "," in s:
         ent, dec = s.split(",", 1)
         if len(dec) > 2:
-            raise ErreurMontant("Arrondi silencieux interdit (plus de 2 decimales) : %r" % (texte,))
+            raise ErreurMontant(
+                "Arrondi silencieux interdit (plus de 2 decimales) : %r"
+                % (texte,)
+            )
         dec = (dec + "00")[:2]
     else:
         ent, dec = s, "00"
@@ -40,12 +44,13 @@ def vers_centimes(texte) -> int:
 @dataclass
 class LigneEcriture:
     """Une ligne d'écriture canonique. Montants en centimes int."""
+
     journal_code: str
     ecriture_num: str
     date_ecriture: date
     compte: str
     libelle: str
-    debit: int = 0   # centimes
+    debit: int = 0  # centimes
     credit: int = 0  # centimes
     lettrage: str = ""
     piece: str = ""
@@ -53,10 +58,16 @@ class LigneEcriture:
 
     def cle_idempotence(self) -> str:
         """Clé d'idempotence : deux lignes identiques = doublon, jamais réimportées."""
-        return "|".join([
-            self.journal_code, self.ecriture_num, self.compte,
-            str(self.debit), str(self.credit), self.libelle,
-        ])
+        return "|".join(
+            [
+                self.journal_code,
+                self.ecriture_num,
+                self.compte,
+                str(self.debit),
+                str(self.credit),
+                self.libelle,
+            ]
+        )
 
     @property
     def montant(self) -> int:

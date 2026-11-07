@@ -11,6 +11,7 @@ Regles CONCORDE :
 - Montants convertis en centimes via core.canonical.vers_centimes
 - Dates normalisees en AAAAMMJJ (format FEC obligatoire)
 """
+
 import io
 import logging
 import re
@@ -36,38 +37,84 @@ class ErreurFEC(ValueError):
 
 # Colonnes FEC produites (ordre FEC standard, separateur tabulation)
 CHAMPS_FEC = [
-    "JournalCode", "JournalLib", "EcritureNum", "EcritureDate",
-    "CompteNum", "CompteLib", "CompAuxNum", "CompAuxLib",
-    "PieceRef", "PieceDate", "EcritureLib", "Debit", "Credit",
-    "EcritureLet", "DateLet", "ValidDate", "Montantdevise", "Idevise",
+    "JournalCode",
+    "JournalLib",
+    "EcritureNum",
+    "EcritureDate",
+    "CompteNum",
+    "CompteLib",
+    "CompAuxNum",
+    "CompAuxLib",
+    "PieceRef",
+    "PieceDate",
+    "EcritureLib",
+    "Debit",
+    "Credit",
+    "EcritureLet",
+    "DateLet",
+    "ValidDate",
+    "Montantdevise",
+    "Idevise",
 ]
 
 # Synonymes de colonnes d'entete Excel, normalises (minuscules, sans accent,
 # sans espace/point/tiret/underscore).
 SYNONYMES = {
     "JournalCode": [
-        "journalcode", "journal", "jnl", "codejournal", "jl", "codejnl",
+        "journalcode",
+        "journal",
+        "jnl",
+        "codejournal",
+        "jl",
+        "codejnl",
     ],
     "JournalLib": ["journallib", "journallibelle", "libjournal"],
     "EcritureNum": [
-        "ecriturenum", "ecrituren", "numecriture", "noecriture",
-        "numeroecriture", "nbecriture", "idecriture", "ecriture",
-        "ecritureno", "necriture", "numecrire",
+        "ecriturenum",
+        "ecrituren",
+        "numecriture",
+        "noecriture",
+        "numeroecriture",
+        "nbecriture",
+        "idecriture",
+        "ecriture",
+        "ecritureno",
+        "necriture",
+        "numecrire",
     ],
     "EcritureDate": [
-        "ecrituredate", "dateecriture", "date", "datecomptable",
-        "datepiece", "dat", "datee",
+        "ecrituredate",
+        "dateecriture",
+        "date",
+        "datecomptable",
+        "datepiece",
+        "dat",
+        "datee",
     ],
     "CompteNum": [
-        "comptenum", "compte", "accountn", "account", "numcompte",
-        "numerocompte", "nocompte", "codecompte", "general",
-        "cpte", "comptegeneral",
+        "comptenum",
+        "compte",
+        "accountn",
+        "account",
+        "numcompte",
+        "numerocompte",
+        "nocompte",
+        "codecompte",
+        "general",
+        "cpte",
+        "comptegeneral",
     ],
     "CompteLib": ["comptelib", "libcompte", "intitulecompte", "libellecompte"],
     "PieceRef": ["pieceref", "piece", "numpiece", "refpiece", "ref"],
     "EcritureLib": [
-        "ecriturelib", "libelle", "lib", "libelleecriture", "libecriture",
-        "intitule", "description", "libellé",
+        "ecriturelib",
+        "libelle",
+        "lib",
+        "libelleecriture",
+        "libecriture",
+        "intitule",
+        "description",
+        "libellé",
     ],
     "Debit": ["debit", "dbt", "montantdebit", "d"],
     "Credit": ["credit", "crdt", "montantcredit", "c", "crebit"],
@@ -112,37 +159,54 @@ def _date_fec(v, contexte: str) -> str:
     if isinstance(v, date):
         return v.strftime("%Y%m%d")
     s = _nettoyer_texte(v)
-    chiffres = s.replace("/", "").replace("-", "").replace(".", "").replace(" ", "")
+    chiffres = (
+        s.replace("/", "").replace("-", "").replace(".", "").replace(" ", "")
+    )
     if len(chiffres) == 8 and chiffres.isdigit():
         # AAAAMMJJ ou JJMMAAAA : leve par plausibilite de l'annee,
         # CONCORDE ne devine jamais une date ambigue.
         if 1900 <= int(chiffres[:4]) <= 2100:
-            annee, mois, jour = int(chiffres[:4]), int(chiffres[4:6]), int(chiffres[6:8])
+            annee, mois, jour = (
+                int(chiffres[:4]),
+                int(chiffres[4:6]),
+                int(chiffres[6:8]),
+            )
             ordre = "AAAAMMJJ"
         elif 1900 <= int(chiffres[4:]) <= 2100:
-            jour, mois, annee = int(chiffres[:2]), int(chiffres[2:4]), int(chiffres[4:])
+            jour, mois, annee = (
+                int(chiffres[:2]),
+                int(chiffres[2:4]),
+                int(chiffres[4:]),
+            )
             ordre = "JJMMAAAA"
         else:
             raise ErreurFEC(
                 "Date ambigue en colonne %s : %r (ni AAAAMMJJ ni JJMMAAAA "
-                "plausibles : re-exportez la colonne en date Excel)" %
-                (contexte, v))
+                "plausibles : re-exportez la colonne en date Excel)"
+                % (contexte, v)
+            )
     elif len(chiffres) == 6 and chiffres.isdigit():
         # JJMMAA (Quadra) : annee 19xx/20xx selon le siecle plausible
-        jour, mois, annee = int(chiffres[:2]), int(chiffres[2:4]), int(chiffres[4:6])
+        jour, mois, annee = (
+            int(chiffres[:2]),
+            int(chiffres[2:4]),
+            int(chiffres[4:6]),
+        )
         annee += 2000 if annee < 70 else 1900
         ordre = "JJMMAA"
     else:
         raise ErreurFEC(
             "Date invalide en colonne %s : %r "
-            "(formats attendus : date Excel, AAAAMMJJ, JJ/MM/AAAA)" %
-            (contexte, v))
+            "(formats attendus : date Excel, AAAAMMJJ, JJ/MM/AAAA)"
+            % (contexte, v)
+        )
     try:
         date(annee, mois, jour)
     except ValueError:
         raise ErreurFEC(
-            "Date invalide en colonne %s : %r (ordre %s)" %
-            (contexte, v, ordre))
+            "Date invalide en colonne %s : %r (ordre %s)"
+            % (contexte, v, ordre)
+        )
     return "%04d%02d%02d" % (annee, mois, jour)
 
 
@@ -156,7 +220,8 @@ def _centimes(v, contexte: str) -> int:
         if abs(cent - arrondi) > 1e-6:
             raise ErreurFEC(
                 "Arrondi silencieux interdit : %.6f en colonne %s "
-                "(plus de 2 decimales, tolerance 0)" % (v, contexte))
+                "(plus de 2 decimales, tolerance 0)" % (v, contexte)
+            )
         return int(arrondi)
     return vers_centimes(_nettoyer_texte(v))
 
@@ -222,8 +287,9 @@ def _lire_avec_openpyxl(brut):
 
 # ---- Lecteur xlsx interne, bibliotheque standard uniquement ----
 NS_MAIN = "{http://schemas.openxmlformats.org/spreadsheetml/2006/main}"
-NS_REL_OFFICE = ("{http://schemas.openxmlformats.org/"
-                 "officeDocument/2006/relationships}")
+NS_REL_OFFICE = (
+    "{http://schemas.openxmlformats.org/" "officeDocument/2006/relationships}"
+)
 EPOQUE_EXCEL = date(1899, 12, 30)  # serie 0 = 30/12/1899
 FORMATS_DATE_BUILTIN = {14, 15, 16, 17, 18, 19, 20, 21, 22, 45, 46, 47}
 _RE_DATE = re.compile(r"[dmyhs]", re.IGNORECASE)
@@ -311,11 +377,15 @@ def _lire_xlsx_stdlib(brut, nom_fichier=""):
         pass
     if not feuille_xml or feuille_xml not in zf.namelist():
         # repli : premiere feuille triee si relations absentes
-        cands = sorted(n for n in zf.namelist()
-                       if re.match(r"xl/worksheets/sheet\d+\.xml$", n))
+        cands = sorted(
+            n
+            for n in zf.namelist()
+            if re.match(r"xl/worksheets/sheet\d+\.xml$", n)
+        )
         if not cands:
             raise ErreurFEC(
-                "Aucune feuille de calcul trouvee dans %r." % (nom_fichier,))
+                "Aucune feuille de calcul trouvee dans %r." % (nom_fichier,)
+            )
         feuille_xml = cands[0]
 
     # 4. Lecture des lignes
@@ -337,11 +407,13 @@ def _lire_xlsx_stdlib(brut, nom_fichier=""):
                     val = sst[int(v.text)]
                 except (ValueError, IndexError):
                     raise ErreurFEC(
-                        "Indice de chaine partagee invalide en %s de %r." %
-                        (ref, nom_fichier))
+                        "Indice de chaine partagee invalide en %s de %r."
+                        % (ref, nom_fichier)
+                    )
             elif t == "inlineStr" and is_elem is not None:
-                val = "".join(x.text or ""
-                              for x in is_elem.iter(NS_MAIN + "t"))
+                val = "".join(
+                    x.text or "" for x in is_elem.iter(NS_MAIN + "t")
+                )
             elif t == "str" and v is not None:
                 val = v.text
             elif v is not None and v.text is not None:
@@ -366,6 +438,7 @@ def _lire_xlsx_stdlib(brut, nom_fichier=""):
         lignes.append(ligne)
     return lignes
 
+
 # ---- Export "Liste des ecritures" Cegid Quadra ----
 # Ce format n'a pas de numero d'ecriture : NumUniq identifie chaque LIGNE.
 # Les lignes d'une meme ecriture ne sont pas contigues dans l'export :
@@ -373,8 +446,17 @@ def _lire_xlsx_stdlib(brut, nom_fichier=""):
 # journal+date, puis journal), chaque niveau solde au centime pres
 # (tolerance 0). Un residu non solde = erreur explicite, jamais muette.
 
-QUADRA_OBLIGATOIRES = ["Periode", "Jour", "JournalCode", "CompteNum",
-                       "EcritureLib", "Debit", "Credit", "NumUniq"]
+QUADRA_OBLIGATOIRES = [
+    "Periode",
+    "Jour",
+    "JournalCode",
+    "CompteNum",
+    "EcritureLib",
+    "Debit",
+    "Credit",
+    "NumUniq",
+]
+
 
 def _trouver_entete_quadra(rows):
     """Detecte l'en-tete d'un export Cegid Quadra. Retourne
@@ -409,13 +491,15 @@ def _date_quadra(periode, jour, contexte):
     if not j_txt.isdigit() or not 1 <= int(j_txt) <= 31:
         raise ErreurFEC(
             "Jour invalide (%r) en colonne %s/Jour : CONCORDE attend un "
-            "numero de jour 1-31." % (jour, contexte))
+            "numero de jour 1-31." % (jour, contexte)
+        )
     try:
         date(annee, mois, int(j_txt))
     except ValueError:
         raise ErreurFEC(
             "Date invalide : jour %s inexistant en %02d/%d "
-            "(colonnes Periode/Jour)." % (j_txt, mois, annee))
+            "(colonnes Periode/Jour)." % (j_txt, mois, annee)
+        )
     return "%04d%02d%02d" % (annee, mois, int(j_txt))
 
 
@@ -436,6 +520,7 @@ def _convertir_quadra(rows, idx, colonnes, nom_fichier):
     groupe. Aucun groupement devine : chaque niveau de la cascade est
     tracé (logging) et un residu non solde est une erreur explicite.
     """
+
     def val(row, champ):
         j = colonnes.get(champ)
         if j is None or j >= len(row):
@@ -444,7 +529,7 @@ def _convertir_quadra(rows, idx, colonnes, nom_fichier):
 
     # ---- passe 0 : lecture et validation de toutes les lignes ----
     lignes = []
-    for row in rows[idx + 1:]:
+    for row in rows[idx + 1 :]:
         if row is None:
             continue
         debit_c = _centimes(val(row, "Debit"), "Debit")
@@ -456,59 +541,67 @@ def _convertir_quadra(rows, idx, colonnes, nom_fichier):
         if not numuniq:
             raise ErreurFEC(
                 "Ligne sans NumUniq dans %r : CONCORDE ne devine jamais "
-                "un identifiant." % (nom_fichier,))
+                "un identifiant." % (nom_fichier,)
+            )
         if not compte:
             raise ErreurFEC(
                 "Ligne NumUniq %s sans numero de compte : CONCORDE ne "
-                "devine jamais un compte." % numuniq)
+                "devine jamais un compte." % numuniq
+            )
         typ = _nettoyer_texte(val(row, "TypeLigne"))
         if typ and typ != "E":
             raise ErreurFEC(
                 "TypeLigne %r inconnu (NumUniq %s) : CONCORDE ne traite "
-                "que les lignes d'ecriture 'E'. Aucune ligne devinee." %
-                (typ, numuniq))
+                "que les lignes d'ecriture 'E'. Aucune ligne devinee."
+                % (typ, numuniq)
+            )
         journal = _nettoyer_texte(val(row, "JournalCode"))
         if not journal:
             raise ErreurFEC(
                 "Ligne NumUniq %s sans journal : CONCORDE ne devine "
-                "jamais un journal." % numuniq)
-        date_ecr = _date_quadra(val(row, "Periode"), val(row, "Jour"),
-                                "NumUniq %s" % numuniq)
+                "jamais un journal." % numuniq
+            )
+        date_ecr = _date_quadra(
+            val(row, "Periode"), val(row, "Jour"), "NumUniq %s" % numuniq
+        )
         libelle = _nettoyer_texte(val(row, "EcritureLib"))
-        lignes.append({
-            "numuniq": numuniq,
-            "ordre": len(lignes),
-            "journal": journal,
-            "date": date_ecr,
-            "libelle": libelle or ("Ecriture %s" % numuniq),
-            "debit": debit_c,
-            "credit": credit_c,
-            "fec": {
-                "JournalCode": journal,
-                "JournalLib": journal,
-                "EcritureNum": "",  # remplace a la cloture du groupe
-                "EcritureDate": date_ecr,
-                "CompteNum": compte,
-                "CompteLib": "",
-                "CompAuxNum": "",
-                "CompAuxLib": "",
-                "PieceRef": _nettoyer_texte(val(row, "PieceRef")),
-                "PieceDate": date_ecr,
-                "EcritureLib": libelle or ("Ecriture %s" % numuniq),
-                "Debit": _fmt_centimes(debit_c),
-                "Credit": _fmt_centimes(credit_c),
-                "EcritureLet": "",
-                "DateLet": "",
-                "ValidDate": date_ecr,
-                "Montantdevise": "",
-                "Idevise": "",
-            },
-        })
+        lignes.append(
+            {
+                "numuniq": numuniq,
+                "ordre": len(lignes),
+                "journal": journal,
+                "date": date_ecr,
+                "libelle": libelle or ("Ecriture %s" % numuniq),
+                "debit": debit_c,
+                "credit": credit_c,
+                "fec": {
+                    "JournalCode": journal,
+                    "JournalLib": journal,
+                    "EcritureNum": "",  # remplace a la cloture du groupe
+                    "EcritureDate": date_ecr,
+                    "CompteNum": compte,
+                    "CompteLib": "",
+                    "CompAuxNum": "",
+                    "CompAuxLib": "",
+                    "PieceRef": _nettoyer_texte(val(row, "PieceRef")),
+                    "PieceDate": date_ecr,
+                    "EcritureLib": libelle or ("Ecriture %s" % numuniq),
+                    "Debit": _fmt_centimes(debit_c),
+                    "Credit": _fmt_centimes(credit_c),
+                    "EcritureLet": "",
+                    "DateLet": "",
+                    "ValidDate": date_ecr,
+                    "Montantdevise": "",
+                    "Idevise": "",
+                },
+            }
+        )
 
     if not lignes:
         raise ErreurFEC(
             "Aucune ligne d'ecriture exploitable dans %r apres l'en-tete "
-            "(ligne %d)." % (nom_fichier, idx + 1))
+            "(ligne %d)." % (nom_fichier, idx + 1)
+        )
 
     # ---- cascades : regroupements explicites, du plus fin au plus large ----
     # Un groupe = liste de lignes + cumuls. Soldé = debit == credit.
@@ -545,7 +638,9 @@ def _convertir_quadra(rows, idx, colonnes, nom_fichier):
         _LOGGER.info(
             "Quadra %s : cascade 1 laisse %d ligne(s) non soldee(s), "
             "consolidation par (journal, date).",
-            nom_fichier, len(restantes))
+            nom_fichier,
+            len(restantes),
+        )
         g2 = consolider(lambda l: (l["journal"], l["date"]))
         restantes = []
         for k, g in g2.items():
@@ -564,7 +659,9 @@ def _convertir_quadra(rows, idx, colonnes, nom_fichier):
             "consolidation par (journal, date) ; consolidation finale par "
             "journal (une ecriture regroupee par journal, date = premiere "
             "ligne).",
-            nom_fichier, len(restantes))
+            nom_fichier,
+            len(restantes),
+        )
         g3 = consolider(lambda l: (l["journal"],))
         restantes = []
         for k, g in g3.items():
@@ -585,15 +682,17 @@ def _convertir_quadra(rows, idx, colonnes, nom_fichier):
             par_journal[l["journal"]][1] += l["credit"]
             par_journal[l["journal"]][2] += 1
         detail = ", ".join(
-            "%s : %d ligne(s), debit %d != credit %d centimes (ecart %d)" %
-            (j, v[2], v[0], v[1], v[0] - v[1])
-            for j, v in sorted(par_journal.items()))
+            "%s : %d ligne(s), debit %d != credit %d centimes (ecart %d)"
+            % (j, v[2], v[0], v[1], v[0] - v[1])
+            for j, v in sorted(par_journal.items())
+        )
         raise ErreurFEC(
             "Lignes non soldables dans %r apres les cascades "
             "(journal+date+libelle, journal+date, journal) : CONCORDE ne "
             "cree jamais une ecriture desequilibree. Detail par journal : "
-            "%s. Verifiez l'export Quadra (tranchee complete)." %
-            (nom_fichier, detail))
+            "%s. Verifiez l'export Quadra (tranchee complete)."
+            % (nom_fichier, detail)
+        )
 
     # ---- emission : ordre d'apparition dans le fichier, doublons distincts ----
     ecritures.sort(key=lambda e: e[0]["ordre"])
@@ -635,25 +734,30 @@ def xlsx_vers_fec(brut: bytes, nom_fichier: str = "") -> bytes:
         # CSV renommé ou fichier vide/tronqué.)
         tete = bytes(brut or b"")[:8]
         if tete.startswith(b"\xd0\xcf\x11\xe0"):
-            cause = ("Fichier %r : vieux format .xls (Excel 97-2003, "
-                     "signature OLE2) détecté — export Quadra typique. "
-                     "Ouvrez-le dans Excel et enregistrez-le au format "
-                     "« Classeur Excel (*.xlsx) », puis rejoignez ce "
-                     "nouveau fichier." % (nom_fichier,))
+            cause = (
+                "Fichier %r : vieux format .xls (Excel 97-2003, "
+                "signature OLE2) détecté — export Quadra typique. "
+                "Ouvrez-le dans Excel et enregistrez-le au format "
+                "« Classeur Excel (*.xlsx) », puis rejoignez ce "
+                "nouveau fichier." % (nom_fichier,)
+            )
         elif not tete:
-            cause = ("Fichier %r : fichier vide (0 octet) — vérifiez le "
-                     "fichier joint." % (nom_fichier,))
+            cause = (
+                "Fichier %r : fichier vide (0 octet) — vérifiez le "
+                "fichier joint." % (nom_fichier,)
+            )
         else:
             extrait = "".join(chr(b) if 32 <= b < 127 else "." for b in tete)
-            cause = ("Fichier %r : contenu non-xlsx détecté (premiers "
-                     "octets : %s = %s) — un .xlsx est une archive zip "
-                     "(PK). Il s'agit probablement d'un fichier chiffré "
-                     "(propriétés Windows « chiffrer le contenu »), d'un "
-                     "fichier OneDrive/Teams non téléchargé, d'un CSV "
-                     "renommé ou d'un .xls. Ouvrez-le dans Excel et "
-                     "enregistrez-le au format « Classeur Excel (*.xlsx) »."
-                     % (nom_fichier,
-                        " ".join("%02x" % b for b in tete), extrait))
+            cause = (
+                "Fichier %r : contenu non-xlsx détecté (premiers "
+                "octets : %s = %s) — un .xlsx est une archive zip "
+                "(PK). Il s'agit probablement d'un fichier chiffré "
+                "(propriétés Windows « chiffrer le contenu »), d'un "
+                "fichier OneDrive/Teams non téléchargé, d'un CSV "
+                "renommé ou d'un .xls. Ouvrez-le dans Excel et "
+                "enregistrez-le au format « Classeur Excel (*.xlsx) »."
+                % (nom_fichier, " ".join("%02x" % b for b in tete), extrait)
+            )
         raise ErreurFEC(cause)
 
     # Lecture : openpyxl si disponible, sinon lecteur interne stdlib
@@ -670,10 +774,12 @@ def xlsx_vers_fec(brut: bytes, nom_fichier: str = "") -> bytes:
                 raise
             except Exception as exc2:
                 raise ErreurFEC(
-                    "Classeur Excel illisible (%s) : %s" % (nom_fichier, exc2))
+                    "Classeur Excel illisible (%s) : %s" % (nom_fichier, exc2)
+                )
         else:
             raise ErreurFEC(
-                "Classeur Excel illisible (%s) : %s" % (nom_fichier, exc))
+                "Classeur Excel illisible (%s) : %s" % (nom_fichier, exc)
+            )
 
     idx, colonnes = _trouver_entete(rows)
     if colonnes is None:
@@ -688,7 +794,8 @@ def xlsx_vers_fec(brut: bytes, nom_fichier: str = "") -> bytes:
             "Debit, Credit (synonymes acceptes : Date, Compte, Libelle, "
             "Journal...) ou un export Cegid Quadra (Periode, Jour, "
             "Journal, Compte, Debit, Credit, NumUniq, TypeLigne). "
-            "Aucune colonne n'est devinee." % (nom_fichier,))
+            "Aucune colonne n'est devinee." % (nom_fichier,)
+        )
 
     def val(row, champ):
         j = colonnes.get(champ)
@@ -698,7 +805,7 @@ def xlsx_vers_fec(brut: bytes, nom_fichier: str = "") -> bytes:
 
     out = ["\t".join(CHAMPS_FEC)]
     nb_lignes = 0
-    for row in rows[idx + 1:]:
+    for row in rows[idx + 1 :]:
         if row is None:
             continue
         compte = _nombre_texte(val(row, "CompteNum"))
@@ -710,11 +817,13 @@ def xlsx_vers_fec(brut: bytes, nom_fichier: str = "") -> bytes:
         if not ecriture_num:
             raise ErreurFEC(
                 "Ligne sans numero d'ecriture (colonne EcritureNum "
-                "vide) : CONCORDE ne devine jamais un identifiant.")
+                "vide) : CONCORDE ne devine jamais un identifiant."
+            )
         if not compte:
             raise ErreurFEC(
                 "Ecriture %s sans numero de compte (colonne CompteNum "
-                "vide) : CONCORDE ne devine jamais un compte." % ecriture_num)
+                "vide) : CONCORDE ne devine jamais un compte." % ecriture_num
+            )
         journal = _nettoyer_texte(val(row, "JournalCode")) or JOURNAL_DEFAUT
         journal_lib = _nettoyer_texte(val(row, "JournalLib")) or journal
         date_ecr = _date_fec(val(row, "EcritureDate"), "EcritureDate")
@@ -748,7 +857,8 @@ def xlsx_vers_fec(brut: bytes, nom_fichier: str = "") -> bytes:
     if nb_lignes == 0:
         raise ErreurFEC(
             "Aucune ligne d'ecriture exploitable dans %r apres l'en-tete "
-            "(colonne %s)." % (nom_fichier, "ligne %d" % (idx + 1)))
+            "(colonne %s)." % (nom_fichier, "ligne %d" % (idx + 1))
+        )
     return ("\n".join(out) + "\n").encode("utf-8")
 
 

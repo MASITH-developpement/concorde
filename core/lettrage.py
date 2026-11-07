@@ -1,5 +1,6 @@
 # CONCORDE v1.0 — (c) MASITH / Stéphane Moreau. Tous droits réservés.
 """Lettrage : reconstruction des paires débit/crédit et détection d'anomalies."""
+
 from collections import defaultdict
 
 from .canonical import Canonique
@@ -39,11 +40,15 @@ def lettrer(canon, prefixe: str = "L"):
                 code = "%s%05d" % (prefixe, compteur)
                 ld.lettrage = code
                 match.lettrage = code
-                paires.append({
-                    "code": code, "compte": compte,
-                    "montant": ld.debit,
-                    "ligne_debit": ld, "ligne_credit": match,
-                })
+                paires.append(
+                    {
+                        "code": code,
+                        "compte": compte,
+                        "montant": ld.debit,
+                        "ligne_debit": ld,
+                        "ligne_credit": match,
+                    }
+                )
             else:
                 anomalies.append(ld)
         anomalies.extend(credits)

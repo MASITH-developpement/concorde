@@ -1,9 +1,17 @@
 # CONCORDE v1.0 — (c) MASITH / Stéphane Moreau. Tous droits réservés.
-"""Tests : journal, alertes par compte, changements, contrôles techniques, centre d'alertes."""
+"""Tests : journal, alertes, changements, contrôles techniques, centre.
 
+Couvre le journal de travail, les alertes par compte, la comparaison
+d'instantanés, les contrôles techniques et le centre d'alertes.
+"""
+
+import json
 import os
+import re
 import tempfile
 import unittest
+from collections.abc import Sequence
+from datetime import datetime, timedelta
 
 from core.comptes import alertes_balance, grand_livre, solde_texte
 from core.explications import CATALOGUE, expliquer
@@ -11,14 +19,23 @@ from core.journal import Journal, JournalMuet, duree_texte, nombre_texte
 from core.marceau import Marceau
 from core.surveillance import (
     CentreAlertes,
+    Instantane,
     comparer_instantanes,
+    constats_securite,
     controles_techniques,
 )
+from tests.outils import RACINE_DEPOT, Enregistrement
 
 
 def compte(
-    code, debit=0, credit=0, type_="expense", deprecie=False, libelle="X"
-):
+    code: str,
+    debit: int = 0,
+    credit: int = 0,
+    type_: str = "expense",
+    deprecie: bool = False,
+    libelle: str = "X",
+) -> Enregistrement:
+    """Construit une ligne de balance pour un compte (montants en centimes)."""
     return {
         "id": hash(code) % 10000,
         "code": code,
@@ -34,7 +51,10 @@ def compte(
 
 
 class TestJournal(unittest.TestCase):
-    def test_etapes_et_lecture_incrementale(self):
+    """Journal de travail raconté à l'utilisateur."""
+
+    def test_etapes_et_lecture_incrementale(self) -> None:
+        """Vérifie le récit des étapes et la lecture depuis un rang donné."""
         j = Journal()
         j.dire("début")
         with j.etape("Lecture") as e:
@@ -47,7 +67,8 @@ class TestJournal(unittest.TestCase):
         )
         self.assertEqual(j.depuis(3), ([], 3))
 
-    def test_echec_raconte(self):
+    def test_echec_raconte(self) -> None:
+        """Vérifie qu'une étape en échec est racontée puis propagée."""
         j = Journal()
         with self.assertRaises(ValueError):
             with j.etape("Calcul"):
@@ -55,7 +76,8 @@ class TestJournal(unittest.TestCase):
         self.assertEqual(j.tout()[-1]["niveau"], "erreur")
         self.assertIn("boum", j.tout()[-1]["message"])
 
-    def test_borne(self):
+    def test_borne(self) -> None:
+        """Vérifie que le journal ne garde que les derniers événements."""
         j = Journal(taille_max=3)
         for i in range(5):
             j.dire(str(i))
@@ -64,7 +86,8 @@ class TestJournal(unittest.TestCase):
         self.assertEqual(suivant, 5)
         self.assertEqual([e["message"] for e in j.depuis(4)[0]], ["4"])
 
-    def test_muet_et_formats(self):
+    def test_muet_et_formats(self) -> None:
+        """Vérifie le journal muet et les formats de nombre et de durée."""
         JournalMuet().dire("rien")
         with JournalMuet().etape("x"):
             pass
@@ -75,7 +98,10 @@ class TestJournal(unittest.TestCase):
 
 
 class TestMarceau(unittest.TestCase):
-    def test_explications_toujours_locales(self):
+    """Explications des alertes par Marceau."""
+
+    def test_explications_toujours_locales(self) -> None:
+        """Vérifie que les explications viennent du catalogue local."""
         m = Marceau(api_key="cle-factice")  # même avec Mistral configuré…
         x = m.expliquer_alerte("CAISSE_CREDITRICE")
         self.assertEqual(x["titre"], "Caisse créditrice")
@@ -83,17 +109,27 @@ class TestMarceau(unittest.TestCase):
         inconnu = expliquer("CODE_INEXISTANT", "Quelque chose")
         self.assertEqual(inconnu["titre"], "Quelque chose")  # jamais muet
 
-    def test_catalogue_complet(self):
+    def test_catalogue_complet(self) -> None:
+        """Vérifie que chaque explication a titre, cause et action."""
         for code, (titre, pourquoi, que_faire) in CATALOGUE.items():
             self.assertTrue(titre and pourquoi and que_faire, code)
 
 
 class TestAlertesBalance(unittest.TestCase):
-    def codes(self, balance, tiers=()):
-        r, par_compte = alertes_balance(balance, tiers)
-        return {c["code"]: c["nombre"] for c in r.constats}, par_compte
+    """Alertes calculées sur la balance et les tiers."""
 
-    def test_regles(self):
+    def codes(
+        self,
+        balance: list[Enregistrement],
+        tiers: Sequence[Enregistrement] = (),
+    ) -> tuple[dict[str, int], dict[str, list[str]]]:
+        """Rend le nombre par code d'alerte et les codes par compte."""
+        r, par_compte = alertes_balance(balance, tiers)
+        nombres: dict[str, int] = {c["code"]: c["nombre"] for c in r.constats}
+        return nombres, par_compte
+
+    def test_regles(self) -> None:
+        """Vérifie chaque règle d'alerte sur une balance équilibrée."""
         bal = [
             compte("530000", 0, 100, "asset_cash"),  # caisse créditrice
             compte("512000", 0, 50, "asset_cash"),  # banque créditrice
@@ -128,7 +164,8 @@ class TestAlertesBalance(unittest.TestCase):
         self.assertNotIn("603100", par_compte)
         self.assertEqual(par_compte["530000"], ["CAISSE_CREDITRICE"])
 
-    def test_desequilibre_bloquant(self):
+    def test_desequilibre_bloquant(self) -> None:
+        """Vérifie qu'une balance déséquilibrée est bloquante."""
         r, _ = alertes_balance(
             [
                 compte("601000", 100, 0),
@@ -137,12 +174,13 @@ class TestAlertesBalance(unittest.TestCase):
         )
         self.assertEqual(r.statut, "bloquant")
 
-    def test_tiers(self):
+    def test_tiers(self) -> None:
+        """Vérifie les alertes client créditeur et fournisseur débiteur."""
         bal = [
             compte("411000", 0, 0, "asset_receivable"),
             compte("401000", 0, 0, "liability_payable"),
         ]
-        tiers = [
+        tiers: list[Enregistrement] = [
             {
                 "compte": "411000",
                 "tiers_id": 1,
@@ -187,14 +225,15 @@ class TestAlertesBalance(unittest.TestCase):
         )  # la ligne sans tiers est ignorée ici
         self.assertEqual(par_compte["401000"], ["FOURNISSEUR_DEBITEUR"])
 
-    def test_grand_livre_et_solde(self):
+    def test_grand_livre_et_solde(self) -> None:
+        """Vérifie la pagination du grand livre, son cumul et les soldes."""
         lignes = [
             {"debit": 100, "credit": 0},
             {"debit": 0, "credit": 30},
             {"debit": 0, "credit": 100},
         ]
         page, tot = grand_livre(lignes, offset=1, limite=1)
-        self.assertEqual([l["cumul"] for l in page], [70])
+        self.assertEqual([ligne["cumul"] for ligne in page], [70])
         self.assertEqual(
             tot, {"lignes": 3, "debit": 100, "credit": 130, "solde": -30}
         )
@@ -202,7 +241,12 @@ class TestAlertesBalance(unittest.TestCase):
         self.assertEqual(solde_texte({"debit": 5, "credit": 5}), "0,00")
 
 
-def photo(ecritures, comptes=None, verrous=None):
+def photo(
+    ecritures: dict[str, list[str]],
+    comptes: dict[str, str] | None = None,
+    verrous: dict[str, str | None] | None = None,
+) -> Instantane:
+    """Construit un instantané de base (écritures, comptes, verrous)."""
     return {
         "ecritures": ecritures,
         "comptes": comptes or {"1": "411000"},
@@ -211,18 +255,26 @@ def photo(ecritures, comptes=None, verrous=None):
 
 
 class TestChangements(unittest.TestCase):
-    def codes(self, a, n):
-        return {
+    """Comparaison de deux instantanés de la base."""
+
+    def codes(
+        self, a: Instantane | None, n: Instantane
+    ) -> dict[tuple[str, str], int]:
+        """Rend le nombre par (code, niveau) entre deux instantanés."""
+        nombres: dict[tuple[str, str], int] = {
             (c["code"], c["niveau"]): c["nombre"]
             for c in comparer_instantanes(a, n).constats
         }
+        return nombres
 
-    def test_premier_passage(self):
+    def test_premier_passage(self) -> None:
+        """Vérifie que le premier passage crée l'instantané initial."""
         self.assertIn(
             ("INSTANTANE_INITIAL", "INFO"), self.codes(None, photo({}))
         )
 
-    def test_changements(self):
+    def test_changements(self) -> None:
+        """Vérifie la détection de chaque type de changement."""
         a = photo(
             {
                 "1": ["posted", "t1", "VEN/1"],
@@ -262,7 +314,8 @@ class TestChangements(unittest.TestCase):
         )  # exercice recule
         self.assertEqual(c[("VERROU_AVANCE", "INFO")], 1)  # période avance
 
-    def test_rien_ne_change(self):
+    def test_rien_ne_change(self) -> None:
+        """Vérifie qu'aucun changement n'est signalé à l'identique."""
         p = photo({"1": ["posted", "t1", "VEN/1"]})
         self.assertFalse(
             [c for c in comparer_instantanes(p, p).constats if c["nombre"]]
@@ -270,7 +323,10 @@ class TestChangements(unittest.TestCase):
 
 
 class TestTechniques(unittest.TestCase):
-    def test_controles(self):
+    """Contrôles techniques du serveur."""
+
+    def test_controles(self) -> None:
+        """Vérifie les alertes PostgreSQL, Odoo, tâches et connexions."""
         d = tempfile.mkdtemp()
         r = controles_techniques(
             False,
@@ -295,7 +351,12 @@ class TestTechniques(unittest.TestCase):
 
 
 class TestCentre(unittest.TestCase):
-    def constat(self, code, nombre=1, niveau="ALERTE"):
+    """Centre d'alertes persistant."""
+
+    def constat(
+        self, code: str, nombre: int = 1, niveau: str = "ALERTE"
+    ) -> Enregistrement:
+        """Construit un constat de ``nombre`` cas pour le centre d'alertes."""
         return {
             "code": code,
             "niveau": niveau,
@@ -304,7 +365,8 @@ class TestCentre(unittest.TestCase):
             "exemples": ["e"] * nombre,
         }
 
-    def test_cycle_de_vie(self):
+    def test_cycle_de_vie(self) -> None:
+        """Vérifie création, aggravation, résolution et réapparition."""
         chemin = os.path.join(tempfile.mkdtemp(), "alertes.json")
         c = CentreAlertes(chemin)
         n, r = c.synchroniser(
@@ -341,7 +403,8 @@ class TestCentre(unittest.TestCase):
         )
         self.assertEqual(n, ["CAISSE_CREDITRICE"])
 
-    def test_evenements(self):
+    def test_evenements(self) -> None:
+        """Vérifie que les événements restent et ne sont jamais résolus."""
         c = CentreAlertes(os.path.join(tempfile.mkdtemp(), "a.json"))
         c.evenements(
             "b",
@@ -357,18 +420,18 @@ class TestCentre(unittest.TestCase):
         self.assertEqual(len(c.lister("evenement")), 2)
 
 
-if __name__ == "__main__":
-    unittest.main()
-
-
 class TestSecurite(unittest.TestCase):
     """Lecture des résultats de securite/concorde_securite.py (ADR-0007)."""
 
-    def ecrire(self, d, nom, heures, constats):
-        import json
-        from datetime import datetime, timedelta
-
-        with open(os.path.join(d, nom + ".json"), "w") as f:
+    def ecrire(
+        self,
+        d: str,
+        nom: str,
+        heures: int,
+        constats: list[Enregistrement],
+    ) -> None:
+        """Écrit le résultat d'un contrôle de sécurité daté d'il y a N h."""
+        with open(os.path.join(d, nom + ".json"), "w", encoding="utf-8") as f:
             json.dump(
                 {
                     "date": (
@@ -381,9 +444,8 @@ class TestSecurite(unittest.TestCase):
                 f,
             )
 
-    def test_absence_puis_fraicheur(self):
-        from core.surveillance import constats_securite
-
+    def test_absence_puis_fraicheur(self) -> None:
+        """Vérifie l'alerte quand la surveillance de sécurité s'arrête."""
         d = tempfile.mkdtemp()
         self.assertEqual(
             {c["code"] for c in constats_securite(d)[0]},
@@ -398,9 +460,8 @@ class TestSecurite(unittest.TestCase):
             ["SEC_SURVEILLANCE_ARRETEE"],
         )
 
-    def test_constats_transmis_et_expliques(self):
-        from core.surveillance import constats_securite
-
+    def test_constats_transmis_et_expliques(self) -> None:
+        """Vérifie qu'un constat de sécurité est transmis et expliqué."""
         d = tempfile.mkdtemp()
         self.ecrire(
             d,
@@ -423,14 +484,14 @@ class TestSecurite(unittest.TestCase):
         centre.synchroniser("securite", "serveur", c)
         a = centre.lister("active")[0]
         self.assertEqual(a["categorie"], "technique")
-        self.assertIn("/tmp/postgresql", a["explication"]["pourquoi"])
+        self.assertEqual(a["explication"], expliquer("SEC_PROCESSUS_TEMP"))
+        self.assertIn("mineur", a["explication"]["pourquoi"])
 
-    def test_catalogue_securite_complet(self):
-        import re
-
+    def test_catalogue_securite_complet(self) -> None:
+        """Vérifie que chaque code de sécurité a son explication."""
         with open(
             os.path.join(
-                os.path.dirname(os.path.dirname(os.path.abspath(__file__))),
+                RACINE_DEPOT,
                 "securite",
                 "concorde_securite.py",
             ),
@@ -439,3 +500,7 @@ class TestSecurite(unittest.TestCase):
             codes = set(re.findall(r'"(SEC_[A-Z_]+)"', f.read()))
         self.assertTrue(codes)
         self.assertEqual(sorted(codes - set(CATALOGUE)), [])
+
+
+if __name__ == "__main__":
+    unittest.main()

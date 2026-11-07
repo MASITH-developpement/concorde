@@ -7,35 +7,40 @@ Le moteur ne parle jamais directement à Odoo : il reçoit une « source »
 qui expose quatre méthodes (voir SourceXmlRpc ci-dessous et SourceEnv
 dans le module Odoo) :
 
-    champs(modele)                        -> dict des champs ({} si modèle absent)
+    champs(modele)          -> dict des champs ({} si modèle absent)
     lire(modele, domaine, champs, offset, limit, ordre) -> list[dict]
-    modules_installes(noms)               -> set des modules installés
+    modules_installes(noms) -> set des modules installés
 
 Le même contrôle tourne donc :
-  - hors d'Odoo, en XML-RPC avec une clé API (scripts/check_dematerialisation.py) ;
+  - hors d'Odoo, en XML-RPC avec une clé API
+    (scripts/check_dematerialisation.py) ;
   - dans Odoo, depuis le menu CONCORDE > Contrôle dématérialisation.
 
 Contrôles :
   CONFIGURATION — modules de facturation électronique, formats EDI, proxies
-                  (Peppol / PPF / plateformes agréées), SIREN et TVA de la société.
+                  (Peppol / PPF / plateformes agréées), SIREN et TVA de la
+                  société.
   ÉMISSION      — factures clients validées : erreurs EDI / Peppol, envois en
                   attente, présence du XML (Factur-X / UBL / CII, y compris
                   embarqué dans le PDF), SIREN / TVA des clients B2B français.
-  RÉCEPTION     — factures fournisseurs : part reçue en XML, doublons probables,
-                  brouillons en attente de validation.
+  RÉCEPTION     — factures fournisseurs : part reçue en XML, doublons
+                  probables, brouillons en attente de validation.
 
 Niveaux : BLOQUANT (la chaîne est cassée), ALERTE (à corriger), INFO.
 Jamais muet : une analyse tronquée ou un champ illisible est signalé.
 Montants en centimes (int) — jamais de float dans les comparaisons.
 """
 
+import base64
 import hashlib
 import html
 import json
 import re
 from collections import OrderedDict
+from collections.abc import Iterable, Iterator, Mapping, Sequence
 from datetime import date, datetime, timedelta
 from decimal import Decimal, ROUND_HALF_UP
+from typing import Any, Protocol, TypedDict, TypeVar
 
 VERSION = "1.0"
 
@@ -65,17 +70,75 @@ MODULES_FORMAT = ("account_edi_ubl_cii", "account_edi_facturx", "account_edi")
 # Noms de fichiers XML embarqués dans un PDF Factur-X / ZUGFeRD.
 MARQUEURS_PDF = (b"factur-x.xml", b"zugferd-invoice.xml", b"xrechnung.xml")
 
+# Enregistrement Odoo lu (XML-RPC ou ORM) : valeurs dynamiques selon le type
+# de chaque champ (texte, nombre, False, [id, nom]…).
+EnregistrementOdoo = dict[str, Any]
+# Condition de domaine Odoo : (champ, opérateur, valeur de type variable).
+ConditionOdoo = tuple[str, str, object]
+# Domaine Odoo : conditions et opérateurs préfixés ("|").
+DomaineOdoo = Sequence[str | ConditionOdoo]
+
+_Element = TypeVar("_Element")
+
+
+class SourceDemat(Protocol):
+    """Interface de lecture attendue par le contrôle (XML-RPC ou ORM)."""
+
+    def champs(self, modele: str) -> Mapping[str, object]:
+        """Rend les champs du modèle ({} si absent ou inaccessible)."""
+
+    def lire(
+        self,
+        modele: str,
+        domaine: DomaineOdoo,
+        champs: Iterable[str],
+        offset: int = 0,
+        limit: int | None = None,
+        ordre: str = "id",
+    ) -> list[EnregistrementOdoo]:
+        """Rend les enregistrements du domaine (lecture seule)."""
+
+    def modules_installes(self, noms: Iterable[str]) -> set[str] | None:
+        """Rend les modules installés parmi `noms` (None si illisible)."""
+
+
+class Anomalie(TypedDict):
+    """Anomalie regroupée par code : un message, N factures concernées."""
+
+    niveau: str
+    sens: str
+    code: str
+    message: str
+    nombre: int
+    exemples: list[str]
+
 
 # ---------------------------------------------------------------------------
 # Identifiants français : SIREN / SIRET (Luhn) et TVA intracommunautaire
 # ---------------------------------------------------------------------------
 
 
-def _chiffres(texte):
+def _chiffres(texte: str | None) -> str:
+    """Rend les seuls chiffres de `texte` ('' si absent).
+
+    Rôle : normaliser SIREN / SIRET / identifiants saisis avec espaces.
+    Paramètres : texte, valeur saisie (None accepté).
+    Retour : chaîne de chiffres.
+    Erreurs : aucune.
+    Usages : siren_valide, siret_valide, extraire_siren.
+    """
     return re.sub(r"\D", "", texte or "")
 
 
-def _luhn_ok(numero):
+def _luhn_ok(numero: str) -> bool:
+    """Contrôle la clé de Luhn d'un numéro.
+
+    Rôle : clé de contrôle des SIREN et SIRET.
+    Paramètres : numero, chaîne de chiffres.
+    Retour : True si la clé est valide.
+    Erreurs : ValueError si `numero` contient autre chose que des chiffres.
+    Usages : siren_valide, siret_valide.
+    """
     total = 0
     for i, c in enumerate(reversed(numero)):
         n = int(c)
@@ -87,13 +150,22 @@ def _luhn_ok(numero):
     return total % 10 == 0
 
 
-def siren_valide(siren):
-    """SIREN : 9 chiffres, clé de Luhn (exception La Poste 356000000)."""
+def siren_valide(siren: str | None) -> bool:
+    """Contrôle un SIREN : 9 chiffres, clé de Luhn.
+
+    Rôle : valider l'identifiant d'une entreprise (exception La Poste
+    356000000).
+    Paramètres : siren, valeur saisie (espaces tolérés, None accepté).
+    Retour : True si le SIREN est valide.
+    Erreurs : aucune.
+    Usages : tva_fr_valide, ControleDemat (société, clients), analyser,
+    tests.
+    """
     s = _chiffres(siren)
     return len(s) == 9 and (_luhn_ok(s) or s == "356000000")
 
 
-def siret_valide(siret):
+def siret_valide(siret: str | None) -> bool:
     """SIRET : 14 chiffres, clé de Luhn (exception La Poste : somme % 5)."""
     s = _chiffres(siret)
     if len(s) != 14:
@@ -103,8 +175,17 @@ def siret_valide(siret):
     return _luhn_ok(s)
 
 
-def tva_fr_valide(tva):
-    """TVA intracom FR : FR + clé (2 chiffres) + SIREN, clé = (12 + 3*(SIREN % 97)) % 97."""
+def tva_fr_valide(tva: str | None) -> bool:
+    """Contrôle un n° de TVA intracommunautaire français.
+
+    Rôle : FR + clé (2 chiffres) + SIREN, avec
+    clé = (12 + 3 * (SIREN % 97)) % 97 ; l'ancien format alphanumérique
+    n'est pas vérifiable par clé et est accepté.
+    Paramètres : tva, valeur saisie (espaces tolérés, None accepté).
+    Retour : True si le numéro est valide.
+    Erreurs : aucune.
+    Usages : ControleDemat (société, clients), analyser, tests.
+    """
     t = re.sub(r"\s", "", (tva or "")).upper()
     m = re.fullmatch(r"FR([0-9A-Z]{2})(\d{9})", t)
     if not m:
@@ -117,9 +198,16 @@ def tva_fr_valide(tva):
     return True  # ancien format alphanumérique : non vérifiable par clé
 
 
-def extraire_siren(enreg):
-    """SIREN d'un partenaire / d'une société : champ siret (l10n_fr),
-    company_registry (17+), sinon déduit d'un n° de TVA FR."""
+def extraire_siren(enreg: Mapping[str, Any]) -> str:
+    """Rend le SIREN d'un partenaire ou d'une société ('' si introuvable).
+
+    Rôle : lire le champ siret (l10n_fr), company_registry (17+), sinon le
+    déduire d'un n° de TVA FR.
+    Paramètres : enreg, enregistrement Odoo (res.partner / res.company).
+    Retour : 9 chiffres, ou ''.
+    Erreurs : aucune.
+    Usages : ControleDemat.controler_configuration, controler_emission.
+    """
     for champ in ("siret", "company_registry"):
         val = _chiffres(enreg.get(champ) or "")
         if len(val) in (9, 14):
@@ -134,9 +222,12 @@ def extraire_siren(enreg):
 # ---------------------------------------------------------------------------
 
 
-def centimes_odoo(valeur):
-    """Montant Odoo (float JSON / XML-RPC) -> centimes int, arrondi bancaire
-    au centime (Odoo stocke déjà des montants arrondis à la devise)."""
+def centimes_odoo(valeur: object) -> int:
+    """Montant Odoo (float JSON / XML-RPC) -> centimes int.
+
+    Arrondi au centime, demi vers le haut (Odoo stocke déjà des montants
+    arrondis à la devise). None ou False -> 0.
+    """
     if valeur in (None, False):
         return 0
     return int(
@@ -146,15 +237,47 @@ def centimes_odoo(valeur):
     )
 
 
-def _m2o_id(val):
-    return val[0] if isinstance(val, (list, tuple)) and val else (val or None)
+def _m2o_id(val: object) -> int | None:
+    """Rend l'id d'un many2one Odoo ([id, nom] ou id ; None si vide).
+
+    Rôle : lire un champ many2one quelle que soit sa forme.
+    Paramètres : val, valeur lue ([id, nom], id, False ou None).
+    Retour : l'identifiant, ou None.
+    Erreurs : aucune.
+    Usages : controler_emission, controler_reception, _factures_avec_xml,
+    _lire_partenaires.
+    """
+    if isinstance(val, (list, tuple)):
+        return int(val[0]) if val else None
+    if isinstance(val, int):
+        return val or None
+    return None
 
 
-def _m2o_nom(val):
-    return val[1] if isinstance(val, (list, tuple)) and len(val) > 1 else ""
+def _m2o_nom(val: object) -> str:
+    """Rend le nom d'un many2one Odoo [id, nom] ('' sinon).
+
+    Rôle : afficher la société d'un connecteur EDI.
+    Paramètres : val, valeur lue.
+    Retour : le nom, ou ''.
+    Erreurs : aucune.
+    Usages : controler_configuration (liste des connecteurs et anomalie
+    proxy_mode_test).
+    """
+    if isinstance(val, (list, tuple)) and len(val) > 1:
+        return str(val[1])
+    return ""
 
 
-def _date(val):
+def _date(val: object) -> date | None:
+    """Rend la date d'une valeur Odoo (date, datetime ou texte ISO).
+
+    Rôle : comparer les dates de factures quelle que soit la source.
+    Paramètres : val, valeur lue (vide -> None).
+    Retour : la date, ou None.
+    Erreurs : ValueError si le texte n'est pas une date ISO.
+    Usages : controler_emission, controler_reception.
+    """
     if not val:
         return None
     if isinstance(val, datetime):
@@ -164,9 +287,20 @@ def _date(val):
     return date.fromisoformat(str(val)[:10])
 
 
-def _lots(liste, taille=1000):
-    for i in range(0, len(liste), taille):
-        yield liste[i : i + taille]
+def _lots(
+    liste: Sequence[_Element], taille: int = 1000
+) -> Iterator[Sequence[_Element]]:
+    """Découpe `liste` en tranches successives d'au plus `taille` éléments.
+
+    Rôle : borner la taille des domaines « in » envoyés à Odoo.
+    Paramètres : liste, éléments à découper ; taille, taille maximale.
+    Retour : itérateur de tranches.
+    Erreurs : ValueError si `taille` vaut 0.
+    Usages : _factures_avec_xml (pièces jointes, PDF), _lire_partenaires.
+    """
+    for debut_lot in range(0, len(liste), taille):
+        fin_lot = debut_lot + taille
+        yield liste[debut_lot:fin_lot]
 
 
 # ---------------------------------------------------------------------------
@@ -175,51 +309,71 @@ def _lots(liste, taille=1000):
 
 
 class SourceXmlRpc:
-    """Client XML-RPC Odoo en lecture seule (search_read / fields_get uniquement)."""
+    """Client XML-RPC Odoo en lecture seule (search_read / fields_get)."""
 
     METHODES_AUTORISEES = ("search_read", "fields_get", "search_count")
 
-    def __init__(self, url, db, utilisateur, cle_api, timeout=60):
-        import xmlrpc.client
+    def __init__(
+        self,
+        url: str,
+        db: str,
+        utilisateur: str,
+        cle_api: str,
+        timeout: float = 60,
+    ) -> None:
+        """Se connecte et s'authentifie avec une clé API.
+
+        Erreurs : ConnectionError si l'authentification est refusée.
+        """
+        # Import local : seul ce client hors Odoo en a besoin (le module
+        # Odoo n'utilise que SourceEnv).
+        from .odoo_source import transport_xmlrpc
+        from .xml_sur import FauteXmlRpc, ProxyXmlRpc
 
         self.url = url.rstrip("/")
         self.db = db
         self._cle = cle_api
-        self._fault = xmlrpc.client.Fault
+        self._fault = FauteXmlRpc
 
-        class _Transport(
-            xmlrpc.client.SafeTransport
-            if self.url.startswith("https")
-            else xmlrpc.client.Transport
-        ):
-            def make_connection(self, host):
-                conn = super().make_connection(host)
-                conn.timeout = timeout
-                return conn
-
-        commun = xmlrpc.client.ServerProxy(
+        commun = ProxyXmlRpc(
             self.url + "/xmlrpc/2/common",
-            transport=_Transport(),
+            transport=transport_xmlrpc(self.url, timeout),
             allow_none=True,
         )
-        self._objet = xmlrpc.client.ServerProxy(
+        self._objet = ProxyXmlRpc(
             self.url + "/xmlrpc/2/object",
-            transport=_Transport(),
+            transport=transport_xmlrpc(self.url, timeout),
             allow_none=True,
         )
         try:
-            self.version_serveur = commun.version().get("server_version", "?")
+            infos_version = commun.version()
         except Exception:
-            self.version_serveur = "?"
+            infos_version = None  # version illisible : non bloquant
+        self.version_serveur: str = (
+            infos_version.get("server_version", "?")
+            if isinstance(infos_version, dict)
+            else "?"
+        )
         self.uid = commun.authenticate(db, utilisateur, cle_api, {})
         if not self.uid:
             raise ConnectionError(
-                "Authentification refusée : vérifiez l'URL, la base, le login et "
-                "la clé API (Préférences > Sécurité du compte > Clés API)."
+                "Authentification refusée : vérifiez l'URL, la base, le login "
+                "et la clé API (Préférences > Sécurité du compte > Clés API)."
             )
-        self._champs = {}
+        self._champs: dict[str, dict[str, Any]] = {}
 
-    def _appel(self, modele, methode, args, kwargs=None):
+    def _appel(
+        self,
+        modele: str,
+        methode: str,
+        args: list[object],
+        kwargs: dict[str, object] | None = None,
+    ) -> Any:
+        """Appelle une méthode autorisée d'un modèle (execute_kw).
+
+        Retour : la réponse XML-RPC, de forme dynamique.
+        Erreurs : PermissionError si la méthode n'est pas en lecture seule.
+        """
         if methode not in self.METHODES_AUTORISEES:
             raise PermissionError(
                 "Méthode %r interdite : client en lecture seule." % methode
@@ -228,7 +382,8 @@ class SourceXmlRpc:
             self.db, self.uid, self._cle, modele, methode, args, kwargs or {}
         )
 
-    def champs(self, modele):
+    def champs(self, modele: str) -> dict[str, dict[str, Any]]:
+        """Rend les champs du modèle ({} si absent ou non accessible)."""
         if modele not in self._champs:
             try:
                 self._champs[modele] = self._appel(
@@ -241,17 +396,34 @@ class SourceXmlRpc:
                 self._champs[modele] = {}  # modèle absent ou non accessible
         return self._champs[modele]
 
-    def lire(self, modele, domaine, champs, offset=0, limit=None, ordre="id"):
-        kw = {"fields": list(champs), "offset": offset, "order": ordre}
+    def lire(
+        self,
+        modele: str,
+        domaine: DomaineOdoo,
+        champs: Iterable[str],
+        offset: int = 0,
+        limit: int | None = None,
+        ordre: str = "id",
+    ) -> list[EnregistrementOdoo]:
+        """Rend les enregistrements du domaine (search_read paginé)."""
+        kw: dict[str, object] = {
+            "fields": list(champs),
+            "offset": offset,
+            "order": ordre,
+        }
         if limit:
             kw["limit"] = limit
-        return self._appel(modele, "search_read", [domaine], kw)
+        enregistrements: list[EnregistrementOdoo] = self._appel(
+            modele, "search_read", [domaine], kw
+        )
+        return enregistrements
 
-    def modules_installes(self, noms):
+    def modules_installes(self, noms: Iterable[str]) -> set[str] | None:
+        """Rend les modules installés parmi `noms` (None si droits absents)."""
         try:
             mods = self.lire(
                 "ir.module.module",
-                [["name", "in", list(noms)], ["state", "=", "installed"]],
+                [("name", "in", list(noms)), ("state", "=", "installed")],
                 ["name"],
             )
         except self._fault:
@@ -265,18 +437,40 @@ class SourceXmlRpc:
 
 
 class Rapport:
-    def __init__(self, depuis, jours):
+    """Rapport du contrôle : informations et anomalies regroupées par code."""
+
+    def __init__(self, depuis: date, jours: int) -> None:
+        """Crée un rapport vide pour la fenêtre [depuis, depuis + jours]."""
         self.depuis = depuis
         self.jours = jours
-        self.infos = OrderedDict()
-        self._anomalies = OrderedDict()  # code -> dict
+        # Informations de nature variable (nombres, listes, comptages).
+        self.infos: OrderedDict[str, object] = OrderedDict()
+        self._anomalies: OrderedDict[str, Anomalie] = OrderedDict()
 
-    def info(self, cle, valeur):
+    def info(self, cle: str, valeur: object) -> None:
+        """Enregistre une information du rapport (remplace la précédente)."""
         self.infos[cle] = valeur
 
-    def anomalie(self, niveau, sens, code, message, facture=None):
-        """Regroupe les anomalies par code : un message, N factures concernées."""
-        assert niveau in NIVEAUX
+    def anomalie(
+        self,
+        niveau: str,
+        sens: str,
+        code: str,
+        message: str,
+        facture: str | None = None,
+    ) -> None:
+        """Regroupe les anomalies par code : un message, N factures.
+
+        Rôle : compter chaque occurrence et garder au plus MAX_EXEMPLES
+        exemples.
+        Paramètres : niveau (NIVEAUX), sens (configuration, émission,
+        réception, général), code, message, facture (exemple facultatif).
+        Retour : aucun.
+        Erreurs : ValueError si le niveau est inconnu.
+        Usages : ControleDemat (tous les contrôles).
+        """
+        if niveau not in NIVEAUX:
+            raise ValueError("Niveau d'anomalie inconnu : %r" % (niveau,))
         a = self._anomalies.get(code)
         if a is None:
             a = self._anomalies[code] = {
@@ -292,27 +486,39 @@ class Rapport:
             a["exemples"].append(facture)
 
     @property
-    def anomalies(self):
+    def anomalies(self) -> list[Anomalie]:
+        """Anomalies triées par gravité (BLOQUANT, ALERTE, INFO)."""
         ordre = {n: i for i, n in enumerate(NIVEAUX)}
         return sorted(
             self._anomalies.values(), key=lambda a: ordre[a["niveau"]]
         )
 
-    def compte(self, niveau):
+    def compte(self, niveau: str) -> int:
+        """Nombre d'anomalies (codes distincts) d'un niveau."""
         return sum(
             1 for a in self._anomalies.values() if a["niveau"] == niveau
         )
 
     @property
-    def statut(self):
+    def statut(self) -> str:
+        """non_conforme (bloquant), a_verifier (alerte) ou conforme."""
         if self.compte(BLOQUANT):
             return "non_conforme"
         if self.compte(ALERTE):
             return "a_verifier"
         return "conforme"
 
-    def en_dict(self):
-        d = OrderedDict()
+    def en_dict(self) -> OrderedDict[str, Any]:
+        """Rend le rapport sérialisable, avec son empreinte SHA-256.
+
+        Rôle : résultat du contrôle (JSON, rendus texte et HTML).
+        Paramètres : aucun.
+        Retour : dictionnaire ordonné (moteur, depuis, jours, statut,
+        comptes, infos, anomalies, empreinte).
+        Erreurs : aucune.
+        Usages : script check_dematerialisation, module Odoo, tests.
+        """
+        d: OrderedDict[str, Any] = OrderedDict()
         d["moteur"] = "CONCORDE demat v%s" % VERSION
         d["depuis"] = str(self.depuis)
         d["jours"] = self.jours
@@ -333,15 +539,24 @@ class Rapport:
 
 
 class ControleDemat:
+    """Contrôle de la dématérialisation : configuration, émission, réception.
+
+    Lecture seule ; le résultat est un Rapport (voir executer).
+    """
+
     def __init__(
         self,
-        source,
-        jours=30,
-        aujourd_hui=None,
-        max_factures=MAX_FACTURES_DEFAUT,
-        inspecter_pdf=True,
-        max_pdf=MAX_PDF_INSPECTES_DEFAUT,
-    ):
+        source: SourceDemat,
+        jours: int = 30,
+        aujourd_hui: date | None = None,
+        max_factures: int = MAX_FACTURES_DEFAUT,
+        inspecter_pdf: bool = True,
+        max_pdf: int = MAX_PDF_INSPECTES_DEFAUT,
+    ) -> None:
+        """Prépare le contrôle sur les `jours` jours précédant aujourd'hui.
+
+        Erreurs : ValueError si `jours` < 1.
+        """
         if jours < 1:
             raise ValueError(
                 "La fenêtre d'analyse doit être d'au moins 1 jour."
@@ -354,16 +569,24 @@ class ControleDemat:
         self.inspecter_pdf = inspecter_pdf
         self.max_pdf = max_pdf
         self.r = Rapport(self.depuis, jours)
-        self._champs_move = {}
+        self._champs_move: Mapping[str, object] = {}
 
     # --- lecture ------------------------------------------------------------
-    def _filtrer(self, modele, candidats):
+    def _filtrer(self, modele: str, candidats: Iterable[str]) -> list[str]:
+        """Garde, parmi `candidats`, les champs existant dans `modele`."""
         dispo = self.src.champs(modele)
         return [c for c in candidats if c in dispo]
 
-    def _lire_tout(self, modele, domaine, champs, etiquette):
+    def _lire_tout(
+        self,
+        modele: str,
+        domaine: DomaineOdoo,
+        champs: Iterable[str],
+        etiquette: str,
+    ) -> list[EnregistrementOdoo]:
         """Lecture paginée ; jamais de troncature silencieuse."""
-        res, offset = [], 0
+        res: list[EnregistrementOdoo] = []
+        offset = 0
         while len(res) < self.max_factures:
             demande = min(TAILLE_LOT, self.max_factures - len(res))
             lot = self.src.lire(
@@ -386,7 +609,11 @@ class ControleDemat:
         return res
 
     # --- point d'entrée -----------------------------------------------------
-    def executer(self):
+    def executer(self) -> Rapport:
+        """Lance les trois contrôles et rend le rapport.
+
+        Erreurs : RuntimeError si account.move est inaccessible.
+        """
         self._champs_move = self.src.champs("account.move")
         if not self._champs_move:
             raise RuntimeError(
@@ -399,7 +626,8 @@ class ControleDemat:
         return self.r
 
     # --- 1. Configuration ---------------------------------------------------
-    def controler_configuration(self):
+    def controler_configuration(self) -> None:
+        """Contrôle modules, formats EDI, connecteurs, SIREN / TVA société."""
         r = self.r
         mods = self.src.modules_installes(MODULES_EINVOICE)
         if mods is None:
@@ -535,8 +763,9 @@ class ControleDemat:
                     "%s : %s" % (soc["name"], soc["vat"]),
                 )
 
-    # --- 2. Émission ----------------------------------------------------------
-    def controler_emission(self):
+    # --- 2. Émission --------------------------------------------------------
+    def controler_emission(self) -> None:
+        """Contrôle les factures clients validées de la période."""
         r = self.r
         champs = self._filtrer(
             "account.move",
@@ -557,20 +786,22 @@ class ControleDemat:
                 "message_main_attachment_id",
             ],
         )
-        domaine = [
-            ["move_type", "in", ["out_invoice", "out_refund"]],
-            ["state", "=", "posted"],
-            ["invoice_date", ">=", str(self.depuis)],
+        domaine: list[str | ConditionOdoo] = [
+            ("move_type", "in", ["out_invoice", "out_refund"]),
+            ("state", "=", "posted"),
+            ("invoice_date", ">=", str(self.depuis)),
         ]
         factures = self._lire_tout("account.move", domaine, champs, "émission")
         r.info("emission_total", len(factures))
         if not factures:
             return
 
-        etats = {}
+        etats: dict[str, int] = {}
         non_envoyees = 0
         for f in factures:
             nom = f.get("name") or "#%s" % f["id"]
+            # Le domaine impose invoice_date : jamais vide ici.
+            date_facture = _date(f.get("invoice_date"))
             st = f.get("edi_state") or f.get("peppol_move_state") or "n/a"
             etats[st] = etats.get(st, 0) + 1
 
@@ -590,15 +821,18 @@ class ControleDemat:
                     "Document EDI en avertissement.",
                     "%s — %s" % (nom, _texte(f.get("edi_error_message"))),
                 )
-            if f.get("edi_state") == "to_send" and _date(
-                f.get("invoice_date")
-            ) < self.aujourd_hui - timedelta(days=1):
+            if (
+                f.get("edi_state") == "to_send"
+                and date_facture is not None
+                and date_facture < self.aujourd_hui - timedelta(days=1)
+            ):
                 r.anomalie(
                     ALERTE,
                     "émission",
                     "edi_a_envoyer",
-                    "Facture validée depuis plus d'un jour, envoi EDI non effectué "
-                    "(edi_state = to_send : vérifier la tâche planifiée EDI).",
+                    "Facture validée depuis plus d'un jour, envoi EDI non "
+                    "effectué (edi_state = to_send : vérifier la tâche "
+                    "planifiée EDI).",
                     nom,
                 )
             if f.get("edi_state") == "to_cancel":
@@ -619,9 +853,11 @@ class ControleDemat:
                     "Envoi Peppol en erreur.",
                     nom,
                 )
-            elif ps in ("to_send", "processing") and _date(
-                f.get("invoice_date")
-            ) < self.aujourd_hui - timedelta(days=2):
+            elif (
+                ps in ("to_send", "processing")
+                and date_facture is not None
+                and date_facture < self.aujourd_hui - timedelta(days=2)
+            ):
                 r.anomalie(
                     ALERTE,
                     "émission",
@@ -652,8 +888,13 @@ class ControleDemat:
         # Clients B2B français : SIREN obligatoire, TVA valide, XML attendu
         partenaires = self._lire_partenaires(factures)
         for f in factures:
-            p = partenaires.get(
-                _m2o_id(f.get("commercial_partner_id") or f.get("partner_id"))
+            ident_partenaire = _m2o_id(
+                f.get("commercial_partner_id") or f.get("partner_id")
+            )
+            p = (
+                partenaires.get(ident_partenaire)
+                if ident_partenaire is not None
+                else None
             )
             if (
                 not p
@@ -668,8 +909,9 @@ class ControleDemat:
                     ALERTE,
                     "émission",
                     "client_sans_siren",
-                    "Client professionnel français sans SIREN : mention obligatoire "
-                    "de la facture électronique (rejet par la plateforme).",
+                    "Client professionnel français sans SIREN : mention "
+                    "obligatoire de la facture électronique (rejet par la "
+                    "plateforme).",
                     nom,
                 )
             elif not siren_valide(siren):
@@ -698,12 +940,14 @@ class ControleDemat:
                     "émission",
                     "b2b_sans_xml",
                     "Facture B2B France sans XML structuré détecté "
-                    "(Factur-X / UBL / CII) : PDF simple, non conforme à la réforme.",
+                    "(Factur-X / UBL / CII) : PDF simple, non conforme à la "
+                    "réforme.",
                     nom,
                 )
 
-    # --- 3. Réception ---------------------------------------------------------
-    def controler_reception(self):
+    # --- 3. Réception -------------------------------------------------------
+    def controler_reception(self) -> None:
+        """Contrôle les factures fournisseurs de la période."""
         r = self.r
         champs = self._filtrer(
             "account.move",
@@ -721,12 +965,12 @@ class ControleDemat:
                 "message_main_attachment_id",
             ],
         )
-        domaine = [
-            ["move_type", "in", ["in_invoice", "in_refund"]],
-            ["state", "!=", "cancel"],
+        domaine: list[str | ConditionOdoo] = [
+            ("move_type", "in", ["in_invoice", "in_refund"]),
+            ("state", "!=", "cancel"),
             "|",
-            ["invoice_date", ">=", str(self.depuis)],
-            ["create_date", ">=", str(self.depuis)],
+            ("invoice_date", ">=", str(self.depuis)),
+            ("create_date", ">=", str(self.depuis)),
         ]
         factures = self._lire_tout(
             "account.move", domaine, champs, "réception"
@@ -738,7 +982,8 @@ class ControleDemat:
                 "réception",
                 "aucune_reception",
                 "Aucune facture fournisseur sur la période : vérifier que le "
-                "canal de réception (plateforme, Peppol, alias e-mail) fonctionne.",
+                "canal de réception (plateforme, Peppol, alias e-mail) "
+                "fonctionne.",
             )
             return
 
@@ -751,14 +996,14 @@ class ControleDemat:
                 ALERTE,
                 "réception",
                 "reception_peu_electronique",
-                "Seulement %d %% des factures fournisseurs sont reçues avec un XML "
-                "structuré : depuis le 1er septembre 2026 toute entreprise doit "
-                "pouvoir recevoir des factures électroniques (plateforme agréée)."
-                % taux,
+                "Seulement %d %% des factures fournisseurs sont reçues avec "
+                "un XML structuré : depuis le 1er septembre 2026 toute "
+                "entreprise doit pouvoir recevoir des factures électroniques "
+                "(plateforme agréée)." % taux,
             )
 
         # Doublons probables : même fournisseur + même référence + même montant
-        vus = {}
+        vus: dict[tuple[int | None, str, int], list[str]] = {}
         for f in factures:
             ref = re.sub(r"\s", "", (f.get("ref") or "")).upper()
             if not ref:
@@ -794,37 +1039,42 @@ class ControleDemat:
                     INFO,
                     "réception",
                     "brouillons_anciens",
-                    "Factures fournisseurs en brouillon depuis plus de 15 jours.",
+                    "Factures fournisseurs en brouillon depuis plus de 15 "
+                    "jours.",
                     f.get("name") or f.get("ref") or "#%s" % f["id"],
                 )
 
-    # --- détection du XML -----------------------------------------------------
-    def _factures_avec_xml(self, factures):
+    # --- détection du XML --------------------------------------------------
+    def _factures_avec_xml(
+        self, factures: Sequence[EnregistrementOdoo]
+    ) -> set[int]:
         """IDs des factures portant un XML structuré :
         1. champ ubl_cii_xml_id (17+, pièce jointe masquée des recherches) ;
         2. pièce jointe XML visible (Factur-X / UBL / CII / XRechnung) ;
         3. XML embarqué dans le PDF (Factur-X), détection par nom de fichier.
         """
-        trouves = {f["id"] for f in factures if f.get("ubl_cii_xml_id")}
+        trouves: set[int] = {
+            f["id"] for f in factures if f.get("ubl_cii_xml_id")
+        }
         reste = [f["id"] for f in factures if f["id"] not in trouves]
         for lot in _lots(reste):
             atts = self.src.lire(
                 "ir.attachment",
                 [
-                    ["res_model", "=", "account.move"],
-                    ["res_id", "in", lot],
+                    ("res_model", "=", "account.move"),
+                    ("res_id", "in", lot),
                     "|",
                     "|",
-                    ["mimetype", "ilike", "xml"],
-                    ["name", "=ilike", "%.xml"],
-                    ["name", "ilike", "factur"],
+                    ("mimetype", "ilike", "xml"),
+                    ("name", "=ilike", "%.xml"),
+                    ("name", "ilike", "factur"),
                 ],
                 ["res_id"],
             )
             trouves.update(a["res_id"] for a in atts)
 
         if self.inspecter_pdf:
-            pdf_par_facture = {}
+            pdf_par_facture: dict[int, int] = {}
             for f in factures:
                 if f["id"] in trouves:
                     continue
@@ -833,7 +1083,8 @@ class ControleDemat:
                 )
                 if aid:
                     pdf_par_facture[aid] = f["id"]
-            ids = list(pdf_par_facture)[: self.max_pdf]
+            pdf_inspectes = self.max_pdf
+            ids = list(pdf_par_facture)[:pdf_inspectes]
             if len(pdf_par_facture) > self.max_pdf:
                 self.r.anomalie(
                     INFO,
@@ -846,20 +1097,28 @@ class ControleDemat:
             for lot in _lots(ids, 20):
                 for a in self.src.lire(
                     "ir.attachment",
-                    [["id", "in", lot]],
+                    [("id", "in", lot)],
                     ["id", "mimetype", "datas"],
                 ):
                     if pdf_contient_xml(a.get("datas")):
                         trouves.add(pdf_par_facture[a["id"]])
         return trouves
 
-    def _lire_partenaires(self, factures):
+    def _lire_partenaires(
+        self, factures: Iterable[EnregistrementOdoo]
+    ) -> dict[int, EnregistrementOdoo]:
+        """Lit les partenaires commerciaux des factures, par id."""
         ids = sorted(
             {
-                _m2o_id(f.get("commercial_partner_id") or f.get("partner_id"))
+                ident
                 for f in factures
+                if (
+                    ident := _m2o_id(
+                        f.get("commercial_partner_id") or f.get("partner_id")
+                    )
+                )
+                is not None
             }
-            - {None}
         )
         champs = self._filtrer(
             "res.partner",
@@ -872,33 +1131,41 @@ class ControleDemat:
                 "siret",
             ],
         )
-        res = {}
+        res: dict[int, EnregistrementOdoo] = {}
         for lot in _lots(ids):
-            for p in self.src.lire("res.partner", [["id", "in", lot]], champs):
+            for p in self.src.lire("res.partner", [("id", "in", lot)], champs):
                 res[p["id"]] = p
         return res
 
 
-def pdf_contient_xml(datas_b64):
-    """Vrai si le PDF (base64) embarque un XML Factur-X / ZUGFeRD / XRechnung."""
+def pdf_contient_xml(datas_b64: object) -> bool:
+    """Dit si un PDF embarque un XML Factur-X / ZUGFeRD / XRechnung.
+
+    Rôle : détecter le XML structuré embarqué, par nom de fichier.
+    Paramètres : datas_b64, contenu du champ datas (base64 texte ou octets,
+    ou PDF déjà décodé selon la version d'Odoo ; vide accepté).
+    Retour : True si un marqueur de MARQUEURS_PDF est trouvé.
+    Erreurs : aucune (contenu illisible -> False).
+    Usages : ControleDemat._factures_avec_xml, tests.
+    """
     if not datas_b64:
         return False
-    import base64
-
     if isinstance(datas_b64, bytes) and datas_b64.startswith(b"%PDF"):
         brut = datas_b64  # déjà décodé (certaines versions d'Odoo)
-    else:
+    elif isinstance(datas_b64, (str, bytes, bytearray, memoryview)):
         try:
             brut = base64.b64decode(datas_b64)
-        except (ValueError, TypeError):
+        except ValueError:
             return False
+    else:
+        return False  # type non décodable en base64
     if not brut.startswith(b"%PDF"):
         return False
     bas = brut.lower()
     return any(m in bas for m in MARQUEURS_PDF)
 
 
-def _texte(val):
+def _texte(val: object) -> str:
     """edi_error_message peut être du HTML : texte brut, 200 caractères max."""
     t = re.sub(r"<[^>]+>", " ", str(val or ""))
     return re.sub(r"\s+", " ", html.unescape(t)).strip()[:200]
@@ -929,7 +1196,8 @@ STATUTS = {
 }
 
 
-def _valeur(v):
+def _valeur(v: object) -> str:
+    """Rend une information du rapport en texte (dict, liste ou valeur)."""
     if isinstance(v, dict):
         return ", ".join("%s : %s" % kv for kv in v.items()) or "—"
     if isinstance(v, (list, tuple)):
@@ -937,7 +1205,15 @@ def _valeur(v):
     return str(v)
 
 
-def rendu_texte(d):
+def rendu_texte(d: Mapping[str, Any]) -> str:
+    """Rend le rapport en texte (console, fichier).
+
+    Rôle : sortie lisible du script de contrôle.
+    Paramètres : d, rapport (Rapport.en_dict).
+    Retour : texte multiligne.
+    Erreurs : KeyError si le rapport est incomplet.
+    Usages : script check_dematerialisation, tests.
+    """
     lignes = [
         "=" * 70,
         "CONCORDE — CONTRÔLE DE LA DÉMATÉRIALISATION DES FACTURES",
@@ -976,7 +1252,15 @@ def rendu_texte(d):
     return "\n".join(lignes)
 
 
-def rendu_html(d):
+def rendu_html(d: Mapping[str, Any]) -> str:
+    """Rend le rapport en fragment HTML (textes échappés).
+
+    Rôle : affichage dans le module Odoo.
+    Paramètres : d, rapport (Rapport.en_dict).
+    Retour : fragment HTML.
+    Erreurs : KeyError si le rapport est incomplet.
+    Usages : module Odoo (concorde.demat.controle), tests.
+    """
     e = html.escape
     couleurs = {BLOQUANT: "#b00020", ALERTE: "#b26a00", INFO: "#555"}
     statut_coul = {
@@ -988,8 +1272,8 @@ def rendu_html(d):
         '<div class="concorde-demat">',
         '<h3 style="color:%s">%s</h3>'
         % (statut_coul, e(STATUTS[d["statut"]])),
-        "<p>Période : depuis le %s (%s jours) — %d bloquante(s), %d alerte(s), "
-        "%d info(s)</p>"
+        "<p>Période : depuis le %s (%s jours) — %d bloquante(s), "
+        "%d alerte(s), %d info(s)</p>"
         % (
             e(d["depuis"]),
             d["jours"],
@@ -1034,7 +1318,7 @@ def rendu_html(d):
     else:
         h.append("<p>Aucune anomalie détectée sur la période.</p>")
     h.append(
-        '<p style="color:#888;font-size:smaller">Empreinte SHA-256 : %s</p></div>'
-        % e(d["empreinte"])
+        '<p style="color:#888;font-size:smaller">'
+        "Empreinte SHA-256 : %s</p></div>" % e(d["empreinte"])
     )
     return "".join(h)

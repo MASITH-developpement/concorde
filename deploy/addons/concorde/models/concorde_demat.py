@@ -6,21 +6,33 @@ celui du script scripts/check_dematerialisation.py. Lecture seule : le
 contrôle n'écrit que son propre rapport (concorde.demat.controle).
 """
 
+from __future__ import annotations
+
 import json
+from collections.abc import Iterable, Sequence
+from typing import TYPE_CHECKING, Any
 
 from odoo import _, fields, models
 from odoo.exceptions import AccessError, UserError
 
 from odoo.addons.concorde.engine.demat import ControleDemat, rendu_html
 
+if TYPE_CHECKING:
+    from odoo.api import Environment
+
 
 class SourceEnv:
-    """Source « interne » du moteur demat : l'ORM, avec les droits de l'utilisateur."""
+    """Source « interne » du moteur demat : l'ORM, droits de l'utilisateur."""
 
-    def __init__(self, env):
+    def __init__(self, env: Environment) -> None:
+        """Mémorise l'environnement Odoo de l'utilisateur courant."""
         self.env = env
 
-    def champs(self, modele):
+    def champs(self, modele: str) -> dict[str, dict[str, Any]]:
+        """Rend la description des champs d'un modèle ({} si inaccessible).
+
+        Les attributs d'un champ dépendent de son type : valeurs dynamiques.
+        """
         if modele not in self.env:
             return {}
         try:
@@ -28,23 +40,38 @@ class SourceEnv:
         except AccessError:
             return {}
 
-    def lire(self, modele, domaine, champs, offset=0, limit=None, ordre="id"):
+    def lire(
+        self,
+        modele: str,
+        domaine: Sequence[Sequence[object]],
+        champs: Iterable[str],
+        offset: int = 0,
+        limit: int | None = None,
+        ordre: str = "id",
+    ) -> list[dict[str, Any]]:
+        """Lit les enregistrements du domaine (search_read, lecture seule).
+
+        Les valeurs lues dépendent du type de chaque champ : dynamiques.
+        """
         return self.env[modele].search_read(
             domaine, list(champs), offset=offset, limit=limit, order=ordre
         )
 
-    def modules_installes(self, noms):
+    def modules_installes(self, noms: Iterable[str]) -> set[str] | None:
+        """Rend les modules installés parmi noms (None si droits absents)."""
         try:
-            mods = self.env["ir.module.module"].search_read(
+            modules_lus = self.env["ir.module.module"].search_read(
                 [("name", "in", list(noms)), ("state", "=", "installed")],
                 ["name"],
             )
         except AccessError:
             return None
-        return {m["name"] for m in mods}
+        return {module_lu["name"] for module_lu in modules_lus}
 
 
 class ConcordeDematControle(models.Model):
+    """Rapport d'un contrôle de la dématérialisation des factures."""
+
     _name = "concorde.demat.controle"
     _description = "Contrôle de la dématérialisation des factures"
     _order = "id desc"
@@ -89,14 +116,19 @@ class ConcordeDematControle(models.Model):
     rapport_html = fields.Html(string="Rapport", sanitize=False, readonly=True)
     rapport_json = fields.Text(string="Rapport (JSON)", readonly=True)
 
-    def action_lancer(self):
+    def action_lancer(self) -> bool:
+        """Exécute le contrôle et enregistre son rapport dans la fiche.
+
+        Erreurs : UserError si la fenêtre est inférieure à 1 jour ou si le
+        moteur échoue (RuntimeError).
+        """
         for rec in self:
             if rec.jours < 1:
                 raise UserError(
                     _("La fenêtre d'analyse doit être d'au moins 1 jour.")
                 )
             try:
-                d = (
+                rapport_controle = (
                     ControleDemat(
                         SourceEnv(self.env),
                         jours=rec.jours,
@@ -107,14 +139,14 @@ class ConcordeDematControle(models.Model):
                 )
             except RuntimeError as exc:
                 raise UserError(str(exc))
-            infos = d["infos"]
+            infos = rapport_controle["infos"]
             rec.write(
                 {
                     "date_controle": fields.Datetime.now(),
-                    "state": d["statut"],
-                    "nb_bloquants": d["bloquants"],
-                    "nb_alertes": d["alertes"],
-                    "nb_infos": d["infos_anomalies"],
+                    "state": rapport_controle["statut"],
+                    "nb_bloquants": rapport_controle["bloquants"],
+                    "nb_alertes": rapport_controle["alertes"],
+                    "nb_infos": rapport_controle["infos_anomalies"],
                     "emission_total": infos.get("emission_total", 0),
                     "emission_avec_xml": infos.get("emission_avec_xml", 0),
                     "reception_total": infos.get("reception_total", 0),
@@ -122,10 +154,13 @@ class ConcordeDematControle(models.Model):
                     "taux_reception": infos.get(
                         "reception_taux_electronique", ""
                     ),
-                    "empreinte": d["empreinte"],
-                    "rapport_html": rendu_html(d),
+                    "empreinte": rapport_controle["empreinte"],
+                    "rapport_html": rendu_html(rapport_controle),
                     "rapport_json": json.dumps(
-                        d, ensure_ascii=False, indent=2, default=str
+                        rapport_controle,
+                        ensure_ascii=False,
+                        indent=2,
+                        default=str,
                     ),
                 }
             )

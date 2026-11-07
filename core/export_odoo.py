@@ -16,8 +16,11 @@ Valeurs account_type par version (documentation officielle Odoo) :
 
 import csv
 import io
+from collections.abc import Iterable
+from datetime import date
+from typing import Optional
 
-from .canonical import LigneEcriture  # noqa: F401  (typage documentation)
+from .canonical import LigneEcriture
 
 TYPES_PAR_VERSION = {
     "17": {
@@ -125,7 +128,7 @@ class ErreurExport(RuntimeError):
     """Erreur explicite de l'export (version inconnue, type invalide)."""
 
 
-def type_compte(code):
+def type_compte(code: Optional[str]) -> str:
     """Type de compte Odoo explicite déduit de la classe (1-9)."""
     c = (code or "").strip()
     if c.startswith("03"):
@@ -137,7 +140,8 @@ def type_compte(code):
     return TYPES_PAR_CLASSE.get(c[:1], TYPE_COMPTE_DEFAUT)
 
 
-def _verifier_type(code, version):
+def _verifier_type(code: str, version: str) -> str:
+    """Type du compte, validé contre la liste de la version Odoo cible."""
     typ = type_compte(code)
     if typ not in TYPES_PAR_VERSION.get(version, set()):
         raise ErreurExport(
@@ -148,25 +152,58 @@ def _verifier_type(code, version):
     return typ
 
 
-def generer_csv_comptes(lignes, libelles, version):
-    """CSV des comptes au format d'import Odoo <version>.
+def _verifier_version(version: str) -> None:
+    """Refuse une version Odoo sans liste de types connue.
 
-    lignes : itérable de LigneEcriture (déjà mappées sur les comptes Odoo).
-    libelles : {compte cible: intitulé} lus dans le FEC.
-    Retourne une str CSV (UTF-8, BOM pour Excel).
+    Rôle : garde commune des trois exports CSV.
+    Paramètres : version, version Odoo cible ('17' à '20').
+    Retour : aucun.
+    Erreurs : ErreurExport si la version n'est pas dans TYPES_PAR_VERSION.
+    Usages : generer_csv_comptes, generer_csv_journaux,
+    generer_csv_ecritures.
     """
     if version not in TYPES_PAR_VERSION:
         raise ErreurExport(
             "Version Odoo %r non supportée (attendues : %s)."
             % (version, ", ".join(sorted(TYPES_PAR_VERSION)))
         )
-    comptes = sorted({l.compte for l in lignes})
+
+
+def _ecrire_csv(entete: list[str], rangees: Iterable[list[str]]) -> str:
+    """CSV (séparateur virgule, fins de ligne CRLF) préfixé du BOM UTF-8.
+
+    Rôle : mise en forme commune des exports, lisible par Excel.
+    Paramètres : entete, noms de colonnes ; rangees, lignes de valeurs.
+    Retour : le texte CSV.
+    Erreurs : aucune.
+    Usages : generer_csv_comptes, generer_csv_journaux,
+    generer_csv_ecritures.
+    """
     buf = io.StringIO()
     w = csv.writer(buf, lineterminator="\r\n")
-    w.writerow(["Code", "Name", "Type"])
-    for c in comptes:
-        w.writerow([c, libelles.get(c) or c, _verifier_type(c, version)])
+    w.writerow(entete)
+    w.writerows(rangees)
     return "\ufeff" + buf.getvalue()
+
+
+def generer_csv_comptes(
+    lignes: Iterable[LigneEcriture], libelles: dict[str, str], version: str
+) -> str:
+    """CSV des comptes au format d'import Odoo <version>.
+
+    lignes : itérable de LigneEcriture (déjà mappées sur les comptes Odoo).
+    libelles : {compte cible: intitulé} lus dans le FEC.
+    Retourne une str CSV (UTF-8, BOM pour Excel).
+    """
+    _verifier_version(version)
+    comptes = sorted({ligne.compte for ligne in lignes})
+    return _ecrire_csv(
+        ["Code", "Name", "Type"],
+        (
+            [c, libelles.get(c) or c, _verifier_type(c, version)]
+            for c in comptes
+        ),
+    )
 
 
 # Type de journal Odoo par code journal français — règles explicites.
@@ -182,7 +219,7 @@ JOURNAUX_PAR_DEFAUT = {
 }
 
 
-def type_journal(code):
+def type_journal(code: Optional[str]) -> tuple[str, str]:
     """(nom, type Odoo) d'un code journal — règles PCG explicites."""
     code = (code or "").strip().upper()
     if code in JOURNAUX_PAR_DEFAUT:
@@ -198,7 +235,7 @@ def type_journal(code):
     return ("Journal %s" % code, "general")
 
 
-def generer_csv_journaux(lignes, version):
+def generer_csv_journaux(lignes: Iterable[LigneEcriture], version: str) -> str:
     """CSV des journaux au format d'import Odoo <version>.
 
     Un journal par code présent dans les lignes, avec le type Odoo
@@ -206,22 +243,20 @@ def generer_csv_journaux(lignes, version):
     échoue si les journaux n'existent pas : ce fichier rend l'export
     autosuffisant (journaux -> comptes -> écritures).
     """
-    if version not in TYPES_PAR_VERSION:
-        raise ErreurExport(
-            "Version Odoo %r non supportée (attendues : %s)."
-            % (version, ", ".join(sorted(TYPES_PAR_VERSION)))
-        )
-    codes = sorted({l.journal_code for l in lignes if l.journal_code})
-    buf = io.StringIO()
-    w = csv.writer(buf, lineterminator="\r\n")
-    w.writerow(["Name", "Code", "Type"])
+    _verifier_version(version)
+    codes = sorted(
+        {ligne.journal_code for ligne in lignes if ligne.journal_code}
+    )
+    rangees = []
     for c in codes:
         nom, jtype = type_journal(c)
-        w.writerow([nom, c, jtype])
-    return "\ufeff" + buf.getvalue()
+        rangees.append([nom, c, jtype])
+    return _ecrire_csv(["Name", "Code", "Type"], rangees)
 
 
-def generer_csv_ecritures(lignes, version):
+def generer_csv_ecritures(
+    lignes: Iterable[LigneEcriture], version: str
+) -> str:
     """CSV des écritures au format d'import Odoo <version> (one2many).
 
     lignes : itérable de LigneEcriture (déjà mappées). La première ligne
@@ -235,19 +270,37 @@ def generer_csv_ecritures(lignes, version):
     'No match found' sur toutes les versions. Le nom rend le mapping
     automatique — aucune intervention manuelle n'est necessaire.
     """
-    if version not in TYPES_PAR_VERSION:
-        raise ErreurExport(
-            "Version Odoo %r non supportée (attendues : %s)."
-            % (version, ", ".join(sorted(TYPES_PAR_VERSION)))
-        )
-    ecritures = {}
-    for l in lignes:
+    _verifier_version(version)
+    ecritures: dict[tuple[str, str, date], list[LigneEcriture]] = {}
+    for ligne in lignes:
         ecritures.setdefault(
-            (l.journal_code, l.ecriture_num, l.date_ecriture), []
-        ).append(l)
-    buf = io.StringIO()
-    w = csv.writer(buf, lineterminator="\r\n")
-    w.writerow(
+            (ligne.journal_code, ligne.ecriture_num, ligne.date_ecriture), []
+        ).append(ligne)
+    rangees = []
+    for (jcode, enum, date_ecriture), lignes_e in ecritures.items():
+        ref = "FEC %s-%s" % (jcode, enum)
+        jnom = type_journal(jcode)[0]
+        premiere = True
+        for ligne in lignes_e:
+            if ligne.debit == 0 and ligne.credit == 0:
+                continue
+            libelle = (ligne.libelle or "CONCORDE")[:200]
+            parent = (
+                [jnom, date_ecriture.strftime("%d/%m/%Y"), ref, libelle]
+                if premiere
+                else [""] * 4
+            )
+            rangees.append(
+                parent
+                + [
+                    ligne.compte,
+                    libelle,
+                    "%.2f" % (ligne.debit / 100.0),
+                    "%.2f" % (ligne.credit / 100.0),
+                ]
+            )
+            premiere = False
+    return _ecrire_csv(
         [
             "Journal",
             "Date",
@@ -257,33 +310,6 @@ def generer_csv_ecritures(lignes, version):
             "Journal Items/Label",
             "Journal Items/Debit",
             "Journal Items/Credit",
-        ]
+        ],
+        rangees,
     )
-    for (jcode, enum, date), lignes_e in ecritures.items():
-        ref = "FEC %s-%s" % (jcode, enum)
-        jnom = type_journal(jcode)[0]
-        premiere = True
-        for l in lignes_e:
-            if l.debit == 0 and l.credit == 0:
-                continue
-            parent = (
-                [
-                    jnom,
-                    date.strftime("%d/%m/%Y"),
-                    ref,
-                    (l.libelle or "CONCORDE")[:200],
-                ]
-                if premiere
-                else [""] * 4
-            )
-            w.writerow(
-                parent
-                + [
-                    l.compte,
-                    (l.libelle or "CONCORDE")[:200],
-                    "%.2f" % (l.debit / 100.0),
-                    "%.2f" % (l.credit / 100.0),
-                ]
-            )
-            premiere = False
-    return "\ufeff" + buf.getvalue()

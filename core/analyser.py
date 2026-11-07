@@ -1,5 +1,5 @@
 # CONCORDE v1.0 — (c) MASITH / Stéphane Moreau. Tous droits réservés.
-"""Analyse des données comptables lues dans un Odoo 17 — lecture seule, zéro LLM.
+"""Analyse des données comptables lues dans un Odoo 17 (lecture seule, 0 LLM).
 
 Reçoit les enregistrements d'une source (core/odoo_source.py) et rend un
 rapport de constats, classés BLOQUANT / ALERTE / INFO, chacun avec son
@@ -21,7 +21,9 @@ import json
 import re
 import unicodedata
 from collections import Counter, defaultdict
+from collections.abc import Iterable, Mapping, Sequence
 from datetime import date, timedelta
+from typing import Any, TypedDict
 
 from .demat import siren_valide, tva_fr_valide
 from .odoo_source import TYPES_TIERS
@@ -31,17 +33,59 @@ NIVEAUX = ("BLOQUANT", "ALERTE", "INFO")
 EXEMPLES_MAX = 20
 JOURS_BROUILLON_ANCIEN = 30
 
+# Constat d'un rapport : niveau, code, message, nombre, exemples, elements
+# (et « origine » ajoutée par certains appelants). Destiné au JSON.
+Constat = dict[str, Any]
+
+
+class ResumeEcriture(TypedDict):
+    """Résumé d'une écriture construit pendant la lecture des lignes."""
+
+    ecriture: str
+    planifiee: bool
+    journal: str
+    date: date | None
+    etat: str
+    reference: str
+    lignes: int
+    solde: int
+    debit: int
+
 
 class Rapport:
-    def __init__(self):
-        self.constats = []
-        self.infos = {}
+    """Rapport de constats (BLOQUANT / ALERTE / INFO) et d'informations.
 
-    def info(self, cle, valeur):
+    Partagé par l'analyse, la comparaison, la balance, la surveillance,
+    la migration et la sécurité.
+    """
+
+    def __init__(self) -> None:
+        """Crée un rapport vide."""
+        self.constats: list[Constat] = []
+        # Informations libres du rapport (valeurs sérialisables en JSON).
+        self.infos: dict[str, Any] = {}
+
+    def info(self, cle: str, valeur: object) -> None:
+        """Enregistre (ou remplace) l'information `cle`."""
         self.infos[cle] = valeur
 
-    def constat(self, niveau, code, message, elements):
-        """Ajoute un constat si `elements` (liste) n'est pas vide."""
+    def constat(
+        self,
+        niveau: str,
+        code: str,
+        message: str,
+        elements: Sequence[object],
+    ) -> None:
+        """Ajoute un constat si `elements` n'est pas vide.
+
+        Rôle : point d'entrée unique de tous les contrôles.
+        Paramètres : niveau (un de NIVEAUX), code stable, message lisible,
+        elements — liste complète des éléments en cause.
+        Retour : aucun.
+        Erreurs : aucune.
+        Usages : analyser, comparaison, comptes, surveillance, migration,
+        securite.
+        """
         if not elements:
             return
         self.constats.append(
@@ -55,16 +99,27 @@ class Rapport:
             }
         )
 
-    def compte(self, niveau):
+    def compte(self, niveau: str) -> int:
+        """Nombre de constats du niveau donné."""
         return sum(1 for c in self.constats if c["niveau"] == niveau)
 
     @property
-    def statut(self):
+    def statut(self) -> str:
+        """« bloquant », « alertes » ou « conforme »."""
         if self.compte("BLOQUANT"):
             return "bloquant"
         return "alertes" if self.compte("ALERTE") else "conforme"
 
-    def en_dict(self, complet=True):
+    def en_dict(self, complet: bool = True) -> dict[str, Any]:
+        """Rend le rapport en dict JSON, scellé par une empreinte SHA-256.
+
+        Rôle : produire la forme publiée (fichier, interface) du rapport.
+        Paramètres : complet — False retire les listes complètes
+        (`elements`) et ne garde que les exemples.
+        Retour : {statut, infos, synthese, constats, empreinte}.
+        Erreurs : ValueError si un constat a un niveau inconnu.
+        Usages : passerelle, comparaison, interface, scripts, securite.
+        """
         constats = sorted(
             self.constats,
             key=lambda c: (NIVEAUX.index(c["niveau"]), c["code"]),
@@ -74,7 +129,7 @@ class Rapport:
                 {k: v for k, v in c.items() if k != "elements"}
                 for c in constats
             ]
-        d = {
+        d: dict[str, Any] = {
             "statut": self.statut,
             "infos": self.infos,
             "synthese": {n: self.compte(n) for n in NIVEAUX},
@@ -88,7 +143,8 @@ class Rapport:
         return d
 
 
-def _normaliser_nom(nom):
+def _normaliser_nom(nom: str | None) -> str:
+    """Nom en majuscules ASCII, sans forme juridique ni ponctuation."""
     s = (
         unicodedata.normalize("NFKD", nom or "")
         .encode("ascii", "ignore")
@@ -102,8 +158,13 @@ def _normaliser_nom(nom):
 
 
 def analyser(
-    lignes, comptes=(), journaux=(), tiers=(), aujourd_hui=None, societe=None
-):
+    lignes: Iterable[Mapping[str, Any]],
+    comptes: Iterable[Mapping[str, Any]] = (),
+    journaux: Iterable[Mapping[str, Any]] = (),
+    tiers: Iterable[Mapping[str, Any]] = (),
+    aujourd_hui: date | None = None,
+    societe: str | None = None,
+) -> Rapport:
     """Analyse complète. `lignes` est un itérable (une seule passe)."""
     aujourd_hui = aujourd_hui or date.today()
     r = Rapport()
@@ -114,65 +175,74 @@ def analyser(
 
     nb = 0
     debit = credit = 0
-    par_etat = Counter()
-    par_journal = Counter()
-    d_min = d_max = None
-    ecritures = {}  # ecriture_id -> résumé
-    sans_compte, nulles, futures, sans_tiers, depreciees = [], [], [], [], []
-    planifiees = (
-        []
-    )  # brouillons à comptabilisation automatique (amortissements…)
-    hors_plan, journal_inactif = set(), set()
-    tiers_utilises = set()
+    par_etat: Counter[str] = Counter()
+    par_journal: Counter[str] = Counter()
+    d_min: date | None = None
+    d_max: date | None = None
+    ecritures: dict[int, ResumeEcriture] = {}  # ecriture_id -> résumé
+    sans_compte: list[str] = []
+    nulles: list[str] = []
+    futures: list[str] = []
+    sans_tiers: list[str] = []
+    depreciees: list[str] = []
+    # Brouillons à comptabilisation automatique (amortissements…).
+    planifiees: list[str] = []
+    hors_plan: set[str] = set()
+    journal_inactif: set[str] = set()
+    tiers_utilises: set[int] = set()
 
-    for l in lignes:
+    for ligne in lignes:
         nb += 1
-        debit += l["debit"]
-        credit += l["credit"]
-        par_etat[l["etat"]] += 1
-        par_journal[l["journal_code"]] += 1
-        if l["date"]:
-            d_min = l["date"] if d_min is None else min(d_min, l["date"])
-            d_max = l["date"] if d_max is None else max(d_max, l["date"])
-        e = ecritures.get(l["ecriture_id"])
+        debit += ligne["debit"]
+        credit += ligne["credit"]
+        par_etat[ligne["etat"]] += 1
+        par_journal[ligne["journal_code"]] += 1
+        if ligne["date"]:
+            d_min = (
+                ligne["date"] if d_min is None else min(d_min, ligne["date"])
+            )
+            d_max = (
+                ligne["date"] if d_max is None else max(d_max, ligne["date"])
+            )
+        e = ecritures.get(ligne["ecriture_id"])
         if e is None:
             nom = (
-                l["ecriture"]
-                if l["ecriture"] not in ("", "/")
+                ligne["ecriture"]
+                if ligne["ecriture"] not in ("", "/")
                 else (
                     "brouillon %s id %s"
-                    % (l["journal_code"], l["ecriture_id"])
+                    % (ligne["journal_code"], ligne["ecriture_id"])
                 )
             )
-            e = ecritures[l["ecriture_id"]] = {
+            e = ecritures[ligne["ecriture_id"]] = {
                 "ecriture": nom,
-                "planifiee": l.get("auto_post", "no") not in ("", "no"),
-                "journal": l["journal_code"],
-                "date": l["date"],
-                "etat": l["etat"],
-                "reference": l["reference"],
+                "planifiee": ligne.get("auto_post", "no") not in ("", "no"),
+                "journal": ligne["journal_code"],
+                "date": ligne["date"],
+                "etat": ligne["etat"],
+                "reference": ligne["reference"],
                 "lignes": 0,
                 "solde": 0,
                 "debit": 0,
             }
         e["lignes"] += 1
-        e["solde"] += l["debit"] - l["credit"]
-        e["debit"] += l["debit"]
-        ref_l = "%s (ligne %s)" % (e["ecriture"], l["ligne_id"])
-        if not l["compte"]:
+        e["solde"] += ligne["debit"] - ligne["credit"]
+        e["debit"] += ligne["debit"]
+        ref_l = "%s (ligne %s)" % (e["ecriture"], ligne["ligne_id"])
+        if not ligne["compte"]:
             sans_compte.append(ref_l)
-        elif plan and l["compte"] not in plan:
-            hors_plan.add(l["compte"])
-        elif plan and plan[l["compte"]]["deprecie"]:
-            depreciees.append("%s — compte %s" % (ref_l, l["compte"]))
-        if l["debit"] == 0 and l["credit"] == 0:
+        elif plan and ligne["compte"] not in plan:
+            hors_plan.add(ligne["compte"])
+        elif plan and plan[ligne["compte"]]["deprecie"]:
+            depreciees.append("%s — compte %s" % (ref_l, ligne["compte"]))
+        if ligne["debit"] == 0 and ligne["credit"] == 0:
             nulles.append(ref_l)
-        if l["compte_type"] in TYPES_TIERS and not l["tiers_id"]:
-            sans_tiers.append("%s — compte %s" % (ref_l, l["compte"]))
-        if l["tiers_id"]:
-            tiers_utilises.add(l["tiers_id"])
-        if l["journal_code"] in journaux_inactifs:
-            journal_inactif.add(l["journal_code"])
+        if ligne["compte_type"] in TYPES_TIERS and not ligne["tiers_id"]:
+            sans_tiers.append("%s — compte %s" % (ref_l, ligne["compte"]))
+        if ligne["tiers_id"]:
+            tiers_utilises.add(ligne["tiers_id"])
+        if ligne["journal_code"] in journaux_inactifs:
+            journal_inactif.add(ligne["journal_code"])
 
     for e in sorted(
         ecritures.values(), key=lambda e: e["date"] or date.min, reverse=True
@@ -227,8 +297,8 @@ def analyser(
     r.constat(
         "INFO",
         "ECRITURE_PLANIFIEE",
-        "Écritures planifiées (brouillons comptabilisés automatiquement à leur "
-        "date : amortissements, récurrences)",
+        "Écritures planifiées (brouillons comptabilisés automatiquement à "
+        "leur date : amortissements, récurrences)",
         planifiees,
     )
     r.constat(
@@ -263,7 +333,9 @@ def analyser(
         sorted(journal_inactif),
     )
 
-    groupes = defaultdict(list)
+    groupes: defaultdict[tuple[str, date | None, str, int], list[str]] = (
+        defaultdict(list)
+    )
     for e in ecritures.values():
         if e["reference"] and e["debit"]:
             groupes[
@@ -310,15 +382,15 @@ def analyser(
     return r
 
 
-def _analyser_tiers(r, tiers):
+def _analyser_tiers(r: Rapport, tiers: Sequence[Mapping[str, Any]]) -> None:
     """Contrôles sur les tiers (sociétés mères) utilisés dans les écritures."""
     r.info("tiers_utilises", len(tiers))
-    sans_id, siren_ko, tva_ko = [], [], []
-    par_tva, par_siren, par_nom = (
-        defaultdict(list),
-        defaultdict(list),
-        defaultdict(list),
-    )
+    sans_id: list[str] = []
+    siren_ko: list[str] = []
+    tva_ko: list[str] = []
+    par_tva: defaultdict[str, list[str]] = defaultdict(list)
+    par_siren: defaultdict[str, list[str]] = defaultdict(list)
+    par_nom: defaultdict[str, list[str]] = defaultdict(list)
     for t in tiers:
         etiquette = "%s (id %s)" % (t["nom"], t["id"])
         tva = re.sub(r"\s", "", t["tva"]).upper()
@@ -352,7 +424,7 @@ def _analyser_tiers(r, tiers):
         "TVA intracommunautaires FR invalides",
         tva_ko,
     )
-    doublons = []
+    doublons: list[str] = []
     for cle, grp in (("TVA", par_tva), ("SIREN", par_siren), ("nom", par_nom)):
         doublons += [
             "%s identique : %s" % (cle, " / ".join(v))
@@ -362,8 +434,8 @@ def _analyser_tiers(r, tiers):
     r.constat("ALERTE", "TIERS_DOUBLON", "Tiers en double probable", doublons)
 
 
-def rendu_texte(rapport):
-    """Rapport lisible en console."""
+def rendu_texte(rapport: Mapping[str, Any]) -> str:
+    """Rend lisible en console un rapport (forme `Rapport.en_dict`)."""
     i = rapport["infos"]
     out = ["CONCORDE — Analyse des données Odoo 17", "=" * 40]
     if "societe" in i:

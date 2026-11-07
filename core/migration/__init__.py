@@ -1,10 +1,15 @@
 # CONCORDE v1.0 — (c) MASITH / Stéphane Moreau. Tous droits réservés.
 """Migration d'un ERP vers Odoo 17 (ADR-0004).
 
-lot.py           le lot : lignes au format commun (centimes), problèmes, retraits
+lot.py           le lot : lignes au format commun (centimes), problèmes,
+                 retraits ; routines communes aux portes
 connecteur_fec   porte 1 — lecture stricte d'un FEC (tiers et lettrage compris)
 controles        porte 3 — batterie de contrôles de migration
-filtres          porte 3 bis — retrait d'écritures (ex. à-nouveaux « AN » sur une période)
+filtres          porte 3 bis — retrait d'écritures (ex. à-nouveaux « AN »
+                 sur une période)
 correspondance   porte 4 — table des comptes arbitrée, comptes « à arbitrer »
-export           porte 5 — FEC et CSV de contrôle, conformité entrée = sortie au centime
+export           porte 5 — FEC et CSV de contrôle, conformité entrée = sortie
+                 au centime
+circuit          enchaînement des portes et rapport du lot
+injection        porte 6 — envoi dans la base de test et relecture
 """

@@ -28,9 +28,13 @@ from core.moteur import verifier_equilibre
 from core.xlsx_vers_fec import xlsx_vers_fec
 
 
-def lire_compte_libs(brut_fec, mapping):
-    """Intitulés des comptes lus dans le FEC (colonne CompteLib),
-    indexés par le compte Odoo CIBLE du mapping."""
+def lire_compte_libs(
+    brut_fec: bytes, mapping: dict[str, str]
+) -> dict[str, str]:
+    """Intitulés des comptes lus dans le FEC (colonne CompteLib).
+
+    Indexés par le compte Odoo CIBLE du mapping.
+    """
     texte = brut_fec.decode("utf-8")
     idx_num, idx_lib = 4, 5
     for ligne in texte.splitlines():
@@ -40,7 +44,7 @@ def lire_compte_libs(brut_fec, mapping):
             if "comptelib" in champs:
                 idx_lib = champs.index("comptelib")
             break
-    libelles = {}
+    libelles: dict[str, str] = {}
     for ligne in texte.splitlines():
         parties = ligne.split("\t")
         if len(parties) <= idx_num:
@@ -55,7 +59,8 @@ def lire_compte_libs(brut_fec, mapping):
     return libelles
 
 
-def main():
+def main() -> int:
+    """Exporte comptes et écritures ; rend 0 (fait) ou 2 (déséquilibre)."""
     ap = argparse.ArgumentParser(
         description="Export CONCORDE vers fichiers d'import Odoo "
         "(17, 18, 19 ou 20)"
@@ -83,7 +88,8 @@ def main():
     args = ap.parse_args()
 
     sortie = args.sortie or ("export_odoo%s" % args.version)
-    brut = open(args.fichier, "rb").read()
+    with open(args.fichier, "rb") as fichier_source:
+        brut = fichier_source.read()
     if args.fichier.lower().endswith((".xlsx", ".xls")):
         brut = xlsx_vers_fec(brut, nom_fichier=args.fichier)
 
@@ -98,10 +104,11 @@ def main():
         return 2
 
     if args.mapping:
-        mapping = charger_mapping_xlsx(
-            open(args.mapping, "rb").read(),
-            nom_fichier=os.path.basename(args.mapping),
-        )
+        with open(args.mapping, "rb") as fichier_mapping:
+            mapping = charger_mapping_xlsx(
+                fichier_mapping.read(),
+                nom_fichier=os.path.basename(args.mapping),
+            )
     else:
         mapping = charger_mapping(
             os.path.join(
@@ -112,18 +119,18 @@ def main():
 
     # Correspondance identité pour les comptes absents du mapping (décision
     # client explicite) : compte Odoo de même code, créé depuis l'export.
-    auto = []
-    for l in canon.lignes:
-        if l.compte not in mapping:
-            mapping[l.compte] = l.compte
-            auto.append(l.compte)
+    auto: list[str] = []
+    for ligne in canon.lignes:
+        if ligne.compte not in mapping:
+            mapping[ligne.compte] = ligne.compte
+            auto.append(ligne.compte)
 
     # Intitulés lus dans le FEC, indexés par le compte cible.
     libelles = lire_compte_libs(brut, mapping)
 
     # Application du mapping sur toutes les lignes.
-    for l in canon.lignes:
-        l.compte = mapping[l.compte]
+    for ligne in canon.lignes:
+        ligne.compte = mapping[ligne.compte]
 
     os.makedirs(sortie, exist_ok=True)
     p_comptes = os.path.join(sortie, "comptes_odoo%s.csv" % args.version)
@@ -135,16 +142,17 @@ def main():
 
     nb_ecritures = len(
         {
-            (l.journal_code, l.ecriture_num, l.date_ecriture)
-            for l in canon.lignes
+            (ligne.journal_code, ligne.ecriture_num, ligne.date_ecriture)
+            for ligne in canon.lignes
         }
     )
-    nb_lignes = sum(1 for l in canon.lignes if l.debit or l.credit)
+    nb_lignes = sum(1 for ligne in canon.lignes if ligne.debit or ligne.credit)
     print("Export Odoo %s : OK" % args.version)
     print("  Écritures : %d pièces, %d lignes" % (nb_ecritures, nb_lignes))
     print(
         "  Comptes   : %d (tous exportés — retirez ceux qui existent "
-        "déjà avant d'importer)" % len({l.compte for l in canon.lignes})
+        "déjà avant d'importer)"
+        % len({ligne.compte for ligne in canon.lignes})
     )
     if auto:
         print(

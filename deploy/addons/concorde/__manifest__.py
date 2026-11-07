@@ -3,7 +3,10 @@
     "name": "CONCORDE",
     "version": "17.0.1.5.0",
     "category": "Accounting/Accounting",
-    "summary": "Passerelle de liaison comptable universelle — import FEC Quadra vers Odoo 17",
+    "summary": (
+        "Passerelle de liaison comptable universelle — "
+        "import FEC Quadra vers Odoo 17"
+    ),
     "description": """
 CONCORDE — La passerelle de liaison comptable universelle (MARQUÉ DÉPOSÉ)
 =========================================================================

@@ -1,5 +1,5 @@
 # CONCORDE v1.0 — (c) MASITH / Stéphane Moreau. Tous droits réservés.
-"""Tests de la passerelle Odoo 17 : lecture (XML-RPC simulé), FEC, xlsx, CSV, analyse."""
+"""Tests de la passerelle Odoo 17 : XML-RPC simulé, FEC, xlsx, CSV, analyse."""
 
 import csv
 import io
@@ -10,6 +10,7 @@ import unittest
 import zipfile
 from datetime import date
 from decimal import Decimal
+from typing import Any
 
 from core.analyser import analyser
 from core.canonical import ErreurMontant
@@ -23,9 +24,11 @@ from core.telecharger import (
     nom_fichier_fec,
 )
 from core.xlsx_ecrire import Centimes, ecrire_xlsx, euros_texte
+from tests.outils import Enregistrement, FauxCommun
 
 
-def ligne(**kw):
+def ligne(**kw: Any) -> Enregistrement:
+    """Ligne d'écriture normalisée de test, surchargée par ``kw``."""
     base = {
         "ligne_id": 1,
         "ecriture_id": 1,
@@ -58,7 +61,9 @@ def ligne(**kw):
     return base
 
 
-def facture_equilibree(eid=1, montant=12000, **kw):
+def facture_equilibree(
+    eid: int = 1, montant: int = 12000, **kw: Any
+) -> list[Enregistrement]:
     """Facture de 100 € HT + 20 € TVA = 120 € TTC."""
     return [
         ligne(
@@ -88,35 +93,45 @@ def facture_equilibree(eid=1, montant=12000, **kw):
 
 
 class TestCentimes(unittest.TestCase):
-    def test_decimal_et_float_exacts(self):
+    """Conversion exacte des montants Odoo en centimes."""
+
+    def test_decimal_et_float_exacts(self) -> None:
+        """Vérifie la conversion exacte en centimes des Decimal et float."""
         self.assertEqual(centimes(Decimal("1234.56")), 123456)
         self.assertEqual(centimes(1234.56), 123456)
         self.assertEqual(centimes(0.1), 10)
         self.assertEqual(centimes(False), 0)
         self.assertEqual(centimes(-12.5), -1250)
 
-    def test_refus_arrondi_silencieux(self):
+    def test_refus_arrondi_silencieux(self) -> None:
+        """Vérifie qu'un montant non représentable au centime est refusé."""
         with self.assertRaises(ErreurMontant):
             centimes(Decimal("1.234"))
         with self.assertRaises(ErreurMontant):
             centimes(0.1 + 0.2)  # 0.30000000000000004
 
-    def test_euros_texte(self):
+    def test_euros_texte(self) -> None:
+        """Vérifie l'écriture des centimes en euros avec séparateur choisi."""
         self.assertEqual(euros_texte(123456), "1234.56")
         self.assertEqual(euros_texte(-5, ","), "-0,05")
         self.assertEqual(euros_texte(0, ","), "0,00")
 
 
 class TestFec(unittest.TestCase):
-    def setUp(self):
+    """Production du FEC réglementaire."""
+
+    def setUp(self) -> None:
+        """Prépare un dossier temporaire et le chemin du FEC."""
         self.dossier = tempfile.mkdtemp()
         self.chemin = os.path.join(self.dossier, "FEC.txt")
 
-    def lire(self, encodage="iso-8859-15"):
+    def lire(self, encodage: str = "iso-8859-15") -> list[list[str]]:
+        """Relit le FEC produit, découpé en champs par ligne."""
         with open(self.chemin, encoding=encodage) as f:
-            return [l.rstrip("\r\n").split("|") for l in f]
+            return [ligne_lue.rstrip("\r\n").split("|") for ligne_lue in f]
 
-    def test_fec_conforme(self):
+    def test_fec_conforme(self) -> None:
+        """Vérifie un FEC conforme : colonnes, auxiliaire, lettrage."""
         r = generer_fec(facture_equilibree(), self.chemin)
         self.assertEqual(r["lignes"], 3)
         self.assertEqual(r["total_debit"], r["total_credit"])
@@ -131,7 +146,8 @@ class TestFec(unittest.TestCase):
         self.assertEqual(client[13:15], ["A1", "20251102"])
         self.assertEqual(client[3], "20251003")
 
-    def test_desequilibre_refuse_sans_fichier(self):
+    def test_desequilibre_refuse_sans_fichier(self) -> None:
+        """Vérifie qu'un FEC déséquilibré est refusé sans aucun fichier."""
         lignes = facture_equilibree()
         lignes[0]["credit"] -= 1  # 1 centime d'écart
         with self.assertRaises(ErreurFec):
@@ -139,15 +155,18 @@ class TestFec(unittest.TestCase):
         self.assertFalse(os.path.exists(self.chemin))
         self.assertFalse(os.path.exists(self.chemin + ".partiel"))
 
-    def test_brouillon_refuse(self):
+    def test_brouillon_refuse(self) -> None:
+        """Vérifie qu'une écriture brouillon est refusée dans le FEC."""
         with self.assertRaises(ErreurFec):
             generer_fec(facture_equilibree(etat="draft"), self.chemin)
 
-    def test_devise_hors_euro_refusee(self):
+    def test_devise_hors_euro_refusee(self) -> None:
+        """Vérifie qu'une devise de tenue autre que l'euro est refusée."""
         with self.assertRaises(ErreurFec):
             generer_fec(facture_equilibree(), self.chemin, devise="USD")
 
-    def test_typographie_et_separateur(self):
+    def test_typographie_et_separateur(self) -> None:
+        """Vérifie la translittération et le comptage des caractères perdus."""
         lignes = facture_equilibree()
         lignes[0]["libelle"] = "l’essai | “test” – fin…\nsuite"
         lignes[1]["libelle"] = "Ω inconnu"
@@ -159,7 +178,8 @@ class TestFec(unittest.TestCase):
             r["caracteres_remplaces"], 1
         )  # seul Ω est perdu, et compté
 
-    def test_nom_reglementaire(self):
+    def test_nom_reglementaire(self) -> None:
+        """Vérifie le nom réglementaire du fichier FEC."""
         self.assertEqual(
             nom_fichier_fec("384684957", date(2025, 12, 31)),
             "384684957FEC20251231.txt",
@@ -167,7 +187,10 @@ class TestFec(unittest.TestCase):
 
 
 class TestXlsx(unittest.TestCase):
-    def test_classeur_valide_et_montants_exacts(self):
+    """Production du classeur Excel."""
+
+    def test_classeur_valide_et_montants_exacts(self) -> None:
+        """Vérifie un classeur valide, échappé, montants et dates exacts."""
         chemin = os.path.join(tempfile.mkdtemp(), "t.xlsx")
         n = generer_xlsx(
             chemin,
@@ -197,7 +220,8 @@ class TestXlsx(unittest.TestCase):
                 'name="Ecritures"', z.read("xl/workbook.xml").decode()
             )
 
-    def test_caracteres_de_controle_retires(self):
+    def test_caracteres_de_controle_retires(self) -> None:
+        """Vérifie le retrait des caractères de contrôle et les négatifs."""
         chemin = os.path.join(tempfile.mkdtemp(), "t.xlsx")
         ecrire_xlsx(chemin, [("F", ["a"], [["x\x01y"], [Centimes(-5)]])])
         with zipfile.ZipFile(chemin) as z:
@@ -207,7 +231,10 @@ class TestXlsx(unittest.TestCase):
 
 
 class TestCsv(unittest.TestCase):
-    def test_entete_sur_premiere_ligne_seulement(self):
+    """Export CSV des écritures pour l'import Odoo."""
+
+    def test_entete_sur_premiere_ligne_seulement(self) -> None:
+        """Vérifie que l'en-tête n'est porté que par la 1re ligne."""
         lignes = facture_equilibree() + facture_equilibree(eid=2)
         rangs = list(
             csv.reader(io.StringIO(csv_ecritures(lignes).lstrip("﻿")))
@@ -220,18 +247,29 @@ class TestCsv(unittest.TestCase):
 
 
 class TestAnalyse(unittest.TestCase):
-    def analyse(self, lignes, **kw):
-        return analyser(lignes, aujourd_hui=date(2026, 11, 6), **kw).en_dict()
+    """Analyse de conformité des écritures."""
 
-    def codes(self, d):
+    def analyse(
+        self, lignes: list[Enregistrement], **kw: Any
+    ) -> dict[str, Any]:
+        """Analyse ``lignes`` au 06/11/2026 et rend le rapport en dict."""
+        rapport: dict[str, Any] = analyser(
+            lignes, aujourd_hui=date(2026, 11, 6), **kw
+        ).en_dict()
+        return rapport
+
+    def codes(self, d: dict[str, Any]) -> dict[str, int]:
+        """Rend le nombre d'occurrences par code de constat."""
         return {c["code"]: c["nombre"] for c in d["constats"]}
 
-    def test_conforme(self):
+    def test_conforme(self) -> None:
+        """Vérifie qu'une facture équilibrée est déclarée conforme."""
         d = self.analyse(facture_equilibree())
         self.assertEqual(d["statut"], "conforme")
         self.assertEqual(d["infos"]["total_debit"], "120,00")
 
-    def test_desequilibre_bloquant(self):
+    def test_desequilibre_bloquant(self) -> None:
+        """Vérifie qu'un déséquilibre d'un centime est bloquant."""
         lignes = facture_equilibree()
         lignes[0]["credit"] += 1
         d = self.analyse(lignes)
@@ -239,7 +277,8 @@ class TestAnalyse(unittest.TestCase):
         self.assertIn("ECRITURE_DESEQUILIBREE", self.codes(d))
         self.assertIn("TOTAL_DESEQUILIBRE", self.codes(d))
 
-    def test_alertes(self):
+    def test_alertes(self) -> None:
+        """Vérifie tiers, ligne seule, montant nul, date future, doublon."""
         lignes = facture_equilibree()
         lignes[2]["tiers_id"] = None  # 411 sans tiers
         lignes += [
@@ -254,7 +293,8 @@ class TestAnalyse(unittest.TestCase):
         self.assertEqual(c["DATE_FUTURE"], 1)
         self.assertEqual(c["DOUBLON_PROBABLE"], 1)
 
-    def test_amortissement_planifie_en_info(self):
+    def test_amortissement_planifie_en_info(self) -> None:
+        """Vérifie qu'une écriture planifiée future reste une information."""
         lignes = facture_equilibree(
             etat="draft",
             auto_post="at_date",
@@ -267,7 +307,8 @@ class TestAnalyse(unittest.TestCase):
         self.assertEqual(c["ECRITURE_PLANIFIEE"], 1)
         self.assertEqual(d["statut"], "conforme")
 
-    def test_tiers(self):
+    def test_tiers(self) -> None:
+        """Vérifie les contrôles SIREN/TVA et doublons de tiers."""
         t = {
             "nom": "",
             "ref": "",
@@ -291,7 +332,7 @@ class TestAnalyse(unittest.TestCase):
             dict(t, id=9, nom="Ltd", pays="GB", siren="HRB 123"),
             dict(t, id=10, nom="Bad", siren="123456789"),
         ]
-        lignes = []
+        lignes: list[Enregistrement] = []
         for i, tid in enumerate((7, 8, 9, 10), 1):
             lignes += facture_equilibree(
                 eid=i, tiers_id=tid, reference="R%d" % i
@@ -304,20 +345,13 @@ class TestAnalyse(unittest.TestCase):
         self.assertEqual(c["TIERS_DOUBLON"], 1)  # ACME SARL ~ Acme
 
 
-class FauxCommun:
-    def version(self):
-        return {"server_version": "17.0"}
-
-    def authenticate(self, *a):
-        return 2
-
-
 class FauxObjet:
     """Odoo 17 simulé pour la source XML-RPC (pagination par id comprise)."""
 
-    def __init__(self):
-        self.appels = []
-        self.donnees = {
+    def __init__(self) -> None:
+        """Prépare les enregistrements Odoo simulés et le relevé d'appels."""
+        self.appels: list[tuple[str, str]] = []
+        self.donnees: dict[str, list[Enregistrement]] = {
             "res.company": [
                 {
                     "id": 1,
@@ -415,7 +449,17 @@ class FauxObjet:
             ],
         }
 
-    def execute_kw(self, db, uid, cle, modele, methode, args, kw):
+    def execute_kw(
+        self,
+        db: str,
+        uid: int,
+        cle: str,
+        modele: str,
+        methode: str,
+        args: list[Any],
+        kw: dict[str, Any],
+    ) -> list[Enregistrement]:
+        """Simule ``read`` et ``search_read`` (pagination par id)."""
         self.appels.append((modele, methode))
         recs = self.donnees[modele]
         if methode == "read":
@@ -429,7 +473,10 @@ class FauxObjet:
 
 
 class TestSourceXmlRpc(unittest.TestCase):
-    def source(self):
+    """Lecture d'un Odoo 17 par XML-RPC (simulé)."""
+
+    def source(self) -> SourceXmlRpcOdoo17:
+        """Ouvre une source XML-RPC sur l'Odoo simulé (gardé dans objet)."""
         self.objet = FauxObjet()
         return SourceXmlRpcOdoo17(
             "http://x",
@@ -440,7 +487,8 @@ class TestSourceXmlRpc(unittest.TestCase):
             proxy_objet=self.objet,
         )
 
-    def test_lignes_normalisees(self):
+    def test_lignes_normalisees(self) -> None:
+        """Vérifie la normalisation des lignes lues par XML-RPC."""
         lignes = self.source().lignes()
         self.assertEqual(len(lignes), 2)
         client = lignes[1]
@@ -457,14 +505,16 @@ class TestSourceXmlRpc(unittest.TestCase):
         self.assertEqual(lignes[0]["lettrage"], "")
         self.assertEqual(lignes[0]["journal_code"], "VEN")
 
-    def test_lecture_seule(self):
+    def test_lecture_seule(self) -> None:
+        """Vérifie que toute écriture vers Odoo est refusée."""
         s = self.source()
         with self.assertRaises(PermissionError):
             s._appel("account.move", "write", [[5], {"ref": "x"}])
         with self.assertRaises(PermissionError):
             s._appel("account.move", "unlink", [[5]])
 
-    def test_pagination(self):
+    def test_pagination(self) -> None:
+        """Vérifie la lecture paginée par lots d'identifiants."""
         s = self.source()
         s.TAILLE_LOT = 1
         self.assertEqual(len(s.comptes()), 2)
@@ -477,9 +527,14 @@ class TestSourceXmlRpc(unittest.TestCase):
             3,
         )
 
-    def test_version_autre_que_17_refusee(self):
+    def test_version_autre_que_17_refusee(self) -> None:
+        """Vérifie qu'un serveur Odoo autre que 17 est refusé."""
+
         class Commun18(FauxCommun):
-            def version(self):
+            """Serveur Odoo simulé en version 18."""
+
+            def version(self) -> dict[str, str]:
+                """Rend la version 18.0."""
                 return {"server_version": "18.0"}
 
         from core.odoo_source import ErreurSource
@@ -494,7 +549,8 @@ class TestSourceXmlRpc(unittest.TestCase):
                 proxy_objet=FauxObjet(),
             )
 
-    def test_fec_depuis_xmlrpc(self):
+    def test_fec_depuis_xmlrpc(self) -> None:
+        """Vérifie un FEC équilibré produit depuis la source XML-RPC."""
         chemin = os.path.join(tempfile.mkdtemp(), "f.txt")
         r = generer_fec(self.source().lignes(), chemin)
         self.assertEqual((r["total_debit"], r["total_credit"]), (10010, 10010))

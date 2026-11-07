@@ -1,8 +1,12 @@
 # CONCORDE v1.0 — (c) MASITH / Stéphane Moreau. Tous droits réservés.
+"""Fiche d'import FEC CONCORDE et lien des écritures Odoo vers cette fiche."""
+
 from odoo import fields, models
 
 
 class ConcordeImport(models.Model):
+    """Fiche d'un import FEC : fichier, résultat du pipeline et rapport."""
+
     _name = "concorde.import"
     _description = "Import FEC CONCORDE"
     _order = "id desc"
@@ -42,6 +46,8 @@ class ConcordeImport(models.Model):
 
 
 class AccountMove(models.Model):
+    """Écriture Odoo, complétée du lien vers l'import CONCORDE d'origine."""
+
     _inherit = "account.move"
 
     concorde_import_id = fields.Many2one(

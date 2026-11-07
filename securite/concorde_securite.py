@@ -1,35 +1,43 @@
 #!/usr/bin/env python3
 # CONCORDE — (c) MASITH / Stéphane Moreau. Tous droits réservés.
-"""Surveillance de sécurité du serveur : mineurs, rançongiciels, antivirus (ADR-0007).
+"""Surveillance de sécurité du serveur : mineurs, rançongiciels, antivirus.
 
-Deux commandes, lancées par systemd en ROOT (il faut lire tous les processus, les
-conteneurs Docker et les bases PostgreSQL) :
+Décision d'architecture : ADR-0007.
+
+Deux commandes, lancées par systemd en ROOT (il faut lire tous les
+processus, les conteneurs Docker et les bases PostgreSQL) :
 
   controle   toutes les 15 minutes — contrôle ciblé, léger :
-             processus lancés depuis /tmp, /var/tmp, /dev/shm ou dont le fichier a été
-             effacé ; noms et arguments de mineurs connus ; processus qui saturent le
-             processeur ; connexions vers des ports de minage ou des adresses d'attaquants
-             connues ; PostgreSQL : super-utilisateurs inconnus, bases de rançon,
-             accès réseau sans mot de passe ; base de données exposée sur Internet ;
-             persistance (ld.so.preload, tâches planifiées, clés SSH récentes) ;
-             notes de rançon et fichiers chiffrés récents ; fraîcheur des signatures ClamAV.
-  antivirus  chaque nuit — analyse ClamAV (détection des mineurs « PUA » activée) des
-             zones sensibles, y compris les couches modifiables et les volumes des
-             conteneurs Docker (le mineur du 01/11/2026 était dans le /tmp d'un conteneur).
+             processus lancés depuis /tmp, /var/tmp, /dev/shm ou dont le
+             fichier a été effacé ; noms et arguments de mineurs connus ;
+             processus qui saturent le processeur ; connexions vers des
+             ports de minage ou des adresses d'attaquants connues ;
+             PostgreSQL : super-utilisateurs inconnus, bases de rançon,
+             accès réseau sans mot de passe ; base de données exposée sur
+             Internet ; persistance (ld.so.preload, tâches planifiées, clés
+             SSH récentes) ; notes de rançon et fichiers chiffrés récents ;
+             fraîcheur des signatures ClamAV.
+  antivirus  chaque nuit — analyse ClamAV (détection des mineurs « PUA »
+             activée) des zones sensibles, y compris les couches
+             modifiables et les volumes des conteneurs Docker (le mineur du
+             01/11/2026 était dans le /tmp d'un conteneur).
 
-Résultats : /var/lib/concorde-securite/{controle,antivirus}.json (lisibles par l'interface
-CONCORDE, qui en fait des alertes « techniques » expliquées par Marceau). Aucun secret
-n'y est écrit. Lecture seule : ce programme ne tue rien et n'efface rien.
+Résultats : /var/lib/concorde-securite/{controle,antivirus}.json (lisibles
+par l'interface CONCORDE, qui en fait des alertes « techniques » expliquées
+par Marceau). Aucun secret n'y est écrit. Lecture seule : ce programme ne
+tue rien et n'efface rien.
 """
 
 import glob
 import json
 import os
 import re
+import shutil
 import subprocess
 import sys
 import time
 from datetime import datetime
+from typing import Any
 
 from core.analyser import Rapport
 
@@ -41,12 +49,14 @@ CONFIG = os.environ.get(
 )
 
 DEFAUTS = {
-    # Super-utilisateurs PostgreSQL attendus, par conteneur. Tout autre = alerte.
+    # Super-utilisateurs PostgreSQL attendus, par conteneur.
+    # Tout autre = alerte.
     "superutilisateurs_autorises": {
         "concorde-postgres": ["odoo"],
         "azalplus-v2-postgres-1": ["postgres", "azalplus_admin", "azalplus"],
     },
-    # Ports publiés par Docker sur Internet, connus et acceptés (Odoo, aperçu AzalPlus).
+    # Ports publiés par Docker sur Internet, connus et acceptés
+    # (Odoo, aperçu AzalPlus).
     "ports_publics_acceptes": [8017, 8021, 8080],
     # Processus autorisés à beaucoup consommer (nom de l'exécutable).
     "processus_gourmands_autorises": [
@@ -85,14 +95,18 @@ PORTS_MINAGE = {
     44999,
     48996,
 }
-# Indicateurs de l'attaque du 01/11/2026 (rapport /root/quarantaine_mineur_20261106).
+# Indicateurs de l'attaque du 01/11/2026
+# (rapport /root/quarantaine_mineur_20261106).
 IP_ATTAQUANTS = {"91.188.254.62", "5.255.109.74", "5.255.115.190"}
 MOTS_MINEUR = re.compile(
     r"xmrig|minerd|cpuminer|kinsing|kdevtmpfsi|stratum\+(tcp|ssl)|"
     r"cryptonight|randomx|--donate-level|nicehash|anondns\.net",
     re.I,
 )
-DOSSIERS_TEMP = ("/tmp/", "/var/tmp/", "/dev/shm/")
+# Dossiers temporaires du système, SURVEILLÉS (rien n'y est écrit) : un
+# programme lancé depuis l'un d'eux est suspect ; l'antivirus les analyse.
+DOSSIERS_TEMP = ("/tmp", "/var/tmp", "/dev/shm")
+PREFIXES_TEMP = tuple(dossier + "/" for dossier in DOSSIERS_TEMP)
 NOMS_RANCON = re.compile(
     r"(readme|read_me|how_to|restore|recover|decrypt|warning|ransom|"
     r"bitcoin|pay_?me|backup_?your)",
@@ -113,28 +127,85 @@ ZONES_RANCON = [
     "/srv",
 ]
 
+# (pid, utilisateur, % processeur, durée en s, nom, arguments, exécutable)
+InfosProcessus = tuple[int, str, float, int, str, str, str]
+# (image, ports publiés [(hôte, port hôte, port conteneur)], environnement)
+InfosConteneur = tuple[str, list[tuple[str, int, int]], dict[str, str]]
 
-def config():
-    c = json.loads(json.dumps(DEFAUTS))
+
+def config() -> dict[str, Any]:
+    """Réglages : DEFAUTS complétés par le fichier JSON CONFIG s'il existe."""
+    c: dict[str, Any] = json.loads(json.dumps(DEFAUTS))
     if os.path.isfile(CONFIG):
         with open(CONFIG, encoding="utf-8") as f:
             c.update(json.load(f))
     return c
 
 
-def cmd(args, timeout=60):
+def chemin_executable(nom: str) -> str:
+    """Chemin absolu d'un exécutable cherché dans le PATH.
+
+    Rôle : lancer chaque programme par son chemin absolu.
+    Paramètres : nom — nom du programme (ex. « ps »).
+    Retour : le chemin absolu.
+    Erreurs : FileNotFoundError si le programme est introuvable.
+    Usages : cmd, connexions_conteneurs (ss lancé via nsenter), antivirus.
+    """
+    chemin = shutil.which(nom)
+    if chemin is None:
+        raise FileNotFoundError(
+            "Exécutable introuvable dans le PATH : %s" % nom
+        )
+    return chemin
+
+
+def cmd(args: list[str], timeout: int = 60) -> str:
+    """Sortie standard d'une commande ; "" si elle est absente ou bloquée.
+
+    Rôle : lecture tolérante de l'état du système (un outil manquant ne
+    doit pas interrompre les autres contrôles).
+    Paramètres : args — programme puis arguments ; timeout — en secondes.
+    Retour : la sortie standard (texte), ou "" en cas d'échec de lancement
+    (programme introuvable, erreur système) ou de dépassement du délai.
+    Erreurs : aucune levée.
+    Usages : processus, controler_reseau, conteneurs, psql.
+    """
     try:
         r = subprocess.run(
-            args, capture_output=True, text=True, timeout=timeout
+            [chemin_executable(args[0])] + args[1:],
+            capture_output=True,
+            text=True,
+            timeout=timeout,
         )
         return r.stdout
     except (OSError, subprocess.TimeoutExpired):
         return ""
 
 
-def ecrire(nom, rapport, debut):
+def modifie_depuis(chemin: str, limite: float) -> bool:
+    """Vrai si le fichier a été modifié après `limite` (horodatage Unix).
+
+    Rôle : repérer les fichiers récents ; un fichier disparu ou illisible
+    entre la recherche et la lecture compte comme non modifié.
+    Paramètres : chemin — fichier ; limite — horodatage de référence.
+    Retour : True si modifié après la limite.
+    Erreurs : aucune levée (OSError traitée comme « non modifié »).
+    Usages : controler_persistance, controler_fichiers_rancon.
+    """
+    try:
+        return os.path.getmtime(chemin) > limite
+    except OSError:
+        return False
+
+
+def ecrire(nom: str, rapport: Rapport, debut: float) -> dict[str, Any]:
+    """Écrit SORTIE/<nom>.json (remplacement atomique) et l'affiche.
+
+    Rend le rapport écrit (dictionnaire JSON).
+    """
     os.makedirs(SORTIE, mode=0o755, exist_ok=True)
-    d = rapport.en_dict(complet=False)
+    # Rapport JSON (dictionnaire dynamique) produit par core.analyser.
+    d: dict[str, Any] = rapport.en_dict(complet=False)
     d["date"] = datetime.now().isoformat(timespec="seconds")
     d["duree_s"] = round(time.monotonic() - debut, 1)
     tmp = os.path.join(SORTIE, nom + ".json.tmp")
@@ -166,9 +237,9 @@ def ecrire(nom, rapport, debut):
 # ---------------------------------------------------------------------------
 
 
-def processus():
-    """[(pid, user, pcpu, etime_s, comm, args, exe)] de tous les processus (hôte + conteneurs)."""
-    res = []
+def processus() -> list[InfosProcessus]:
+    """Tous les processus (hôte + conteneurs), voir InfosProcessus."""
+    res: list[InfosProcessus] = []
     for ligne in cmd(
         ["ps", "-eo", "pid=,user=,pcpu=,etimes=,comm=,args="]
     ).splitlines():
@@ -194,7 +265,8 @@ def processus():
     return res
 
 
-def controler_processus(r, c):
+def controler_processus(r: Rapport, c: dict[str, Any]) -> None:
+    """Processus suspects : dossier temporaire, effacés, mineurs, gourmands."""
     procs = processus()
     soi = os.getpid()
     temp, efface, mineurs, gourmands = [], [], [], []
@@ -203,7 +275,7 @@ def controler_processus(r, c):
             continue
         nom = "pid %d %s (%s) : %s" % (pid, comm, user, (args or exe)[:120])
         chemin = exe.replace(" (deleted)", "")
-        if chemin.startswith(DOSSIERS_TEMP) and "/claude-" not in chemin:
+        if chemin.startswith(PREFIXES_TEMP) and "/claude-" not in chemin:
             temp.append(nom + " — exécutable " + exe)
         elif (
             exe.endswith(" (deleted)")
@@ -265,26 +337,42 @@ def controler_processus(r, c):
         )
 
 
-def controler_reseau(r):
-    minage, attaquants = [], []
-    for ligne in cmd(["ss", "-tnpH", "state", "established"]).splitlines():
-        p = ligne.split()
-        if len(p) < 4:
-            continue
-        distant = p[3]
-        ip, _, port = distant.rpartition(":")
-        ip = ip.strip("[]")
-        proc = re.search(r'"([^"]+)",pid=(\d+)', ligne)
-        qui = "%s (pid %s)" % proc.groups() if proc else "?"
-        if ip in IP_ATTAQUANTS:
-            attaquants.append("%s vers %s" % (qui, distant))
-        elif (
-            port.isdigit()
-            and int(port) in PORTS_MINAGE
-            and not ip.startswith(("127.", "172."))
-        ):
-            minage.append("%s vers %s" % (qui, distant))
-    # Les connexions des conteneurs sont dans leurs propres espaces réseau : on les lit via /proc.
+def classer_connexion(distant: str, prefixes_prives: tuple[str, ...]) -> str:
+    """Nature d'une connexion établie vers `distant` (« ip:port »).
+
+    Rôle : repérer les connexions vers un attaquant connu ou vers un port
+    de minage hors réseau privé.
+    Paramètres : distant — adresse distante lue par ss ; prefixes_prives
+    — débuts d'adresses privées exclus du contrôle des ports de minage.
+    Retour : "attaquant", "minage" ou "" (rien à signaler).
+    Erreurs : aucune.
+    Usages : controler_reseau (hôte, puis espaces réseau des conteneurs).
+    """
+    ip, _, port = distant.rpartition(":")
+    ip = ip.strip("[]")
+    if ip in IP_ATTAQUANTS:
+        return "attaquant"
+    if (
+        port.isdigit()
+        and int(port) in PORTS_MINAGE
+        and not ip.startswith(prefixes_prives)
+    ):
+        return "minage"
+    return ""
+
+
+def connexions_conteneurs() -> list[tuple[str, str]]:
+    """(pid, adresse distante) des connexions établies des conteneurs.
+
+    Les connexions des conteneurs sont dans leurs propres espaces réseau :
+    on les lit via /proc, un espace réseau à la fois. Liste vide si « ss »
+    est introuvable (aucune connexion n'est alors lisible).
+    """
+    try:
+        chemin_ss = chemin_executable("ss")
+    except FileNotFoundError:
+        return []
+    connexions: list[tuple[str, str]] = []
     vus = set()
     for pid in [d for d in os.listdir("/proc") if d.isdigit()]:
         try:
@@ -295,24 +383,42 @@ def controler_reseau(r):
             continue
         vus.add(ns)
         for ligne in cmd(
-            ["nsenter", "-t", pid, "-n", "ss", "-tnH", "state", "established"],
+            ["nsenter", "-t", pid, "-n"]
+            + [chemin_ss, "-tnH", "state", "established"],
             timeout=10,
         ).splitlines():
             p = ligne.split()
-            if len(p) < 4:
-                continue
-            ip, _, port = p[3].rpartition(":")
-            ip = ip.strip("[]")
-            if ip in IP_ATTAQUANTS:
-                attaquants.append(
-                    "espace réseau du pid %s vers %s" % (pid, p[3])
-                )
-            elif (
-                port.isdigit()
-                and int(port) in PORTS_MINAGE
-                and not ip.startswith(("127.", "172.", "10.", "192.168."))
-            ):
-                minage.append("espace réseau du pid %s vers %s" % (pid, p[3]))
+            if len(p) >= 4:
+                connexions.append((pid, p[3]))
+    return connexions
+
+
+def controler_reseau(r: Rapport) -> None:
+    """Connexions vers des attaquants connus ou des ports de minage."""
+    minage: list[str] = []
+    attaquants: list[str] = []
+    for ligne in cmd(["ss", "-tnpH", "state", "established"]).splitlines():
+        p = ligne.split()
+        if len(p) < 4:
+            continue
+        distant = p[3]
+        proc = re.search(r'"([^"]+)",pid=(\d+)', ligne)
+        qui = "%s (pid %s)" % proc.groups() if proc else "?"
+        nature = classer_connexion(distant, ("127.", "172."))
+        if nature == "attaquant":
+            attaquants.append("%s vers %s" % (qui, distant))
+        elif nature == "minage":
+            minage.append("%s vers %s" % (qui, distant))
+    for pid, distant in connexions_conteneurs():
+        nature = classer_connexion(
+            distant, ("127.", "172.", "10.", "192.168.")
+        )
+        if nature == "attaquant":
+            attaquants.append(
+                "espace réseau du pid %s vers %s" % (pid, distant)
+            )
+        elif nature == "minage":
+            minage.append("espace réseau du pid %s vers %s" % (pid, distant))
     r.constat(
         "BLOQUANT",
         "SEC_CONNEXION_ATTAQUANT",
@@ -327,16 +433,16 @@ def controler_reseau(r):
     )
 
 
-def conteneurs():
-    """{nom: (image, ports publiés [(hôte, port_hôte, port_conteneur)], env)}"""
-    res = {}
+def conteneurs() -> dict[str, InfosConteneur]:
+    """{nom: InfosConteneur} des conteneurs Docker en cours d'exécution."""
+    res: dict[str, InfosConteneur] = {}
     for nom in cmd(["docker", "ps", "--format", "{{.Names}}"]).split():
         brut = cmd(["docker", "inspect", nom])
         try:
             d = json.loads(brut)[0]
         except (ValueError, IndexError):
             continue
-        ports = []
+        ports: list[tuple[str, int, int]] = []
         for cport, liens in (
             d["HostConfig"].get("PortBindings") or {}
         ).items():
@@ -355,8 +461,12 @@ def conteneurs():
     return res
 
 
-def controler_exposition(r, c, ctrs):
-    bases, autres = [], []
+def controler_exposition(
+    r: Rapport, c: dict[str, Any], ctrs: dict[str, InfosConteneur]
+) -> None:
+    """Ports Docker publiés sur Internet (bases de données, ports imprévus)."""
+    bases: list[str] = []
+    autres: list[str] = []
     for nom, (image, ports, _) in ctrs.items():
         for hote, port_h, port_c in ports:
             public = hote in ("0.0.0.0", "::", "")
@@ -364,7 +474,8 @@ def controler_exposition(r, c, ctrs):
                 continue
             if port_c in PORTS_BASES or port_h in PORTS_BASES:
                 bases.append(
-                    "%s : %s publié sur Internet (port %d) — Docker passe devant UFW"
+                    "%s : %s publié sur Internet (port %d) — Docker passe "
+                    "devant UFW"
                     % (
                         nom,
                         PORTS_BASES.get(port_c, PORTS_BASES.get(port_h)),
@@ -389,7 +500,8 @@ def controler_exposition(r, c, ctrs):
     )
 
 
-def psql(conteneur, user, sql, base="postgres"):
+def psql(conteneur: str, user: str, sql: str, base: str = "postgres") -> str:
+    """Résultat brut (-AtXq) d'une requête psql dans un conteneur."""
     return cmd(
         [
             "docker",
@@ -408,8 +520,14 @@ def psql(conteneur, user, sql, base="postgres"):
     )
 
 
-def controler_postgresql(r, c, ctrs):
-    supers, rancons, trust, tables = [], [], [], []
+def controler_postgresql(
+    r: Rapport, c: dict[str, Any], ctrs: dict[str, InfosConteneur]
+) -> None:
+    """PostgreSQL : super-utilisateurs, rançon, accès sans mot de passe."""
+    supers: list[str] = []
+    rancons: list[str] = []
+    trust: list[str] = []
+    tables: list[str] = []
     autorises = c["superutilisateurs_autorises"]
     for nom, (image, _, env) in ctrs.items():
         if not image.startswith("postgres"):
@@ -481,7 +599,8 @@ def controler_postgresql(r, c, ctrs):
     )
 
 
-def controler_persistance(r):
+def controler_persistance(r: Rapport) -> None:
+    """ld.so.preload, tâches planifiées, services et clés SSH récents."""
     elements = []
     if os.path.isfile("/etc/ld.so.preload") and os.path.getsize(
         "/etc/ld.so.preload"
@@ -506,12 +625,7 @@ def controler_persistance(r):
         "/etc/systemd/system/*.service",
         "/etc/systemd/system/*.timer",
     ):
-        for f in glob.glob(motif):
-            try:
-                if os.path.getmtime(f) > limite:
-                    recents.append(f)
-            except OSError:
-                pass
+        recents += [f for f in glob.glob(motif) if modifie_depuis(f, limite)]
     r.constat(
         "INFO",
         "SEC_FICHIER_SENSIBLE_MODIFIE",
@@ -520,12 +634,14 @@ def controler_persistance(r):
     )
 
 
-def controler_fichiers_rancon(r, jours=2):
+def controler_fichiers_rancon(r: Rapport, jours: int = 2) -> None:
+    """Notes de rançon et fichiers chiffrés récents dans ZONES_RANCON."""
     trouves = []
     limite = time.time() - jours * 86400
     for zone in ZONES_RANCON:
         for racine, dossiers, fichiers in os.walk(zone):
-            # Pas de descente dans les données internes de PostgreSQL ni dans node_modules / .git.
+            # Pas de descente dans les données internes de PostgreSQL ni
+            # dans node_modules / .git.
             dossiers[:] = [
                 d
                 for d in dossiers
@@ -542,13 +658,11 @@ def controler_fichiers_rancon(r, jours=2):
             if racine.count(os.sep) - zone.count(os.sep) > 6:
                 dossiers[:] = []
             for f in fichiers:
-                if FICHIERS_RANCON.search(f):
-                    chemin = os.path.join(racine, f)
-                    try:
-                        if os.path.getmtime(chemin) > limite:
-                            trouves.append(chemin)
-                    except OSError:
-                        pass
+                chemin = os.path.join(racine, f)
+                if FICHIERS_RANCON.search(f) and modifie_depuis(
+                    chemin, limite
+                ):
+                    trouves.append(chemin)
     r.constat(
         "BLOQUANT",
         "SEC_FICHIER_RANCON",
@@ -557,7 +671,8 @@ def controler_fichiers_rancon(r, jours=2):
     )
 
 
-def controler_signatures(r):
+def controler_signatures(r: Rapport) -> None:
+    """Présence et fraîcheur (48 h) des signatures ClamAV."""
     fichiers = glob.glob("/var/lib/clamav/daily.c[lv]d")
     if not fichiers:
         r.constat(
@@ -578,7 +693,8 @@ def controler_signatures(r):
         )
 
 
-def controle():
+def controle() -> int:
+    """Commande « controle » : 2 si un constat bloquant, sinon 0."""
     debut = time.monotonic()
     c = config()
     r = Rapport()
@@ -600,11 +716,9 @@ def controle():
 # ---------------------------------------------------------------------------
 
 
-def zones_antivirus():
-    zones = [
-        "/tmp",
-        "/var/tmp",
-        "/dev/shm",
+def zones_antivirus() -> list[str]:
+    """Dossiers existants à analyser par ClamAV."""
+    zones = list(DOSSIERS_TEMP) + [
         "/home",
         "/root",
         "/opt",
@@ -613,13 +727,15 @@ def zones_antivirus():
         "/var/www",
         "/srv",
     ]
-    # Couches modifiables des conteneurs (où un attaquant dépose ses fichiers) et volumes.
+    # Couches modifiables des conteneurs (où un attaquant dépose ses
+    # fichiers) et volumes.
     zones += glob.glob("/var/lib/docker/overlay2/*/diff")
     zones += glob.glob("/var/lib/docker/volumes/*/_data")
     return [z for z in zones if os.path.isdir(z)]
 
 
-def antivirus():
+def antivirus() -> int:
+    """Commande « antivirus » : 2 si un constat bloquant, sinon 0."""
     debut = time.monotonic()
     r = Rapport()
     controler_signatures(r)
@@ -630,14 +746,7 @@ def antivirus():
     with open(liste, "w") as f:
         f.write("\n".join(zones) + "\n")
     journal = os.path.join(SORTIE, "clamscan.log")
-    args = [
-        "nice",
-        "-n",
-        "19",
-        "ionice",
-        "-c",
-        "3",
-        "clamscan",
+    options_clamscan = [
         "--recursive",
         "--infected",
         "--detect-pua=yes",
@@ -654,18 +763,28 @@ def antivirus():
         "--log=" + journal,
         "--file-list=" + liste,
     ]
+    erreur_lancement = ""
     try:
+        args = [chemin_executable("nice"), "-n", "19"]
+        args += [chemin_executable("ionice"), "-c", "3"]
+        args += [chemin_executable("clamscan")] + options_clamscan
         p = subprocess.run(
             args, capture_output=True, text=True, timeout=6 * 3600
         )
         sortie, code = p.stdout, p.returncode
     except subprocess.TimeoutExpired:
         sortie, code = "", -1
-    infectes = [l for l in sortie.splitlines() if l.endswith(" FOUND")]
-    resume = re.search(
-        r"Scanned files: (\d+)",
-        open(journal).read() if os.path.isfile(journal) else "",
-    )
+    except FileNotFoundError as exc:
+        sortie, code = "", -1
+        erreur_lancement = str(exc)
+    infectes = [
+        ligne for ligne in sortie.splitlines() if ligne.endswith(" FOUND")
+    ]
+    contenu_journal = ""
+    if os.path.isfile(journal):
+        with open(journal) as fichier_journal:
+            contenu_journal = fichier_journal.read()
+    resume = re.search(r"Scanned files: (\d+)", contenu_journal)
     r.info("fichiers_analyses", int(resume.group(1)) if resume else None)
     r.constat(
         "BLOQUANT",
@@ -678,7 +797,8 @@ def antivirus():
             "ALERTE",
             "SEC_ANTIVIRUS_ERREUR",
             "L'analyse ClamAV n'a pas abouti",
-            ["code retour %s — voir %s" % (code, journal)],
+            ["code retour %s — voir %s" % (code, journal)]
+            + ([erreur_lancement] if erreur_lancement else []),
         )
     d = ecrire("antivirus", r, debut)
     return 2 if d["statut"] == "bloquant" else 0

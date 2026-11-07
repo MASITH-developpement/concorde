@@ -18,12 +18,14 @@ import secrets
 import sys
 
 from interface.auth import hacher
+from scripts.outils_cli import premiere_ligne
 
 FICHIER = "/etc/concorde/interface.env"
 
 
-def main():
-    ap = argparse.ArgumentParser(description=__doc__.splitlines()[0])
+def main() -> int:
+    """Demande (ou tire) le mot de passe et écrit son empreinte."""
+    ap = argparse.ArgumentParser(description=premiere_ligne(__doc__))
     ap.add_argument("--fichier", default=FICHIER)
     ap.add_argument(
         "--generer", action="store_true", help="Mot de passe aléatoire"
@@ -39,10 +41,14 @@ def main():
         if getpass.getpass("Confirmez : ") != mdp:
             print("Les deux saisies diffèrent.", file=sys.stderr)
             return 1
-    lignes = []
+    lignes: list[str] = []
     if os.path.exists(args.fichier):
         with open(args.fichier, encoding="utf-8") as f:
-            lignes = [l for l in f if not l.startswith("CONCORDE_UI_MDP=")]
+            lignes = [
+                ligne
+                for ligne in f
+                if not ligne.startswith("CONCORDE_UI_MDP=")
+            ]
     lignes.append("CONCORDE_UI_MDP=%s\n" % hacher(mdp))
     os.makedirs(os.path.dirname(args.fichier), exist_ok=True)
     ancien = os.umask(0o077)

@@ -1,5 +1,5 @@
 # CONCORDE v1.0 — (c) MASITH / Stéphane Moreau. Tous droits réservés.
-"""Tests de l'interface web : authentification, sécurité HTTP, parcours complet."""
+"""Tests de l'interface web : authentification, sécurité HTTP, parcours."""
 
 import http.client
 import json
@@ -7,17 +7,42 @@ import tempfile
 import threading
 import time
 import unittest
+from http.server import ThreadingHTTPServer
+from typing import Any
 
+from core.journal import Journal
 from core.odoo_source import SourceXmlRpcOdoo17
 from interface import auth
-from interface.serveur import Application, creer_serveur
-from tests.test_odoo_donnees import FauxCommun, FauxObjet
+from interface.serveur import Application, Bases, creer_serveur
+from tests.outils import FauxCommun
+from tests.test_odoo_donnees import FauxObjet
 
 MDP = "mot-de-passe-de-test"
 
 
+def entete_obligatoire(reponse: http.client.HTTPResponse, nom: str) -> str:
+    """Rend la valeur d'un en-tête HTTP qui doit être présent.
+
+    Rôle : lit un en-tête de réponse et échoue explicitement s'il manque,
+    pour que les vérifications portent sur une vraie chaîne.
+    Paramètres : ``reponse`` — réponse HTTP reçue ; ``nom`` — nom de
+    l'en-tête.
+    Retour : la valeur de l'en-tête.
+    Erreurs : ``AssertionError`` si l'en-tête est absent.
+    Usages : ``TestHttp`` (Set-Cookie, Content-Security-Policy,
+    Content-Disposition).
+    """
+    valeur_entete = reponse.getheader(nom)
+    if valeur_entete is None:
+        raise AssertionError("en-tête %s absent" % nom)
+    return valeur_entete
+
+
 class TestAuth(unittest.TestCase):
-    def test_hachage(self):
+    """Mots de passe hachés et sessions de l'interface."""
+
+    def test_hachage(self) -> None:
+        """Vérifie le hachage scrypt salé et sa vérification."""
         e = auth.hacher(MDP)
         self.assertTrue(e.startswith("scrypt$"))
         self.assertNotIn(MDP, e)
@@ -27,7 +52,8 @@ class TestAuth(unittest.TestCase):
         self.assertFalse(auth.verifier(MDP, "n'importe$quoi"))
         self.assertNotEqual(e, auth.hacher(MDP))  # sel aléatoire
 
-    def test_expiration_inactivite(self):
+    def test_expiration_inactivite(self) -> None:
+        """Vérifie l'expiration d'une session après inactivité."""
         t = [0.0]
         s = auth.Sessions(horloge=lambda: t[0])
         j = s.ouvrir("1.2.3.4")
@@ -35,7 +61,8 @@ class TestAuth(unittest.TestCase):
         t[0] += auth.INACTIVITE_MAX + 1
         self.assertFalse(s.valide(j))
 
-    def test_duree_max(self):
+    def test_duree_max(self) -> None:
+        """Vérifie l'expiration d'une session au-delà de la durée maximale."""
         t = [0.0]
         s = auth.Sessions(horloge=lambda: t[0])
         j = s.ouvrir("ip")
@@ -44,7 +71,8 @@ class TestAuth(unittest.TestCase):
             s.valide(j)
         self.assertFalse(s.valide(j))
 
-    def test_force_brute(self):
+    def test_force_brute(self) -> None:
+        """Vérifie le blocage après trop d'échecs, puis le déblocage."""
         t = [0.0]
         s = auth.Sessions(horloge=lambda: t[0])
         for _ in range(auth.ECHECS_MAX):
@@ -56,10 +84,11 @@ class TestAuth(unittest.TestCase):
         self.assertFalse(s.bloquee("ip"))
 
 
-class FaussesBases:
-    """Annuaire réduit à une base XML-RPC simulée."""
+class FaussesBases(Bases):
+    """Annuaire réduit à une base XML-RPC simulée (lister et ouvrir)."""
 
-    def lister(self, rafraichir=False):
+    def lister(self, rafraichir: bool = False) -> list[dict[str, Any]]:
+        """Rend l'unique base simulée."""
         return [
             {
                 "id": "xmlrpc:test",
@@ -73,7 +102,10 @@ class FaussesBases:
             }
         ]
 
-    def ouvrir(self, ident, journal=None):
+    def ouvrir(
+        self, ident: str, journal: Journal | None = None
+    ) -> SourceXmlRpcOdoo17:
+        """Ouvre une source XML-RPC sur l'Odoo simulé."""
         return SourceXmlRpcOdoo17(
             "http://x",
             "b",
@@ -84,13 +116,21 @@ class FaussesBases:
             journal=journal,
         )
 
-    def nom(self, ident):
+    def nom(self, ident: str) -> str:
+        """Rend le nom affiché de la base simulée."""
         return "test"
 
 
 class TestHttp(unittest.TestCase):
+    """Serveur HTTP réel sur un port libre, base Odoo simulée."""
+
+    app: Application
+    serveur: ThreadingHTTPServer
+    port: int
+
     @classmethod
-    def setUpClass(cls):
+    def setUpClass(cls) -> None:
+        """Démarre le serveur de l'interface dans un fil d'exécution."""
         auth.N = 2**10  # tests rapides
         cls.app = Application(
             auth.hacher(MDP), tempfile.mkdtemp(), bases=FaussesBases()
@@ -100,13 +140,22 @@ class TestHttp(unittest.TestCase):
         threading.Thread(target=cls.serveur.serve_forever, daemon=True).start()
 
     @classmethod
-    def tearDownClass(cls):
+    def tearDownClass(cls) -> None:
+        """Arrête le serveur et rétablit le coût de hachage."""
         cls.serveur.shutdown()
         auth.N = 2**15
 
-    def requete(self, methode, chemin, corps=None, cookie=None, csrf=True):
+    def requete(
+        self,
+        methode: str,
+        chemin: str,
+        corps: dict[str, Any] | None = None,
+        cookie: str | None = None,
+        csrf: bool = True,
+    ) -> tuple[http.client.HTTPResponse, bytes]:
+        """Envoie une requête au serveur et rend la réponse et son corps."""
         cx = http.client.HTTPConnection("127.0.0.1", self.port, timeout=10)
-        entetes = {}
+        entetes: dict[str, str] = {}
         if csrf:
             entetes["X-Concorde"] = "1"
         if cookie:
@@ -120,33 +169,38 @@ class TestHttp(unittest.TestCase):
         cx.close()
         return r, brut
 
-    def connecter(self):
+    def connecter(self) -> str:
+        """Ouvre une session et rend le cookie de session."""
         r, _ = self.requete("POST", "/api/connexion", {"mdp": MDP})
         self.assertEqual(r.status, 200)
-        cookie = r.getheader("Set-Cookie")
+        cookie = entete_obligatoire(r, "Set-Cookie")
         self.assertIn("HttpOnly", cookie)
         self.assertIn("SameSite=Strict", cookie)
         return cookie.split(";")[0]
 
-    def attendre(self, cookie, ident):
+    def attendre(self, cookie: str, ident: str) -> dict[str, Any]:
+        """Attend la fin d'une tâche et rend son état final."""
         for _ in range(100):
             _, b = self.requete("GET", "/api/taches/" + ident, cookie=cookie)
-            t = json.loads(b)
+            t: dict[str, Any] = json.loads(b)
             if t["statut"] not in ("en_attente", "en_cours"):
                 return t
             time.sleep(0.05)
         self.fail("tâche non terminée")
 
-    def test_page_et_entetes_securite(self):
+    def test_page_et_entetes_securite(self) -> None:
+        """Vérifie la page d'accueil et ses en-têtes de sécurité."""
         r, b = self.requete("GET", "/")
         self.assertEqual(r.status, 200)
         self.assertIn(b"CONCORDE", b)
         self.assertIn(
-            "default-src 'self'", r.getheader("Content-Security-Policy")
+            "default-src 'self'",
+            entete_obligatoire(r, "Content-Security-Policy"),
         )
         self.assertEqual(r.getheader("X-Frame-Options"), "DENY")
 
-    def test_api_protegee(self):
+    def test_api_protegee(self) -> None:
+        """Vérifie que l'API refuse les requêtes sans session valide."""
         r, _ = self.requete("GET", "/api/bases")
         self.assertEqual(r.status, 401)
         r, _ = self.requete(
@@ -154,7 +208,8 @@ class TestHttp(unittest.TestCase):
         )
         self.assertEqual(r.status, 401)
 
-    def test_csrf(self):
+    def test_csrf(self) -> None:
+        """Vérifie le refus d'une requête sans en-tête anti-CSRF."""
         cookie = self.connecter()
         r, _ = self.requete(
             "POST",
@@ -165,12 +220,14 @@ class TestHttp(unittest.TestCase):
         )
         self.assertEqual(r.status, 403)
 
-    def test_mauvais_mot_de_passe(self):
+    def test_mauvais_mot_de_passe(self) -> None:
+        """Vérifie qu'un mauvais mot de passe n'ouvre aucune session."""
         r, _ = self.requete("POST", "/api/connexion", {"mdp": "faux"})
         self.assertEqual(r.status, 401)
         self.assertIsNone(r.getheader("Set-Cookie"))
 
-    def test_traversee_refusee(self):
+    def test_traversee_refusee(self) -> None:
+        """Vérifie le refus de la traversée de répertoires."""
         for chemin in (
             "/../serveur.py",
             "/%2e%2e/serveur.py",
@@ -179,7 +236,8 @@ class TestHttp(unittest.TestCase):
             r, _ = self.requete("GET", chemin)
             self.assertEqual(r.status, 404, chemin)
 
-    def test_parametres_invalides(self):
+    def test_parametres_invalides(self) -> None:
+        """Vérifie le refus des paramètres de tâche invalides."""
         cookie = self.connecter()
         for corps in (
             {"action": "supprimer", "base_id": "xmlrpc:test"},
@@ -205,7 +263,8 @@ class TestHttp(unittest.TestCase):
             r, _ = self.requete("POST", "/api/taches", corps, cookie=cookie)
             self.assertEqual(r.status, 400, corps)
 
-    def test_parcours_analyse(self):
+    def test_parcours_analyse(self) -> None:
+        """Vérifie le parcours complet d'une analyse et de son rapport."""
         cookie = self.connecter()
         r, b = self.requete(
             "POST",
@@ -223,7 +282,8 @@ class TestHttp(unittest.TestCase):
         self.assertEqual(r.status, 200)
         self.assertIn("empreinte", json.loads(b))
 
-    def test_parcours_telechargement(self):
+    def test_parcours_telechargement(self) -> None:
+        """Vérifie le parcours de téléchargement FEC, xlsx et zip."""
         cookie = self.connecter()
         r, b = self.requete(
             "POST",
@@ -257,7 +317,8 @@ class TestHttp(unittest.TestCase):
         self.assertEqual(r.status, 200)
         self.assertTrue(b.startswith(b"PK"))
 
-    def test_journal_de_tache(self):
+    def test_journal_de_tache(self) -> None:
+        """Vérifie le journal d'une tâche, sa lecture incrémentale, Marceau."""
         cookie = self.connecter()
         r, b = self.requete(
             "POST",
@@ -281,7 +342,8 @@ class TestHttp(unittest.TestCase):
         for c in t["resultat"]["constats"]:
             self.assertTrue(c["explication"]["pourquoi"])
 
-    def test_comptes_grand_livre_ecriture(self):
+    def test_comptes_grand_livre_ecriture(self) -> None:
+        """Vérifie balance, grand livre et détail d'écriture par l'API."""
         cookie = self.connecter()
         r, b = self.requete(
             "GET", "/api/comptes?base=xmlrpc:test", cookie=cookie
@@ -308,7 +370,8 @@ class TestHttp(unittest.TestCase):
         r, _ = self.requete("GET", "/api/comptes?base=xmlrpc:test")
         self.assertEqual(r.status, 401)
 
-    def test_alertes_et_journal(self):
+    def test_alertes_et_journal(self) -> None:
+        """Vérifie le résumé, la lecture et le marquage des alertes."""
         cookie = self.connecter()
         self.app.centre.synchroniser(
             "balance",
@@ -348,7 +411,8 @@ class TestHttp(unittest.TestCase):
             )
         )
 
-    def test_suppression_base_distante_interdite(self):
+    def test_suppression_base_distante_interdite(self) -> None:
+        """Vérifie qu'une base distante ne peut être supprimée."""
         cookie = self.connecter()
         for action in ("supprimer_base", "reinitialiser_base"):
             r, b = self.requete(
@@ -364,7 +428,8 @@ class TestHttp(unittest.TestCase):
             self.assertEqual(r.status, 400)
             self.assertIn("ne se supprime jamais", json.loads(b)["erreur"])
 
-    def test_rapport_du_jour(self):
+    def test_rapport_du_jour(self) -> None:
+        """Vérifie la lecture, l'édition et l'export du rapport du jour."""
         cookie = self.connecter()
         r, b = self.requete(
             "GET", "/api/rapport?jour=2026-11-07", cookie=cookie
@@ -395,7 +460,9 @@ class TestHttp(unittest.TestCase):
             "GET", "/api/rapport/export?jour=2026-11-07", cookie=cookie
         )
         self.assertEqual(r.status, 200)
-        self.assertIn("attachment", r.getheader("Content-Disposition"))
+        self.assertIn(
+            "attachment", entete_obligatoire(r, "Content-Disposition")
+        )
         self.assertIn("Point ajouté", b.decode())
         r, _ = self.requete(
             "GET", "/api/rapport?jour=07/11/2026", cookie=cookie
@@ -410,8 +477,8 @@ class TestHttp(unittest.TestCase):
         )
         self.assertEqual(r.status, 403)
 
-    def test_echec_affiche(self):
-        """FEC + brouillons : la tâche échoue avec un message clair (jamais muet)."""
+    def test_echec_affiche(self) -> None:
+        """Vérifie que FEC + brouillons échoue avec un message clair."""
         cookie = self.connecter()
         r, b = self.requete(
             "POST",

@@ -16,16 +16,17 @@ la casse/accents/séparateurs) :
 Erreurs explicites à la moindre ambiguïté (Marceau : jamais muet).
 """
 
+from typing import NoReturn, Optional, TypedDict, Union
+
 from .mapping import (
+    NS_MAIN,
     ErreurMapping,
     _compte_txt,
-    _colonne_cellule,
+    _erreur_fichier,
     _norm_entete,
     lire_feuille_xlsx,
+    valeurs_cellules_ligne,
 )
-from xml.etree import ElementTree as ET
-
-NS_MAIN = "{http://schemas.openxmlformats.org/spreadsheetml/2006/main}"
 
 # en-têtes acceptés pour chaque rôle (déjà normalisés par _norm_entete)
 CLES_CODE = (
@@ -109,10 +110,20 @@ CORRESP_TYPE = {
 
 
 class ErreurPlanComptable(ErreurMapping):
-    pass
+    """Plan comptable illisible, incomplet ou contradictoire."""
 
 
-def charger_plan_xlsx(brut, nom_fichier=""):
+class CompteLu(TypedDict):
+    """Compte lu dans le plan comptable : code, intitulé, type Odoo."""
+
+    code: str
+    nom: str
+    type: Optional[str]
+
+
+def charger_plan_xlsx(
+    brut: Optional[Union[bytes, bytearray]], nom_fichier: str = ""
+) -> list[CompteLu]:
     """Charge un plan comptable depuis un classeur .xlsx (octets).
 
     Retourne une liste ordonnée de dicts {code, nom, type} :
@@ -123,34 +134,27 @@ def charger_plan_xlsx(brut, nom_fichier=""):
               le type par défaut de la séquence).
     """
 
-    def _err(message):
-        raise ErreurPlanComptable(
-            "Fichier du plan comptable %r : %s"
-            % (nom_fichier or "xlsx", message)
+    def _err(message: str) -> NoReturn:
+        """Erreur ErreurPlanComptable pour ce fichier."""
+        _erreur_fichier(
+            ErreurPlanComptable, "du plan comptable", nom_fichier, message
         )
 
     feuille, racine, _valeur = lire_feuille_xlsx(
         brut, nom_fichier, quoi="du plan comptable"
     )
 
-    def _valeurs_ligne(row):
-        vals = {}
-        for rang, c in enumerate(row.iter(NS_MAIN + "c")):
-            col = _colonne_cellule(c, rang)
-            val = _valeur(c)
-            if val is not None:
-                vals[col] = val
-        return vals
-
     lignes = list(racine.iter(NS_MAIN + "row"))
 
     # 1. détection de l'en-tête (parmi les 50 premières lignes) : colonnes
     # et INDEX de la ligne d'en-tête (la lecture commence après elle).
-    col_code = col_intitule = col_type = None
-    idx_entete = None
+    col_code: Optional[int] = None
+    col_intitule: Optional[int] = None
+    col_type: Optional[int] = None
+    idx_entete = 0  # fixé dès que l'en-tête est trouvé (sinon _err)
     for idx, row in enumerate(lignes[:50]):
-        entetes = {}
-        for col, val in _valeurs_ligne(row).items():
+        entetes: dict[str, int] = {}
+        for col, val in valeurs_cellules_ligne(row, _valeur).items():
             entetes[_norm_entete(val)] = col
         for texte, col in entetes.items():
             if col_code is None and texte in CLES_CODE:
@@ -171,10 +175,11 @@ def charger_plan_xlsx(brut, nom_fichier=""):
         )
 
     # 2. lecture des comptes (strictement après la ligne d'en-tête)
-    comptes = []
-    vus = {}
-    for row in lignes[idx_entete + 1 :]:
-        vals = _valeurs_ligne(row)
+    comptes: list[CompteLu] = []
+    vus: dict[str, tuple[str, Optional[str]]] = {}
+    debut_donnees = idx_entete + 1
+    for row in lignes[debut_donnees:]:
+        vals = valeurs_cellules_ligne(row, _valeur)
         code = _compte_txt(vals.get(col_code, "") or "").strip()
         nom = str(vals.get(col_intitule, "") or "").strip()
         type_txt = (
@@ -202,7 +207,7 @@ def charger_plan_xlsx(brut, nom_fichier=""):
     return comptes
 
 
-def _resoudre_type(type_txt, code):
+def _resoudre_type(type_txt: str, code: str) -> Optional[str]:
     """Texte de type -> account_type Odoo 17, sinon None (jamais deviné).
 
     Heuristique EXPLICITE et conservatrice : sans colonne type lisible,
@@ -225,6 +230,8 @@ def _resoudre_type(type_txt, code):
     return None
 
 
-def dictionnaire_plan(comptes):
+def dictionnaire_plan(
+    comptes: list[CompteLu],
+) -> dict[str, tuple[str, Optional[str]]]:
     """Liste de comptes -> dict {code: (nom, type)}."""
     return {c["code"]: (c["nom"], c["type"]) for c in comptes}

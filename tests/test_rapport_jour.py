@@ -10,22 +10,24 @@ from core.rapport_jour import (
     nettoyer_saisie,
     rendu_html,
 )
+from tests.outils import Enregistrement
 
 JOUR = "2026-11-07"
 MAINTENANT = datetime(2026, 11, 7, 18, 0)
 
 
 def alerte(
-    ident,
-    niveau,
-    message,
-    base="alb",
-    statut="active",
-    premiere=JOUR + "T08:00:00",
-    resolue=None,
-    code="X",
-    nombre=3,
-):
+    ident: str,
+    niveau: str,
+    message: str,
+    base: str = "alb",
+    statut: str = "active",
+    premiere: str = JOUR + "T08:00:00",
+    resolue: str | None = None,
+    code: str = "X",
+    nombre: int = 3,
+) -> Enregistrement:
+    """Alerte du centre d'alertes, au format enregistré, pour le rapport."""
     return {
         "id": ident,
         "niveau": niveau,
@@ -72,7 +74,7 @@ ALERTES = [
         "e2", "ALERTE", "Écritures supprimées", statut="evenement", nombre=2
     ),
 ]
-TACHES = [
+TACHES: list[Enregistrement] = [
     {
         "id": "t1",
         "action": "analyser",
@@ -134,12 +136,19 @@ SECURITE = {
 }
 
 
-def rapport():
-    return construire(JOUR, ALERTES, TACHES, SECURITE, maintenant=MAINTENANT)
+def rapport() -> Enregistrement:
+    """Rapport automatique du jour construit sur les données de test."""
+    rapport_auto: Enregistrement = construire(
+        JOUR, ALERTES, TACHES, SECURITE, maintenant=MAINTENANT
+    )
+    return rapport_auto
 
 
 class TestConstruire(unittest.TestCase):
-    def test_conclusions(self):
+    """Construction automatique du rapport du jour."""
+
+    def test_conclusions(self) -> None:
+        """Conclusions datées, triées, regroupées et complètes."""
         r = rapport()
         textes = [c["texte_auto"] for c in r["conclusions"]]
         ids = [c["id"] for c in r["conclusions"]]
@@ -183,14 +192,16 @@ class TestConstruire(unittest.TestCase):
         )
         self.assertTrue(any("37887 fichiers" in t for t in textes))
         self.assertIn(
-            "Travaux de la journée : 1 analyse, 2 comparaisons, 1 téléchargement.",
+            "Travaux de la journée : 1 analyse, 2 comparaisons, "
+            "1 téléchargement.",
             textes,
         )
         self.assertEqual(
             len(r["sections"]["taches"]), 4
         )  # sans la tâche de la veille
 
-    def test_jour_passe_sans_alertes_actives(self):
+    def test_jour_passe_sans_alertes_actives(self) -> None:
+        """Un jour passé ne reprend pas les alertes actives d'aujourd'hui."""
         r = construire(
             "2026-11-06", ALERTES, TACHES, {}, maintenant=MAINTENANT
         )
@@ -200,7 +211,10 @@ class TestConstruire(unittest.TestCase):
 
 
 class TestFusionner(unittest.TestCase):
-    def test_choix_conserves_apres_regeneration(self):
+    """Fusion du rapport automatique avec la saisie de l'utilisateur."""
+
+    def test_choix_conserves_apres_regeneration(self) -> None:
+        """Masquages, textes, commentaires et ajouts survivent au recalcul."""
         auto = rapport()
         saisie = nettoyer_saisie(
             {
@@ -255,7 +269,8 @@ class TestFusionner(unittest.TestCase):
         )  # triés par heure
         self.assertEqual(r["sections_masquees"], ["taches"])
 
-    def test_export_seulement_le_visible_et_echappe(self):
+    def test_export_seulement_le_visible_et_echappe(self) -> None:
+        """L'export HTML ne montre que le visible, échappé, daté."""
         auto = rapport()
         saisie = nettoyer_saisie(
             {
@@ -284,7 +299,8 @@ class TestFusionner(unittest.TestCase):
             '<span class="q">07/11/2026 10:00</span>', page
         )  # date et heure
 
-    def test_saisie_bornee(self):
+    def test_saisie_bornee(self) -> None:
+        """La saisie est bornée en nombre d'éléments et en longueur."""
         s = nettoyer_saisie(
             {
                 "conclusions": [{"id": "a", "texte": "x" * 5000}] * 600,

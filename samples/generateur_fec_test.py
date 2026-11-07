@@ -5,12 +5,22 @@ import random
 from datetime import date
 
 
-def generer_fec(nb_ecritures: int = 45, comptes=None) -> bytes:
+def generer_fec(
+    nb_ecritures: int = 45, comptes: list[tuple[str, str]] | None = None
+) -> bytes:
     """Produit des écritures équilibrées, en ISO-8859-1.
 
-    comptes : liste de paires (compte_debit, compte_credit) réelles du client.
+    Rôle : FEC synthétique déterministe (graine fixe 2026) pour les tests.
+    Paramètres : nb_ecritures — nombre d'écritures (2 lignes chacune) ;
+    comptes — paires (compte_debit, compte_credit) réelles du client
+    (défaut : 4 paires types Quadra).
+    Retour : le FEC en octets ISO-8859-1, fins de ligne CRLF.
+    Erreurs : aucune levée volontairement.
+    Usages : ecrire_fec (ce module), tests/test_moteur.py.
     """
-    random.seed(2026)  # déterministe
+    # Générateur local à graine fixe : sortie déterministe, sans toucher
+    # à l'état global du module random. Données de test, pas de sécurité.
+    tirage = random.Random(2026)
     if not comptes:
         comptes = [
             ("41100000", "70615000"),
@@ -19,11 +29,22 @@ def generer_fec(nb_ecritures: int = 45, comptes=None) -> bytes:
             ("51211000", "41100000"),
         ]
     lignes = [
-        "JournalCode\tEcritureNum\tEcritureDate\tCompteNum\tCompteLib\tEcritureLib\tDebit\tCredit"
+        "\t".join(
+            [
+                "JournalCode",
+                "EcritureNum",
+                "EcritureDate",
+                "CompteNum",
+                "CompteLib",
+                "EcritureLib",
+                "Debit",
+                "Credit",
+            ]
+        )
     ]
     for n in range(1, nb_ecritures + 1):
         cd, cc = comptes[(n - 1) % len(comptes)]
-        montant = random.randint(1000, 500000)  # centimes
+        montant = tirage.randint(1000, 500000)  # centimes
         d = date(2026, 2, 1 + (n - 1) % 28).strftime("%Y%m%d")
         lib = "Facture client " + str(1000 + n)
         lignes.append(
@@ -36,7 +57,12 @@ def generer_fec(nb_ecritures: int = 45, comptes=None) -> bytes:
     return texte.encode("iso-8859-1")
 
 
-def ecrire_fec(chemin: str, nb_ecritures: int = 45, comptes=None) -> str:
+def ecrire_fec(
+    chemin: str,
+    nb_ecritures: int = 45,
+    comptes: list[tuple[str, str]] | None = None,
+) -> str:
+    """Écrit un FEC synthétique (voir generer_fec) ; rend son chemin."""
     with open(chemin, "wb") as f:
         f.write(generer_fec(nb_ecritures, comptes))
     return chemin

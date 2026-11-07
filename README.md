@@ -46,7 +46,7 @@ Toutes les commandes se lancent depuis la racine du dépôt (`cd /opt/concorde`)
 les scripts sont des modules (`python3 -m scripts.<nom>`).
 
 ```bash
-python3 -m unittest tests.test_moteur tests.test_demat tests.test_odoo_donnees tests.test_interface tests.test_surveillance tests.test_migration tests.test_bases_locales tests.test_injection tests.test_comparaison tests.test_rapport_jour   # tests complets
+python3 -m pytest                                    # tests complets (172)
 python3 samples/generateur_fec_test.py fec_test.txt  # FEC synthétique type Quadra
 ```
 

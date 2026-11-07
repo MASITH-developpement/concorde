@@ -13,15 +13,24 @@ from core.migration.circuit import executer
 from core.migration.connecteur_fec import ErreurConnecteur, lire_fec
 
 ENTETE = (
-    "JournalCode|JournalLib|EcritureNum|EcritureDate|CompteNum|CompteLib|CompAuxNum|"
-    "CompAuxLib|PieceRef|PieceDate|EcritureLib|Debit|Credit|EcritureLet|DateLet|"
-    "ValidDate|Montantdevise|Idevise"
+    "JournalCode|JournalLib|EcritureNum|EcritureDate|CompteNum|CompteLib|"
+    "CompAuxNum|CompAuxLib|PieceRef|PieceDate|EcritureLib|Debit|Credit|"
+    "EcritureLet|DateLet|ValidDate|Montantdevise|Idevise"
 )
 
 
-def L(
-    j, num, d, compte, debit="0,00", credit="0,00", aux="", lib="lib", let=""
-):
+def ligne_fec(
+    j: str,
+    num: str,
+    d: str,
+    compte: str,
+    debit: str = "0,00",
+    credit: str = "0,00",
+    aux: str = "",
+    lib: str = "lib",
+    let: str = "",
+) -> str:
+    """Construit une ligne FEC (séparateur « | ») avec les 18 colonnes."""
     return "|".join(
         [
             j,
@@ -46,39 +55,46 @@ def L(
     )
 
 
-def fec(*lignes, entete=ENTETE):
+def fec(*lignes: str, entete: str = ENTETE) -> bytes:
+    """Assemble un fichier FEC complet (en-tête + lignes) en ISO-8859-15."""
     return ("\n".join([entete] + list(lignes)) + "\n").encode("iso-8859-15")
 
 
 BASE = [
-    L("AN", "1", "20250101", "512000", "1000,00"),
-    L("AN", "1", "20250101", "101000", credit="1000,00"),
-    L("VE", "2", "20250115", "411000", "120,00", aux="C1", let="A"),
-    L("VE", "2", "20250115", "706000", credit="100,00"),
-    L("VE", "2", "20250115", "445710", credit="20,00"),
-    L("BQ", "3", "20250120", "512000", "120,00"),
-    L("BQ", "3", "20250120", "411000", credit="120,00", aux="C1", let="A"),
-    L("OD", "4", "20250131", "640000", "500,00"),
-    L("OD", "4", "20250131", "421000", credit="500,00"),
+    ligne_fec("AN", "1", "20250101", "512000", "1000,00"),
+    ligne_fec("AN", "1", "20250101", "101000", credit="1000,00"),
+    ligne_fec("VE", "2", "20250115", "411000", "120,00", aux="C1", let="A"),
+    ligne_fec("VE", "2", "20250115", "706000", credit="100,00"),
+    ligne_fec("VE", "2", "20250115", "445710", credit="20,00"),
+    ligne_fec("BQ", "3", "20250120", "512000", "120,00"),
+    ligne_fec(
+        "BQ", "3", "20250120", "411000", credit="120,00", aux="C1", let="A"
+    ),
+    ligne_fec("OD", "4", "20250131", "640000", "500,00"),
+    ligne_fec("OD", "4", "20250131", "421000", credit="500,00"),
 ]
 AUJ = date(2026, 11, 6)
 
 
 class TestConnecteur(unittest.TestCase):
-    def test_lecture_complete(self):
+    """Porte 1 : lecture d'un FEC par le connecteur."""
+
+    def test_lecture_complete(self) -> None:
+        """Vérifie la lecture des lignes, écritures, totaux et tiers."""
         lot = lire_fec(fec(*BASE))
         self.assertEqual(
             lot.totaux(),
             {"lignes": 9, "ecritures": 4, "debit": 174000, "credit": 174000},
         )
-        l = lot.lignes[2]
+        ligne = lot.lignes[2]
         self.assertEqual(
-            (l["tiers_ref"], l["tiers_nom"], l["lettrage"]),
+            (ligne["tiers_ref"], ligne["tiers_nom"], ligne["lettrage"]),
             ("C1", "Tiers C1", "A"),
         )
-        self.assertEqual(l["n"], 4)  # numéro de ligne du fichier
+        self.assertEqual(ligne["n"], 4)  # numéro de ligne du fichier
 
-    def test_rien_n_est_saute_ni_dedoublonne(self):
+    def test_rien_n_est_saute_ni_dedoublonne(self) -> None:
+        """Vérifie : lignes illisibles signalées, doublons gardés."""
         lot = lire_fec(
             fec(
                 *(
@@ -86,17 +102,25 @@ class TestConnecteur(unittest.TestCase):
                     + [
                         "VE|trop|court",
                         BASE[3],
-                        L("VE", "9", "20250115", "706000", credit="1,234"),
+                        ligne_fec(
+                            "VE", "9", "20250115", "706000", credit="1,234"
+                        ),
                     ]
                 )
             )
         )
         self.assertEqual(len(lot.illisibles), 2)  # colonnes + 3 décimales
         self.assertEqual(
-            sum(1 for l in lot.lignes if l["n"] == 5 or l["n"] == 12), 2
+            sum(
+                1
+                for ligne in lot.lignes
+                if ligne["n"] == 5 or ligne["n"] == 12
+            ),
+            2,
         )
 
-    def test_utf8_bom_tab_et_entete_absente(self):
+    def test_utf8_bom_tab_et_entete_absente(self) -> None:
+        """Vérifie UTF-8 avec BOM et tabulations ; refus sans en-tête."""
         brut = (
             b"\xef\xbb\xbf"
             + fec(*BASE).decode("iso-8859-15").replace("|", "\t").encode()
@@ -107,33 +131,38 @@ class TestConnecteur(unittest.TestCase):
 
 
 class TestControles(unittest.TestCase):
-    def codes(self, *lignes):
+    """Porte 2 : contrôles bloquants et alertes sur le lot."""
+
+    def codes(self, *lignes: str) -> dict[str, int]:
+        """Rend le nombre de constats par code pour un FEC donné."""
         return {
             c["code"]: c["nombre"]
             for c in controles.controler(lire_fec(fec(*lignes)), AUJ).constats
         }
 
-    def test_lot_sain(self):
+    def test_lot_sain(self) -> None:
+        """Vérifie qu'un lot sain ne produit aucun constat."""
         self.assertEqual(self.codes(*BASE), {})
 
-    def test_bloquants(self):
+    def test_bloquants(self) -> None:
+        """Vérifie que chaque anomalie bloquante est détectée et comptée."""
         c = self.codes(
             *(
                 BASE
                 + [
-                    L(
+                    ligne_fec(
                         "OD", "5", "20250131", "601000", "10,00"
                     ),  # déséquilibrée, 1 ligne
-                    L("OD", "6", "20250131", "0", "5,00"),
-                    L(
+                    ligne_fec("OD", "6", "20250131", "0", "5,00"),
+                    ligne_fec(
                         "OD", "6", "20250201", "401000", credit="5,00", aux="F"
                     ),  # 2 mois + compte 0
-                    L("OD", "7", "20271231", "601000", "1,00"),
-                    L(
+                    ligne_fec("OD", "7", "20271231", "601000", "1,00"),
+                    ligne_fec(
                         "OD", "7", "20271231", "401000", credit="1,00", aux="F"
                     ),  # future
-                    L("OD", "8", "20250131", "601000"),
-                    L("OD", "8", "20250131", "401000", aux="F"),
+                    ligne_fec("OD", "8", "20250131", "601000"),
+                    ligne_fec("OD", "8", "20250131", "401000", aux="F"),
                 ]
             )
         )  # nulles
@@ -149,15 +178,16 @@ class TestControles(unittest.TestCase):
             self.assertIn(code, c, code)
         self.assertEqual(c["MIG_MONTANT_NUL"], 2)
 
-    def test_alertes(self):
+    def test_alertes(self) -> None:
+        """Vérifie les alertes doublons, journaux, tiers et lettrages."""
         c = self.codes(
             *(
                 BASE
                 + [
                     BASE[5],
                     BASE[6],  # doublons (BQ/3)
-                    L("XX", "2", "20250115", "601000", "3,00"),
-                    L("XX", "2", "20250115", "411000", credit="3,00"),
+                    ligne_fec("XX", "2", "20250115", "601000", "3,00"),
+                    ligne_fec("XX", "2", "20250115", "411000", credit="3,00"),
                 ]
             )
         )
@@ -168,7 +198,10 @@ class TestControles(unittest.TestCase):
 
 
 class TestFiltres(unittest.TestCase):
-    def test_a_nouveaux_sur_une_periode(self):
+    """Porte 3 : filtres de retrait d'écritures ou de lignes."""
+
+    def test_a_nouveaux_sur_une_periode(self) -> None:
+        """Vérifie le retrait des à-nouveaux de la période seule."""
         lot = lire_fec(fec(*BASE))
         r = filtres.appliquer(
             lot,
@@ -189,15 +222,17 @@ class TestFiltres(unittest.TestCase):
         filtres.appliquer(lot2, [{"journaux": ["AN"], "au": "2024-12-31"}])
         self.assertEqual(lot2.totaux()["lignes"], 9)  # hors période : rien
 
-    def test_comptes_640_ecritures_entieres(self):
+    def test_comptes_640_ecritures_entieres(self) -> None:
+        """Vérifie qu'un filtre par compte retire les écritures entières."""
         lot = lire_fec(fec(*BASE))
         filtres.appliquer(lot, [{"nom": "640", "comptes": ["640"]}])
         self.assertNotIn(
-            "421000", {l["compte"] for l in lot.lignes}
+            "421000", {ligne["compte"] for ligne in lot.lignes}
         )  # contrepartie partie
         self.assertEqual(lot.totaux()["ecritures"], 3)
 
-    def test_portee_lignes_refusee_si_desequilibre(self):
+    def test_portee_lignes_refusee_si_desequilibre(self) -> None:
+        """Vérifie le refus de la portée « lignes » si déséquilibre."""
         lot = lire_fec(fec(*BASE))
         with self.assertRaises(filtres.ErreurFiltre):
             filtres.appliquer(lot, [{"comptes": ["640"], "portee": "lignes"}])
@@ -207,13 +242,14 @@ class TestFiltres(unittest.TestCase):
         )
         self.assertEqual(lot.totaux()["lignes"], 7)
 
-    def test_criteres_divers(self):
+    def test_criteres_divers(self) -> None:
+        """Vérifie libellé, tiers, montants, conditions et analytique."""
         lot = lire_fec(
             fec(
                 *(
                     BASE
                     + [
-                        L(
+                        ligne_fec(
                             "OD",
                             "9",
                             "20250131",
@@ -221,7 +257,7 @@ class TestFiltres(unittest.TestCase):
                             "7,00",
                             lib="ESSAI x",
                         ),
-                        L(
+                        ligne_fec(
                             "OD",
                             "9",
                             "20250131",
@@ -240,7 +276,9 @@ class TestFiltres(unittest.TestCase):
             lot,
             [{"tiers": ["C1"], "montant_min": "100", "montant_max": "150"}],
         )
-        self.assertEqual({l["journal_code"] for l in lot.lignes}, {"AN", "OD"})
+        self.assertEqual(
+            {ligne["journal_code"] for ligne in lot.lignes}, {"AN", "OD"}
+        )
         lot = lire_fec(fec(*BASE))
         filtres.appliquer(
             lot,
@@ -254,12 +292,15 @@ class TestFiltres(unittest.TestCase):
         )
         self.assertEqual(lot.totaux()["ecritures"], 3)
         lot = lire_fec(fec(*BASE))
-        for l in lot.lignes:
-            l["analytique"] = "AXE1-LYON" if l["compte"] == "640000" else ""
+        for ligne in lot.lignes:
+            ligne["analytique"] = (
+                "AXE1-LYON" if ligne["compte"] == "640000" else ""
+            )
         filtres.appliquer(lot, [{"analytique": ["AXE1"]}])
         self.assertEqual(lot.totaux()["ecritures"], 3)
 
-    def test_filtres_invalides(self):
+    def test_filtres_invalides(self) -> None:
+        """Vérifie que chaque filtre mal formé est refusé."""
         for f in (
             {"portee": "tout"},
             {"nom": "vide"},
@@ -271,15 +312,21 @@ class TestFiltres(unittest.TestCase):
             with self.assertRaises(filtres.ErreurFiltre, msg=f):
                 filtres.normaliser(f)
 
-    def test_lignes_nulles(self):
-        lot = lire_fec(fec(*(BASE + [L("OD", "4", "20250131", "601000")])))
+    def test_lignes_nulles(self) -> None:
+        """Vérifie que la portée « lignes_nulles » retire les lignes à zéro."""
+        lot = lire_fec(
+            fec(*(BASE + [ligne_fec("OD", "4", "20250131", "601000")]))
+        )
         r = filtres.appliquer(lot, [{"portee": "lignes_nulles"}])
         self.assertEqual(r["filtres"][0]["lignes"], 1)
         self.assertEqual(r["avant"]["debit"], r["apres"]["debit"])
 
 
 class TestCorrespondance(unittest.TestCase):
-    def test_table_et_a_arbitrer(self):
+    """Porte 4 : correspondance des comptes ERP vers Odoo."""
+
+    def test_table_et_a_arbitrer(self) -> None:
+        """Vérifie la table appliquée et les comptes à arbitrer."""
         lot = lire_fec(fec(*BASE))
         r = correspondance.appliquer(
             lot,
@@ -301,12 +348,16 @@ class TestCorrespondance(unittest.TestCase):
         self.assertEqual(lot.lignes[0]["compte_cible"], "512100")
         self.assertIsNone(lot.lignes[-1]["compte_cible"])
 
-    def test_identique_et_formats(self):
+    def test_identique_et_formats(self) -> None:
+        """Vérifie la correspondance identique et les tables JSON et CSV."""
         lot = lire_fec(fec(*BASE))
         r = correspondance.appliquer(lot, identique=True)
         self.assertEqual(r.constats, [])
         self.assertTrue(
-            all(l["compte_cible"] == l["compte"] for l in lot.lignes)
+            all(
+                ligne["compte_cible"] == ligne["compte"]
+                for ligne in lot.lignes
+            )
         )
         self.assertEqual(
             correspondance.charger_table(b'{"401": "401100"}', "t.json"),
@@ -322,7 +373,10 @@ class TestCorrespondance(unittest.TestCase):
 
 
 class TestCircuit(unittest.TestCase):
-    def test_lot_pret_et_conforme(self):
+    """Porte 5 : circuit complet de migration d'un lot."""
+
+    def test_lot_pret_et_conforme(self) -> None:
+        """Vérifie qu'un lot sain est prêt, exporté et journalisé."""
         d = tempfile.mkdtemp()
         j = Journal()
         r = executer(
@@ -353,10 +407,13 @@ class TestCircuit(unittest.TestCase):
         msgs = [e["message"] for e in j.tout()]
         self.assertTrue(any("Bilan du lot : PRÊT" in m for m in msgs))
 
-    def test_lot_bloque(self):
+    def test_lot_bloque(self) -> None:
+        """Vérifie le blocage d'un lot en anomalie, fichiers compris."""
         d = tempfile.mkdtemp()
         r = executer(
-            fec(*(BASE + [L("OD", "5", "20250131", "601000", "10,00")])),
+            fec(
+                *(BASE + [ligne_fec("OD", "5", "20250131", "601000", "10,00")])
+            ),
             "t.fec",
             d,
             table={"512000": "512000"},
@@ -369,11 +426,13 @@ class TestCircuit(unittest.TestCase):
         for c in r["portes"]["controles"]["constats"]:
             self.assertTrue(c["explication"]["que_faire"])
 
-    def test_fichier_illisible(self):
+    def test_fichier_illisible(self) -> None:
+        """Vérifie qu'un fichier illisible bloque la porte de lecture."""
         r = executer(b"rien", "x.fec", tempfile.mkdtemp())
         self.assertEqual(r["portes"]["lecture"]["statut"], "bloquee")
 
-    def test_filtre_refuse(self):
+    def test_filtre_refuse(self) -> None:
+        """Vérifie qu'un filtre refusé bloque la porte des filtres."""
         r = executer(
             fec(*BASE),
             "t.fec",

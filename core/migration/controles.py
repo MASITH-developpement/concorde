@@ -2,21 +2,23 @@
 """Porte 3 — batterie de contrôles de migration (méthode MASITH).
 
 BLOQUANT (la migration ne passe pas tant qu'il en reste) :
-  ligne illisible, écriture déséquilibrée, fichier déséquilibré, ligne à montant nul,
-  écriture d'une seule ligne, compte vide ou « 0 », écriture à cheval sur deux mois,
-  écriture datée après aujourd'hui (à trancher), ligne débit ET crédit.
+  ligne illisible, écriture déséquilibrée, fichier déséquilibré, ligne à
+  montant nul, écriture d'une seule ligne, compte vide ou « 0 », écriture à
+  cheval sur deux mois, écriture datée après aujourd'hui (à trancher),
+  ligne débit ET crédit.
 ALERTE (à regarder, ne bloque pas) :
-  même numéro d'écriture dans deux journaux, dates différentes dans une écriture
-  (même mois), lignes en double, compte client / fournisseur sans tiers,
-  lettrage non soldé.
+  même numéro d'écriture dans deux journaux, dates différentes dans une
+  écriture (même mois), lignes en double, compte client / fournisseur sans
+  tiers, lettrage non soldé.
 """
 
 from collections import defaultdict
 from datetime import date
 
 from ..analyser import Rapport
-from ..journal import nombre_texte, ou_muet
+from ..journal import Journal, nombre_texte, ou_muet
 from ..xlsx_ecrire import euros_texte
+from .lot import Lot, annoncer_constats, cle_ecriture, cle_texte
 
 PREFIXES_TIERS = (
     "401",
@@ -30,24 +32,28 @@ PREFIXES_TIERS = (
     "419",
 )
 
+# Ce qui rend deux lignes identiques : journal, écriture, date, compte,
+# tiers, libellé, débit, crédit.
+SignatureLigne = tuple[str, str, date, str, str, str, int, int]
 
-def _e(cle):
-    return "%s/%s" % cle
 
-
-def controler(lot, aujourd_hui=None, journal=None):
+def controler(
+    lot: Lot,
+    aujourd_hui: date | None = None,
+    journal: Journal | None = None,
+) -> Rapport:
     """Applique la batterie au lot. Retourne un Rapport (constats + infos)."""
     j = ou_muet(journal)
     aujourd_hui = aujourd_hui or date.today()
     r = Rapport()
-    t = lot.totaux()
-    r.info("lignes", t["lignes"])
-    r.info("ecritures", t["ecritures"])
-    r.info("total_debit", euros_texte(t["debit"], ","))
-    r.info("total_credit", euros_texte(t["credit"], ","))
-    dates = [l["date"] for l in lot.lignes]
+    totaux = lot.totaux()
+    r.info("lignes", totaux["lignes"])
+    r.info("ecritures", totaux["ecritures"])
+    r.info("total_debit", euros_texte(totaux["debit"], ","))
+    r.info("total_credit", euros_texte(totaux["credit"], ","))
+    dates = [ligne["date"] for ligne in lot.lignes]
     r.info("periode", [min(dates), max(dates)] if dates else [None, None])
-    r.info("journaux", sorted({l["journal_code"] for l in lot.lignes}))
+    r.info("journaux", sorted({ligne["journal_code"] for ligne in lot.lignes}))
 
     r.constat(
         "BLOQUANT",
@@ -56,37 +62,45 @@ def controler(lot, aujourd_hui=None, journal=None):
         ["ligne %d : %s" % (n, motif) for n, _, motif in lot.illisibles],
     )
     ecritures = lot.ecritures()
-    desequ, une_ligne, deux_mois, dates_diff, futures = [], [], [], [], []
+    desequ: list[str] = []
+    une_ligne: list[str] = []
+    deux_mois: list[str] = []
+    dates_diff: list[str] = []
+    futures: list[str] = []
     for cle, lignes in ecritures.items():
-        s = sum(l["debit"] - l["credit"] for l in lignes)
+        s = sum(ligne["debit"] - ligne["credit"] for ligne in lignes)
         if s:
             desequ.append(
                 "%s : écart %s € (lignes %s)"
                 % (
-                    _e(cle),
+                    cle_texte(cle),
                     euros_texte(s, ","),
-                    ", ".join(str(l["n"]) for l in lignes[:6]),
+                    ", ".join(str(ligne["n"]) for ligne in lignes[:6]),
                 )
             )
         if len(lignes) == 1:
-            une_ligne.append("%s (ligne %d)" % (_e(cle), lignes[0]["n"]))
-        mois = {(l["date"].year, l["date"].month) for l in lignes}
+            une_ligne.append(
+                "%s (ligne %d)" % (cle_texte(cle), lignes[0]["n"])
+            )
+        mois = {(ligne["date"].year, ligne["date"].month) for ligne in lignes}
         if len(mois) > 1:
             deux_mois.append(
                 "%s : %s"
                 % (
-                    _e(cle),
+                    cle_texte(cle),
                     ", ".join("%02d/%d" % (m, a) for a, m in sorted(mois)),
                 )
             )
-        elif len({l["date"] for l in lignes}) > 1:
-            dates_diff.append(_e(cle))
-        if max(l["date"] for l in lignes) > aujourd_hui:
+        elif len({ligne["date"] for ligne in lignes}) > 1:
+            dates_diff.append(cle_texte(cle))
+        if max(ligne["date"] for ligne in lignes) > aujourd_hui:
             futures.append(
                 "%s du %s"
                 % (
-                    _e(cle),
-                    max(l["date"] for l in lignes).strftime("%d/%m/%Y"),
+                    cle_texte(cle),
+                    max(ligne["date"] for ligne in lignes).strftime(
+                        "%d/%m/%Y"
+                    ),
                 )
             )
     r.constat(
@@ -95,14 +109,17 @@ def controler(lot, aujourd_hui=None, journal=None):
         "Écritures déséquilibrées",
         desequ,
     )
-    if t["debit"] != t["credit"]:
+    if totaux["debit"] != totaux["credit"]:
         r.constat(
             "BLOQUANT",
             "MIG_FICHIER_DESEQUILIBRE",
             "Fichier déséquilibré",
             [
                 "D %s / C %s"
-                % (euros_texte(t["debit"], ","), euros_texte(t["credit"], ","))
+                % (
+                    euros_texte(totaux["debit"], ","),
+                    euros_texte(totaux["credit"], ","),
+                )
             ],
         )
     r.constat(
@@ -110,9 +127,9 @@ def controler(lot, aujourd_hui=None, journal=None):
         "MIG_MONTANT_NUL",
         "Lignes à montant nul",
         [
-            "%s (ligne %d)" % (_e((l["journal_code"], l["ecriture"])), l["n"])
-            for l in lot.lignes
-            if not l["debit"] and not l["credit"]
+            "%s (ligne %d)" % (cle_texte(cle_ecriture(ligne)), ligne["n"])
+            for ligne in lot.lignes
+            if not ligne["debit"] and not ligne["credit"]
         ],
     )
     r.constat(
@@ -120,9 +137,9 @@ def controler(lot, aujourd_hui=None, journal=None):
         "MIG_DEBIT_ET_CREDIT",
         "Lignes avec un débit ET un crédit",
         [
-            "ligne %d" % l["n"]
-            for l in lot.lignes
-            if l["debit"] and l["credit"]
+            "ligne %d" % ligne["n"]
+            for ligne in lot.lignes
+            if ligne["debit"] and ligne["credit"]
         ],
     )
     r.constat(
@@ -136,9 +153,9 @@ def controler(lot, aujourd_hui=None, journal=None):
         "MIG_COMPTE_INVALIDE",
         "Comptes vides ou « 0 »",
         [
-            "ligne %d : %r" % (l["n"], l["compte"])
-            for l in lot.lignes
-            if not l["compte"].strip("0 ")
+            "ligne %d : %r" % (ligne["n"], ligne["compte"])
+            for ligne in lot.lignes
+            if not ligne["compte"].strip("0 ")
         ],
     )
     r.constat(
@@ -155,7 +172,7 @@ def controler(lot, aujourd_hui=None, journal=None):
         futures,
     )
 
-    par_num = defaultdict(set)
+    par_num: defaultdict[str, set[str]] = defaultdict(set)
     for jc, num in ecritures:
         par_num[num].add(jc)
     r.constat(
@@ -174,24 +191,26 @@ def controler(lot, aujourd_hui=None, journal=None):
         "Dates différentes dans une même écriture (même mois)",
         dates_diff,
     )
-    vues, doublons = {}, []
-    for l in lot.lignes:
-        k = (
-            l["journal_code"],
-            l["ecriture"],
-            l["date"],
-            l["compte"],
-            l["tiers_ref"],
-            l["libelle"],
-            l["debit"],
-            l["credit"],
+    vues: dict[SignatureLigne, int] = {}
+    doublons: list[str] = []
+    for ligne in lot.lignes:
+        signature: SignatureLigne = (
+            ligne["journal_code"],
+            ligne["ecriture"],
+            ligne["date"],
+            ligne["compte"],
+            ligne["tiers_ref"],
+            ligne["libelle"],
+            ligne["debit"],
+            ligne["credit"],
         )
-        if k in vues:
+        if signature in vues:
             doublons.append(
-                "lignes %d et %d (%s)" % (vues[k], l["n"], _e(k[:2]))
+                "lignes %d et %d (%s)"
+                % (vues[signature], ligne["n"], cle_texte(signature[:2]))
             )
         else:
-            vues[k] = l["n"]
+            vues[signature] = ligne["n"]
     r.constat(
         "ALERTE", "MIG_LIGNE_DOUBLON", "Lignes identiques en double", doublons
     )
@@ -200,17 +219,18 @@ def controler(lot, aujourd_hui=None, journal=None):
         "MIG_TIERS_MANQUANT",
         "Lignes sur compte client / fournisseur sans compte auxiliaire",
         [
-            "ligne %d : compte %s" % (l["n"], l["compte"])
-            for l in lot.lignes
-            if l["compte"].startswith(PREFIXES_TIERS) and not l["tiers_ref"]
+            "ligne %d : compte %s" % (ligne["n"], ligne["compte"])
+            for ligne in lot.lignes
+            if ligne["compte"].startswith(PREFIXES_TIERS)
+            and not ligne["tiers_ref"]
         ],
     )
-    lettres = defaultdict(int)
-    for l in lot.lignes:
-        if l["lettrage"]:
-            lettres[(l["compte"], l["tiers_ref"], l["lettrage"])] += (
-                l["debit"] - l["credit"]
-            )
+    lettres: defaultdict[tuple[str, str, str], int] = defaultdict(int)
+    for ligne in lot.lignes:
+        if ligne["lettrage"]:
+            lettres[
+                (ligne["compte"], ligne["tiers_ref"], ligne["lettrage"])
+            ] += (ligne["debit"] - ligne["credit"])
     r.constat(
         "ALERTE",
         "MIG_LETTRAGE_NON_SOLDE",
@@ -223,16 +243,17 @@ def controler(lot, aujourd_hui=None, journal=None):
     )
     r.info("lettrages", len(lettres))
     r.info(
-        "tiers", len({l["tiers_ref"] for l in lot.lignes if l["tiers_ref"]})
+        "tiers",
+        len(
+            {ligne["tiers_ref"] for ligne in lot.lignes if ligne["tiers_ref"]}
+        ),
     )
 
-    for c in r.constats:
-        niveau = "erreur" if c["niveau"] == "BLOQUANT" else "alerte"
-        j.dire("%s : %s" % (c["message"], nombre_texte(c["nombre"])), niveau)
+    annoncer_constats(r, j)
     if not r.constats:
         j.dire(
             "Aucun problème : les %s écritures passent tous les contrôles"
-            % nombre_texte(t["ecritures"]),
+            % nombre_texte(totaux["ecritures"]),
             "ok",
         )
     return r

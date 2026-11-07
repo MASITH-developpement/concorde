@@ -1,22 +1,24 @@
 #!/usr/bin/env python3
 # CONCORDE — (c) MASITH / Stéphane Moreau. Tous droits réservés.
-"""Contrôle de la dématérialisation des factures d'un Odoo distant (XML-RPC, clé API).
+"""Contrôle de la dématérialisation des factures d'un Odoo distant.
+
+Accès par XML-RPC avec une clé API.
 
 LECTURE SEULE : seules search_read et fields_get sont appelées (verrou dans
 le client). Le moteur est core/demat.py, le même que celui du menu
 CONCORDE > Contrôle dématérialisation dans Odoo.
 
 Utilisation (depuis la racine du dépôt) :
-  export ODOO_API_KEY="votre-cle-api"        # jamais en argument de ligne de commande
+  export ODOO_API_KEY="votre-cle-api"   # jamais en argument de commande
   python3 -m scripts.check_dematerialisation \\
       --url https://mon-odoo.example.com --db mabase \\
       --user contact@masith.fr --days 30 [--json rapport.json] [--sans-pdf]
 
-Codes retour : 0 = conforme, 1 = connexion / erreur, 2 = anomalies (bloquantes ou alertes).
+Codes retour : 0 = conforme, 1 = connexion / erreur,
+2 = anomalies (bloquantes ou alertes).
 """
 
 import argparse
-import json
 import os
 import sys
 
@@ -27,11 +29,14 @@ from core.demat import (
     SourceXmlRpc,
     rendu_texte,
 )
+from scripts.outils_cli import avertir_si_non_chiffre, ecrire_rapport_json
 
 
-def main(argv=None):
+def main(argv: list[str] | None = None) -> int:
+    """Lance le contrôle ; rend le code retour (0, 1 ou 2)."""
     ap = argparse.ArgumentParser(
-        description="CONCORDE — contrôle de la dématérialisation des factures Odoo"
+        description="CONCORDE — contrôle de la dématérialisation des "
+        "factures Odoo"
     )
     ap.add_argument(
         "--url", required=True, help="URL Odoo, ex. https://mon-odoo.fr"
@@ -75,20 +80,15 @@ def main(argv=None):
     cle = os.environ.get("ODOO_API_KEY")
     if not cle:
         print(
-            "ERREUR : clé API manquante — définissez la variable ODOO_API_KEY.",
+            "ERREUR : clé API manquante — définissez la variable "
+            "ODOO_API_KEY.",
             file=sys.stderr,
         )
         return 1
     if args.days < 1:
         print("ERREUR : --days doit valoir au moins 1.", file=sys.stderr)
         return 1
-    if not args.url.startswith("https://") and not args.url.startswith(
-        ("http://localhost", "http://127.0.0.1")
-    ):
-        print(
-            "ATTENTION : connexion non chiffrée (http) — la clé API circule en clair.",
-            file=sys.stderr,
-        )
+    avertir_si_non_chiffre(args.url)
 
     try:
         source = SourceXmlRpc(
@@ -123,8 +123,7 @@ def main(argv=None):
 
     print(rendu_texte(rapport))
     if args.json:
-        with open(args.json, "w", encoding="utf-8") as fh:
-            json.dump(rapport, fh, ensure_ascii=False, indent=2, default=str)
+        ecrire_rapport_json(args.json, rapport)
         print("\nRapport JSON : %s" % args.json)
     return 0 if rapport["statut"] == "conforme" else 2
 

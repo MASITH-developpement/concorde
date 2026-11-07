@@ -8,6 +8,7 @@
 """
 
 from datetime import date
+from typing import Union
 
 from .canonical import Canonique, LigneEcriture, vers_centimes
 
@@ -25,10 +26,11 @@ CHAMPS_REQUIS = {
 
 
 class ErreurFEC(ValueError):
-    pass
+    """FEC illisible : encodage, séparateur, en-tête, date ou champ."""
 
 
 def _detecter_encodage(brut: bytes) -> str:
+    """Premier encodage (UTF-8 puis ISO-8859-1) qui décode le contenu."""
     for enc in ("utf-8", "iso-8859-1"):
         try:
             brut.decode(enc)
@@ -47,14 +49,15 @@ def _detecter_separateur(ligne: str) -> str:
 
 
 def _parse_date(v: str) -> date:
+    """Date FEC AAAAMMJJ -> date ; ErreurFEC si le format diffère."""
     v = v.strip()
     if len(v) == 8 and v.isdigit():
         return date(int(v[:4]), int(v[4:6]), int(v[6:8]))
     raise ErreurFEC("Date FEC invalide : %r" % (v,))
 
 
-def _trouver_entete(lignes):
-    """Retourne (index_entete, liste_champs) en ignorant le préambule (<=14 lignes)."""
+def _trouver_entete(lignes: list[str]) -> tuple[int, list[str]]:
+    """(index_entete, liste_champs), préambule (<= 14 lignes) ignoré."""
     for i, ligne in enumerate(lignes):
         if "JournalCode" in ligne and "EcritureNum" in ligne:
             return i, [
@@ -68,7 +71,7 @@ def _trouver_entete(lignes):
     )
 
 
-def parse_fec(source) -> Canonique:
+def parse_fec(source: Union[str, bytes, bytearray]) -> Canonique:
     """Parse un FEC (chemin de fichier, bytes ou str) en journal canonique."""
     if isinstance(source, (bytes, bytearray)):
         brut = bytes(source)
@@ -82,7 +85,7 @@ def parse_fec(source) -> Canonique:
 
     enc = _detecter_encodage(brut)
     texte = brut.decode(enc)
-    lignes = [l for l in texte.splitlines() if l.strip()]
+    lignes = [ligne for ligne in texte.splitlines() if ligne.strip()]
     idx, _ = _trouver_entete(lignes)
     sep = _detecter_separateur(lignes[idx])
     champs = [c.strip().strip('"') for c in lignes[idx].split(sep)]
@@ -94,7 +97,8 @@ def parse_fec(source) -> Canonique:
 
     canon = Canonique()
     idxs = {c: champs.index(c) for c in champs}
-    for ligne in lignes[idx + 1 :]:
+    debut_donnees = idx + 1
+    for ligne in lignes[debut_donnees:]:
         vals = [v.strip().strip('"') for v in ligne.split(sep)]
         if len(vals) < len(champs):
             continue

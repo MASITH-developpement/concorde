@@ -21,11 +21,24 @@ juste au centime est refusé (ErreurMontant), jamais arrondi.
 """
 
 import time
+from collections.abc import Iterable, Iterator, Mapping, Sequence
 from datetime import date, datetime
 from decimal import Decimal
+from http.client import HTTPConnection, HTTPSConnection
+from typing import TYPE_CHECKING, Any, Protocol, TypeVar
 
 from .canonical import ErreurMontant
-from .journal import duree_texte, nombre_texte, ou_muet
+from .journal import Journal, duree_texte, nombre_texte, ou_muet
+from .xml_sur import (
+    ProxyXmlRpc,
+    TransportXmlRpc,
+    TransportXmlRpcSur,
+)
+
+if TYPE_CHECKING:
+    # Import réservé au typage : surveillance importe (via analyser) ce
+    # module, l'importer ici à l'exécution créerait un cycle.
+    from .surveillance import Instantane
 
 # Types de comptes Odoo 17 qui portent un compte auxiliaire (tiers).
 TYPES_TIERS = ("asset_receivable", "liability_payable")
@@ -37,9 +50,94 @@ TYPES_FACTURE = ("out_invoice", "out_refund", "in_invoice", "in_refund")
 
 ETATS = ("posted", "draft", "cancel")
 
+# Enregistrement rendu par une source (ligne, compte, journal, tiers,
+# facture, solde) : dictionnaire au schéma décrit dans « Format commun »
+# ci-dessous, dont les valeurs viennent de PostgreSQL ou de XML-RPC
+# (texte, centimes, dates, booléens, identifiants).
+Enregistrement = dict[str, Any]
+
+# Critère d'un domaine Odoo : opérateur logique (« | ») ou
+# (champ, opérateur, valeur).
+CritereDomaine = str | tuple[str, str, object]
+Domaine = list[CritereDomaine]
+
+# Hôte accepté par TransportXmlRpc.make_connection.
+HoteXmlRpc = str | tuple[str, dict[str, str]]
+
+_ConnexionHttp = TypeVar("_ConnexionHttp", bound=HTTPConnection)
+
 
 class ErreurSource(RuntimeError):
     """Erreur explicite de lecture (connexion, version, paramètre)."""
+
+
+class SourceOdoo(Protocol):
+    """Interface commune des sources Odoo 17 (SQL et XML-RPC)."""
+
+    nature: str
+    base: str
+    societe: int
+
+    def societe_info(self) -> Enregistrement:
+        """Identité de la société lue (nom, SIREN, TVA, devise)."""
+
+    def lignes(
+        self,
+        debut: date | None = None,
+        fin: date | None = None,
+        etats: Sequence[str] = ("posted",),
+        comptes: Iterable[str] | None = None,
+        ecriture: int | None = None,
+    ) -> Iterable[Enregistrement]:
+        """Lignes d'écritures triées comme `cle_tri`."""
+
+    def balance(
+        self,
+        debut: date | None = None,
+        fin: date | None = None,
+        etats: Sequence[str] = ("posted",),
+    ) -> list[Enregistrement]:
+        """Balance générale de tous les comptes du plan."""
+
+    def balance_tiers(
+        self,
+        debut: date | None = None,
+        fin: date | None = None,
+        etats: Sequence[str] = ("posted",),
+    ) -> list[Enregistrement]:
+        """Soldes par compte client / fournisseur et par tiers."""
+
+    def comptes(self) -> list[Enregistrement]:
+        """Plan comptable de la société."""
+
+    def journaux(self) -> list[Enregistrement]:
+        """Journaux de la société."""
+
+    def tiers(self) -> list[Enregistrement]:
+        """Tiers (partenaires) visibles par la société."""
+
+    def factures(
+        self,
+        debut: date | None = None,
+        fin: date | None = None,
+        etats: Sequence[str] = ETATS,
+    ) -> list[Enregistrement]:
+        """Factures et avoirs clients / fournisseurs."""
+
+    def ecriture(self, ident: int | str) -> list[Enregistrement]:
+        """Une écriture et ses lignes (tous états confondus)."""
+
+    def verrous(self) -> dict[str, date | None]:
+        """Dates de verrouillage : période, exercice, TVA."""
+
+    def instantane(self) -> "Instantane":
+        """Photo légère de la base (écritures, comptes, verrous)."""
+
+    def noms_analytiques(self) -> dict[int, str]:
+        """{id: code ou nom} des comptes analytiques."""
+
+    def fermer(self) -> None:
+        """Libère la connexion éventuelle."""
 
 
 # ---------------------------------------------------------------------------
@@ -47,12 +145,17 @@ class ErreurSource(RuntimeError):
 # ---------------------------------------------------------------------------
 
 
-def centimes(valeur):
-    """Montant Odoo (Decimal SQL ou float XML-RPC) -> centimes int, sans arrondi.
+def centimes(valeur: object) -> int:
+    """Convertit un montant Odoo en centimes entiers, sans arrondi.
 
-    Refuse tout montant qui ne tombe pas juste au centime (arrondi silencieux
-    interdit). repr() d'un float XML-RPC rend la valeur décimale stockée par
-    Odoo (ex. 123.45 -> '123.45') : la conversion est exacte.
+    Rôle : seule porte d'entrée des montants Odoo (Decimal SQL ou float
+    XML-RPC). repr() d'un float XML-RPC rend la valeur décimale stockée
+    par Odoo (ex. 123.45 -> '123.45') : la conversion est exacte.
+    Paramètres : valeur — montant Odoo ; None ou False valent 0.
+    Retour : le montant en centimes (int).
+    Erreurs : ErreurMontant si le montant ne tombe pas juste au centime
+    (arrondi silencieux interdit).
+    Usages : sources SQL et XML-RPC de ce module, tests.
     """
     if valeur in (None, False):
         return 0
@@ -63,7 +166,8 @@ def centimes(valeur):
     return int(c)
 
 
-def _date(val):
+def _date(val: object) -> date | None:
+    """Convertit une date Odoo (date, datetime ou texte ISO) ; vide -> None."""
     if not val:
         return None
     if isinstance(val, datetime):
@@ -73,32 +177,43 @@ def _date(val):
     return date.fromisoformat(str(val)[:10])
 
 
-def _texte(val):
-    """Texte Odoo : False -> '' ; dict de traductions (jsonb) -> fr_FR puis en_US."""
+def _texte(val: object) -> str:
+    """Convertit un texte Odoo en str.
+
+    False ou None -> '' ; dict de traductions (jsonb) -> fr_FR, puis
+    en_US, puis la première traduction.
+    """
     if val in (None, False):
         return ""
     if isinstance(val, dict):
-        return (
+        traduction = (
             val.get("fr_FR")
             or val.get("en_US")
             or next(iter(val.values()), "")
         )
+        return "" if traduction in (None, False) else str(traduction)
     return str(val)
 
 
-def _m2o(val):
-    """(id, nom) d'un many2one XML-RPC ; (None, '') si vide."""
+def _m2o(val: object) -> tuple[Any, Any]:
+    """Rend (id, nom) d'un many2one XML-RPC ; (None, '') si vide.
+
+    Les éléments viennent tels quels de la réponse XML-RPC (Any).
+    """
     if isinstance(val, (list, tuple)) and val:
         return val[0], (val[1] if len(val) > 1 else "")
     return None, ""
 
 
-def _lots(liste, taille):
-    for i in range(0, len(liste), taille):
-        yield liste[i : i + taille]
+def _lots(liste: Sequence[int], taille: int) -> Iterator[Sequence[int]]:
+    """Découpe `liste` en tranches successives d'au plus `taille` éléments."""
+    for debut_lot in range(0, len(liste), taille):
+        fin_lot = debut_lot + taille
+        yield liste[debut_lot:fin_lot]
 
 
-def _periode_texte(debut, fin):
+def _periode_texte(debut: date | None, fin: date | None) -> str:
+    """Décrit la période lue pour le journal (« , du … au … »)."""
     if debut and fin:
         return ", du %s au %s" % (
             debut.strftime("%d/%m/%Y"),
@@ -111,68 +226,104 @@ def _periode_texte(debut, fin):
     return ", toutes dates"
 
 
-def balance_depuis_lignes(comptes, lignes):
-    """Balance calculée en Python (source XML-RPC) : même format que la SQL."""
+def balance_depuis_lignes(
+    comptes: Iterable[Mapping[str, Any]], lignes: Iterable[Mapping[str, Any]]
+) -> list[Enregistrement]:
+    """Calcule la balance en Python (source XML-RPC), au format de la SQL.
+
+    Rôle : totaliser débit, crédit, lignes et lignes non lettrées par compte.
+    Paramètres : comptes — plan comptable (`comptes()`) ; lignes — lignes
+    d'écritures (`lignes()`).
+    Retour : un enregistrement par compte du plan, trié par code.
+    Erreurs : KeyError si une clé attendue manque.
+    Usages : `SourceXmlRpcOdoo17.balance`.
+    """
     par_code = {
         c["code"]: dict(c, debit=0, credit=0, lignes=0, non_lettrees=0)
         for c in comptes
     }
-    for l in lignes:
-        c = par_code.get(l["compte"])
+    for ligne in lignes:
+        c = par_code.get(ligne["compte"])
         if c is None:
             continue
-        c["debit"] += l["debit"]
-        c["credit"] += l["credit"]
+        c["debit"] += ligne["debit"]
+        c["credit"] += ligne["credit"]
         c["lignes"] += 1
         if (
             c["lettrable"]
-            and not l["lettrage"]
-            and (l["debit"] or l["credit"])
+            and not ligne["lettrage"]
+            and (ligne["debit"] or ligne["credit"])
         ):
             c["non_lettrees"] += 1
     return sorted(par_code.values(), key=lambda c: c["code"])
 
 
-def balance_tiers_depuis_lignes(lignes):
-    groupes = {}
-    for l in lignes:
-        if l["compte_type"] not in TYPES_TIERS:
+def balance_tiers_depuis_lignes(
+    lignes: Iterable[Mapping[str, Any]],
+) -> list[Enregistrement]:
+    """Calcule les soldes par compte client / fournisseur et par tiers.
+
+    Retour : un enregistrement par (compte, tiers), au format de la SQL.
+    """
+    groupes: dict[tuple[str, int | None], Enregistrement] = {}
+    for ligne in lignes:
+        if ligne["compte_type"] not in TYPES_TIERS:
             continue
         g = groupes.setdefault(
-            (l["compte"], l["tiers_id"]),
+            (ligne["compte"], ligne["tiers_id"]),
             {
-                "compte": l["compte"],
-                "tiers_id": l["tiers_id"],
-                "tiers_nom": l["tiers_nom"],
-                "tiers_ref": l["tiers_ref"],
+                "compte": ligne["compte"],
+                "tiers_id": ligne["tiers_id"],
+                "tiers_nom": ligne["tiers_nom"],
+                "tiers_ref": ligne["tiers_ref"],
                 "debit": 0,
                 "credit": 0,
                 "lignes": 0,
             },
         )
-        g["debit"] += l["debit"]
-        g["credit"] += l["credit"]
+        g["debit"] += ligne["debit"]
+        g["credit"] += ligne["credit"]
         g["lignes"] += 1
     return list(groupes.values())
 
 
-def analytique_texte(distribution, noms):
-    """Répartition Odoo 17 {"86,252": 98.76, ...} -> texte stable, comparable entre bases.
+def _comptes_de_cle(cle: object, noms: Mapping[int, str]) -> Iterator[str]:
+    """Traduit une clé de répartition (« 86,252 ») en codes ou noms.
 
-    Chaque clé combine un compte par plan ; les identifiants sont traduits en code (ou nom)
-    par `noms` {id: libellé}. Pourcentages à 2 décimales, éléments triés.
+    Rôle : décoder les identifiants de comptes analytiques d'une clé.
+    Paramètres : cle — clé de `analytic_distribution` ; noms — {id: code ou
+    nom} des comptes analytiques.
+    Retour : un libellé par identifiant (« #id » si le compte a disparu).
+    Erreurs : ValueError si un identifiant n'est pas un entier.
+    Usages : `analytique_texte`, `analytique_comptes`.
+    """
+    return (
+        noms.get(int(i), "#%s" % i)
+        for i in str(cle).split(",")
+        if str(i).strip()
+    )
+
+
+def analytique_texte(
+    distribution: Mapping[str, float] | None, noms: Mapping[int, str]
+) -> str:
+    """Rend une répartition analytique Odoo 17 en texte stable.
+
+    Rôle : rendre comparable entre bases une répartition
+    {"86,252": 98.76, ...} : chaque clé combine un compte par plan, les
+    identifiants sont traduits en code (ou nom).
+    Paramètres : distribution — `analytic_distribution` d'une ligne
+    (None ou vide : aucune) ; noms — {id: libellé} des comptes analytiques.
+    Retour : « CODE1+CODE2 98.76 % ; … » (pourcentages à 2 décimales,
+    éléments triés) ou ''.
+    Erreurs : ValueError si un identifiant ou un pourcentage est invalide.
+    Usages : `SourceSqlOdoo17.lignes`, `SourceXmlRpcOdoo17.lignes`, tests.
     """
     if not distribution:
         return ""
     parts = []
     for cle, pct in distribution.items():
-        comptes = "+".join(
-            sorted(
-                noms.get(int(i), "#%s" % i)
-                for i in str(cle).split(",")
-                if str(i).strip()
-            )
-        )
+        comptes = "+".join(sorted(_comptes_de_cle(cle, noms)))
         parts.append(
             "%s %s %%"
             % (comptes, ("%.2f" % float(pct)).rstrip("0").rstrip("."))
@@ -180,28 +331,101 @@ def analytique_texte(distribution, noms):
     return " ; ".join(sorted(parts))
 
 
-def analytique_comptes(distribution, noms):
-    """Comptes analytiques (code ou nom) touchés par une répartition, triés, sans doublon."""
+def analytique_comptes(
+    distribution: Mapping[str, float] | None, noms: Mapping[int, str]
+) -> list[str]:
+    """Liste les comptes analytiques touchés par une répartition.
+
+    Rôle : permettre le filtre par compte analytique (comparaison).
+    Paramètres : distribution — `analytic_distribution` d'une ligne ;
+    noms — {id: code ou nom} des comptes analytiques.
+    Retour : codes (ou noms) triés, sans doublon ; [] sans répartition.
+    Erreurs : ValueError si un identifiant n'est pas un entier.
+    Usages : `SourceSqlOdoo17.lignes`, `SourceXmlRpcOdoo17.lignes`, tests.
+    """
     if not distribution:
         return []
     return sorted(
         {
-            noms.get(int(i), "#%s" % i)
+            libelle
             for cle in distribution
-            for i in str(cle).split(",")
-            if str(i).strip()
+            for libelle in _comptes_de_cle(cle, noms)
         }
     )
 
 
-def cle_tri(ligne):
-    """Ordre stable : date, numéro, id d'écriture (brouillons « / »), id de ligne."""
+def cle_tri(ligne: Mapping[str, Any]) -> tuple[date, str, int, int]:
+    """Clé d'ordre stable : date, numéro, id d'écriture, id de ligne.
+
+    L'id d'écriture départage les brouillons, tous numérotés « / ».
+    """
     return (
         ligne["date"] or date.min,
         ligne["ecriture"],
         ligne["ecriture_id"],
         ligne["ligne_id"],
     )
+
+
+def _verrous_texte(
+    verrous: Mapping[str, date | None],
+) -> dict[str, str | None]:
+    """Rend les dates de verrouillage au format ISO (None si absente).
+
+    Usages : `SourceSqlOdoo17.instantane`, `SourceXmlRpcOdoo17.instantane`.
+    """
+    return {k: (d.isoformat() if d else None) for k, d in verrous.items()}
+
+
+def transport_xmlrpc(url: str, delai: float) -> TransportXmlRpc:
+    """Crée le transport XML-RPC adapté à `url`, avec délai d'attente.
+
+    Rôle : borner la durée de chaque appel XML-RPC (HTTP ou HTTPS).
+    Paramètres : url — adresse du serveur (https://… => connexion
+    chiffrée) ; delai — délai d'attente en secondes.
+    Retour : un transport à passer à `ProxyXmlRpc`.
+    Erreurs : aucune (les erreurs réseau surviennent à l'appel).
+    Usages : `SourceXmlRpcOdoo17.__init__`, `core.demat.SourceXmlRpc`,
+    `interface.serveur.Surveillance._verifier_odoo`.
+    """
+    if url.startswith("https"):
+        return _TransportSurDelai(delai)
+    return _TransportDelai(delai)
+
+
+def _avec_delai(connexion: _ConnexionHttp, delai: float) -> _ConnexionHttp:
+    """Applique le délai d'attente à une connexion HTTP et la rend.
+
+    Usages : `_TransportDelai`, `_TransportSurDelai`.
+    """
+    connexion.timeout = delai
+    return connexion
+
+
+class _TransportDelai(TransportXmlRpc):
+    """Transport XML-RPC HTTP avec délai d'attente."""
+
+    def __init__(self, delai: float) -> None:
+        """Mémorise le délai d'attente (secondes)."""
+        super().__init__()
+        self.delai = delai
+
+    def make_connection(self, host: HoteXmlRpc) -> HTTPConnection:
+        """Ouvre la connexion HTTP avec le délai d'attente."""
+        return _avec_delai(super().make_connection(host), self.delai)
+
+
+class _TransportSurDelai(TransportXmlRpcSur):
+    """Transport XML-RPC HTTPS avec délai d'attente."""
+
+    def __init__(self, delai: float) -> None:
+        """Mémorise le délai d'attente (secondes)."""
+        super().__init__()
+        self.delai = delai
+
+    def make_connection(self, host: HoteXmlRpc) -> HTTPSConnection:
+        """Ouvre la connexion HTTPS avec le délai d'attente."""
+        return _avec_delai(super().make_connection(host), self.delai)
 
 
 # ---------------------------------------------------------------------------
@@ -214,9 +438,12 @@ def cle_tri(ligne):
 #   compte, compte_lib, compte_type, tiers_id, tiers_ref, tiers_nom,
 #   libelle, debit, credit (centimes), lettrage, date_lettrage,
 #   montant_devise (centimes, signé), devise, echeance, modifie_le,
-#   auto_post ('no' ou planification : brouillon comptabilisé automatiquement),
-#   analytique (texte stable : « CODE1+CODE2 98.76 % ; … », comptes par code ou nom —
-#               comparable d'une base à l'autre ; '' si aucune répartition)
+#   auto_post ('no' ou planification : brouillon comptabilisé
+#              automatiquement),
+#   analytique (texte stable : « CODE1+CODE2 98.76 % ; … », comptes par
+#               code ou nom — comparable d'une base à l'autre ; '' si
+#               aucune répartition),
+#   analytique_comptes (liste triée des comptes analytiques touchés)
 #
 # compte  : id, code, libelle, type, lettrable, deprecie
 # journal : id, code, libelle, type, actif
@@ -235,14 +462,19 @@ _SQL_LIGNES = """
 SELECT aml.id, am.id, am.name, am.move_type, am.state,
        aj.code, COALESCE(aj.name->>'fr_FR', aj.name->>'en_US'),
        am.date, am.invoice_date, am.ref,
-       aa.code, COALESCE(aa.name->>'fr_FR', aa.name->>'en_US'), aa.account_type,
+       aa.code, COALESCE(aa.name->>'fr_FR', aa.name->>'en_US'),
+       aa.account_type,
        rp.id, rp.ref, rp.name,
        aml.name, aml.debit, aml.credit,
-       CASE WHEN aml.full_reconcile_id IS NOT NULL THEN aml.matching_number END,
+       CASE WHEN aml.full_reconcile_id IS NOT NULL
+            THEN aml.matching_number END,
        afr.create_date,
-       CASE WHEN aml.currency_id <> aml.company_currency_id THEN aml.amount_currency END,
-       CASE WHEN aml.currency_id <> aml.company_currency_id THEN cur.name END,
-       aml.date_maturity, GREATEST(am.write_date, aml.write_date), am.auto_post,
+       CASE WHEN aml.currency_id <> aml.company_currency_id
+            THEN aml.amount_currency END,
+       CASE WHEN aml.currency_id <> aml.company_currency_id
+            THEN cur.name END,
+       aml.date_maturity, GREATEST(am.write_date, aml.write_date),
+       am.auto_post,
        aml.analytic_distribution
   FROM account_move_line aml
   JOIN account_move am ON am.id = aml.move_id
@@ -266,16 +498,18 @@ PAS_PROGRESSION = (
 )
 
 _SQL_BALANCE = """
-SELECT aa.id, aa.code, COALESCE(aa.name->>'fr_FR', aa.name->>'en_US'), aa.account_type,
-       aa.reconcile, aa.deprecated,
-       COALESCE(SUM(aml.debit), 0), COALESCE(SUM(aml.credit), 0), COUNT(aml.id),
+SELECT aa.id, aa.code, COALESCE(aa.name->>'fr_FR', aa.name->>'en_US'),
+       aa.account_type, aa.reconcile, aa.deprecated,
+       COALESCE(SUM(aml.debit), 0), COALESCE(SUM(aml.credit), 0),
+       COUNT(aml.id),
        COUNT(aml.id) FILTER (WHERE aa.reconcile AND NOT aml.reconciled
                              AND aml.amount_residual <> 0)
   FROM account_account aa
   LEFT JOIN account_move_line aml ON aml.account_id = aa.id
        AND aml.company_id = %(societe)s
        AND aml.parent_state = ANY(%(etats)s)
-       AND (aml.display_type IS NULL OR aml.display_type <> ALL(%(affichage)s))
+       AND (aml.display_type IS NULL
+            OR aml.display_type <> ALL(%(affichage)s))
        AND (%(debut)s::date IS NULL OR aml.date >= %(debut)s::date)
        AND (%(fin)s::date IS NULL OR aml.date <= %(fin)s::date)
  WHERE aa.company_id = %(societe)s
@@ -328,14 +562,66 @@ _CHAMPS_LIGNE = (
 )
 
 
+# Champs texte d'une ligne SQL : NULL -> ''.
+_CHAMPS_TEXTE_LIGNE = (
+    "ecriture",
+    "reference",
+    "compte",
+    "compte_lib",
+    "compte_type",
+    "tiers_ref",
+    "tiers_nom",
+    "libelle",
+    "lettrage",
+    "devise",
+    "journal_lib",
+    "auto_post",
+)
+
+_ETATS_TEXTE = {
+    "posted": "validées",
+    "draft": "brouillons",
+    "cancel": "annulées",
+}
+
+
+class ConnexionSql(Protocol):
+    """Connexion PostgreSQL (DB-API psycopg2) utilisée par la source SQL."""
+
+    def cursor(self, name: str | None = None) -> Any:
+        """Ouvre un curseur (nommé = côté serveur) ; objet psycopg2."""
+
+    def set_session(self, *, readonly: bool, autocommit: bool) -> None:
+        """Règle le mode de la session (lecture seule ici)."""
+
+    def rollback(self) -> None:
+        """Termine la transaction de lecture."""
+
+    def close(self) -> None:
+        """Ferme la connexion."""
+
+
 class SourceSqlOdoo17:
     """Lecture directe de la base PostgreSQL d'un Odoo 17 (lecture seule)."""
 
     nature = "sql"
     TAILLE_LOT = 5000
 
-    def __init__(self, base, societe=None, connexion=None, journal=None):
+    def __init__(
+        self,
+        base: str,
+        societe: int | None = None,
+        connexion: ConnexionSql | None = None,
+        journal: Journal | None = None,
+    ) -> None:
+        """Ouvre la connexion en lecture seule et vérifie la version.
+
+        Identifiants : variables PG* (libpq), jamais en argument.
+        Erreurs : ErreurSource (psycopg2 absent, base non Odoo 17, base
+        multi-sociétés sans `societe`).
+        """
         self.journal = ou_muet(journal)
+        self._noms_an: dict[int, str] | None = None
         self.journal.dire(
             "Connexion à la base %s (PostgreSQL, lecture seule)" % base
         )
@@ -369,19 +655,31 @@ class SourceSqlOdoo17:
             "detail",
         )
 
-    def _requete(self, sql, params=None):
+    def _requete(
+        self, sql: str, params: Mapping[str, object] | None = None
+    ) -> list[tuple[Any, ...]]:
+        """Exécute une requête de lecture et rend toutes ses lignes.
+
+        Les valeurs viennent de psycopg2 (types SQL variés).
+        """
         with self._cx.cursor() as cur:
             cur.execute(sql, params or {})
-            return cur.fetchall()
+            lignes: list[tuple[Any, ...]] = cur.fetchall()
+            return lignes
 
-    def _version(self):
+    def _version(self) -> str:
+        """Version du module `base` installé (« ? » si introuvable)."""
         lignes = self._requete(
             "SELECT latest_version FROM ir_module_module WHERE name = 'base'"
         )
-        return lignes[0][0] if lignes else "?"
+        if not lignes:
+            return "?"
+        version: str = lignes[0][0]
+        return version
 
-    def _societe_unique(self):
-        ids = [
+    def _societe_unique(self) -> int:
+        """Identifiant de l'unique société ; ErreurSource sinon."""
+        ids: list[int] = [
             r[0]
             for r in self._requete("SELECT id FROM res_company ORDER BY id")
         ]
@@ -391,11 +689,14 @@ class SourceSqlOdoo17:
             )
         return ids[0]
 
-    def societe_info(self):
+    def societe_info(self) -> Enregistrement:
+        """Identité de la société lue (nom, SIREN, TVA, devise)."""
         r = self._requete(
-            "SELECT c.name, p.company_registry, p.vat, cur.name FROM res_company c "
+            "SELECT c.name, p.company_registry, p.vat, cur.name "
+            "FROM res_company c "
             "JOIN res_partner p ON p.id = c.partner_id "
-            "JOIN res_currency cur ON cur.id = c.currency_id WHERE c.id = %(s)s",
+            "JOIN res_currency cur ON cur.id = c.currency_id "
+            "WHERE c.id = %(s)s",
             {"s": self.societe},
         )[0]
         return {
@@ -408,12 +709,12 @@ class SourceSqlOdoo17:
 
     def lignes(
         self,
-        debut=None,
-        fin=None,
-        etats=("posted",),
-        comptes=None,
-        ecriture=None,
-    ):
+        debut: date | None = None,
+        fin: date | None = None,
+        etats: Sequence[str] = ("posted",),
+        comptes: Iterable[str] | None = None,
+        ecriture: int | None = None,
+    ) -> Iterator[Enregistrement]:
         """Lignes d'écritures, triées comme cle_tri. Générateur.
 
         comptes : liste de codes (grand livre) ; ecriture : id d'une écriture.
@@ -432,20 +733,14 @@ class SourceSqlOdoo17:
             self.journal.dire(
                 "Lecture des lignes d'écritures (%s%s)"
                 % (
-                    ", ".join(
-                        {
-                            "posted": "validées",
-                            "draft": "brouillons",
-                            "cancel": "annulées",
-                        }.get(e, e)
-                        for e in etats
-                    ),
+                    ", ".join(_ETATS_TEXTE.get(e, e) for e in etats),
                     _periode_texte(debut, fin),
                 )
             )
         debut_t = time.monotonic()
         n = 0
-        # Curseur nommé = côté serveur : la mémoire reste stable sur 150 000 lignes.
+        # Curseur nommé = côté serveur : la mémoire reste stable sur
+        # 150 000 lignes.
         with self._cx.cursor(name="concorde_lignes") as cur:
             cur.itersize = self.TAILLE_LOT
             cur.execute(_SQL_LIGNES, params)
@@ -455,38 +750,25 @@ class SourceSqlOdoo17:
                     self.journal.dire(
                         "… %s lignes lues" % nombre_texte(n), "detail"
                     )
-                l = dict(zip(_CHAMPS_LIGNE, r))
-                l["debit"] = centimes(l["debit"])
-                l["credit"] = centimes(l["credit"])
-                l["montant_devise"] = (
-                    centimes(l["montant_devise"])
-                    if l["montant_devise"] is not None
+                ligne: Enregistrement = dict(zip(_CHAMPS_LIGNE, r))
+                ligne["debit"] = centimes(ligne["debit"])
+                ligne["credit"] = centimes(ligne["credit"])
+                ligne["montant_devise"] = (
+                    centimes(ligne["montant_devise"])
+                    if ligne["montant_devise"] is not None
                     else None
                 )
-                l["date_lettrage"] = _date(l["date_lettrage"])
-                repartition = l["analytique"]
-                l["analytique"] = analytique_texte(
+                ligne["date_lettrage"] = _date(ligne["date_lettrage"])
+                repartition = ligne["analytique"]
+                ligne["analytique"] = analytique_texte(
                     repartition, self.noms_analytiques()
                 )
-                l["analytique_comptes"] = analytique_comptes(
+                ligne["analytique_comptes"] = analytique_comptes(
                     repartition, self.noms_analytiques()
                 )
-                for k in (
-                    "ecriture",
-                    "reference",
-                    "compte",
-                    "compte_lib",
-                    "compte_type",
-                    "tiers_ref",
-                    "tiers_nom",
-                    "libelle",
-                    "lettrage",
-                    "devise",
-                    "journal_lib",
-                    "auto_post",
-                ):
-                    l[k] = l[k] or ""
-                yield l
+                for k in _CHAMPS_TEXTE_LIGNE:
+                    ligne[k] = ligne[k] or ""
+                yield ligne
         self._cx.rollback()
         if bavard:
             self.journal.dire(
@@ -495,19 +777,24 @@ class SourceSqlOdoo17:
                 "ok",
             )
 
-    def noms_analytiques(self):
+    def noms_analytiques(self) -> dict[int, str]:
         """{id: code ou nom} des comptes analytiques (mis en cache)."""
-        if getattr(self, "_noms_an", None) is None:
+        if self._noms_an is None:
             self._noms_an = {
                 r[0]: r[1] or ""
                 for r in self._requete(
-                    "SELECT id, COALESCE(NULLIF(code, ''), name->>'fr_FR', name->>'en_US') "
-                    "FROM account_analytic_account"
+                    "SELECT id, COALESCE(NULLIF(code, ''), name->>'fr_FR', "
+                    "name->>'en_US') FROM account_analytic_account"
                 )
             }
         return self._noms_an
 
-    def balance(self, debut=None, fin=None, etats=("posted",)):
+    def balance(
+        self,
+        debut: date | None = None,
+        fin: date | None = None,
+        etats: Sequence[str] = ("posted",),
+    ) -> list[Enregistrement]:
         """Balance générale : tous les comptes du plan, mouvementés ou non."""
         t = time.monotonic()
         res = [
@@ -545,7 +832,12 @@ class SourceSqlOdoo17:
         )
         return res
 
-    def balance_tiers(self, debut=None, fin=None, etats=("posted",)):
+    def balance_tiers(
+        self,
+        debut: date | None = None,
+        fin: date | None = None,
+        etats: Sequence[str] = ("posted",),
+    ) -> list[Enregistrement]:
         """Soldes par compte client / fournisseur et par tiers."""
         return [
             {
@@ -569,11 +861,12 @@ class SourceSqlOdoo17:
             )
         ]
 
-    def ecriture(self, ident):
+    def ecriture(self, ident: int | str) -> list[Enregistrement]:
         """Une écriture et ses lignes (toutes états confondus)."""
         return list(self.lignes(etats=ETATS, ecriture=int(ident)))
 
-    def verrous(self):
+    def verrous(self) -> dict[str, date | None]:
+        """Dates de verrouillage : période, exercice, TVA."""
         r = self._requete(
             "SELECT period_lock_date, fiscalyear_lock_date, tax_lock_date "
             "FROM res_company WHERE id = %(s)s",
@@ -581,33 +874,34 @@ class SourceSqlOdoo17:
         )[0]
         return {"periode": r[0], "exercice": r[1], "tva": r[2]}
 
-    def instantane(self):
-        """Photo légère de la base, pour repérer les changements entre deux passages."""
+    def instantane(self) -> "Instantane":
+        """Photo légère de la base (état et date de modification de chaque
+        écriture, codes de comptes, verrous), pour repérer les changements
+        entre deux passages. Dict sérialisable en JSON."""
         ecritures = {
             str(r[0]): [r[1], str(r[2]), r[3] or ""]
             for r in self._requete(
-                "SELECT am.id, am.state, am.write_date, am.name FROM account_move am "
-                "WHERE am.company_id = %(s)s",
+                "SELECT am.id, am.state, am.write_date, am.name "
+                "FROM account_move am WHERE am.company_id = %(s)s",
                 {"s": self.societe},
             )
         }
         comptes = {
             str(r[0]): r[1]
             for r in self._requete(
-                "SELECT id, code FROM account_account WHERE company_id = %(s)s",
+                "SELECT id, code FROM account_account "
+                "WHERE company_id = %(s)s",
                 {"s": self.societe},
             )
         }
-        v = self.verrous()
         return {
             "ecritures": ecritures,
             "comptes": comptes,
-            "verrous": {
-                k: (d.isoformat() if d else None) for k, d in v.items()
-            },
+            "verrous": _verrous_texte(self.verrous()),
         }
 
-    def comptes(self):
+    def comptes(self) -> list[Enregistrement]:
+        """Plan comptable de la société, trié par code."""
         return [
             {
                 "id": r[0],
@@ -625,7 +919,8 @@ class SourceSqlOdoo17:
             )
         ]
 
-    def journaux(self):
+    def journaux(self) -> list[Enregistrement]:
+        """Journaux de la société, triés par code."""
         return [
             {
                 "id": r[0],
@@ -642,7 +937,8 @@ class SourceSqlOdoo17:
             )
         ]
 
-    def tiers(self):
+    def tiers(self) -> list[Enregistrement]:
+        """Tiers partagés ou propres à la société, triés par id."""
         return [
             {
                 "id": r[0],
@@ -663,23 +959,34 @@ class SourceSqlOdoo17:
                 "parent_id": r[15],
             }
             for r in self._requete(
-                "SELECT p.id, p.name, p.ref, p.vat, p.company_registry, p.email, "
-                "p.phone, p.street, p.zip, p.city, c.code, p.is_company, p.active, "
-                "p.customer_rank, p.supplier_rank, p.parent_id "
-                "FROM res_partner p LEFT JOIN res_country c ON c.id = p.country_id "
-                "WHERE p.company_id IS NULL OR p.company_id = %(s)s ORDER BY p.id",
+                "SELECT p.id, p.name, p.ref, p.vat, p.company_registry, "
+                "p.email, p.phone, p.street, p.zip, p.city, c.code, "
+                "p.is_company, p.active, p.customer_rank, p.supplier_rank, "
+                "p.parent_id "
+                "FROM res_partner p "
+                "LEFT JOIN res_country c ON c.id = p.country_id "
+                "WHERE p.company_id IS NULL OR p.company_id = %(s)s "
+                "ORDER BY p.id",
                 {"s": self.societe},
             )
         ]
 
-    def factures(self, debut=None, fin=None, etats=ETATS):
+    def factures(
+        self,
+        debut: date | None = None,
+        fin: date | None = None,
+        etats: Sequence[str] = ETATS,
+    ) -> list[Enregistrement]:
+        """Factures et avoirs de la période, triés par date et numéro."""
         res = []
         for r in self._requete(
-            "SELECT am.id, am.name, am.move_type, am.state, am.payment_state, "
-            "aj.code, rp.id, rp.name, am.date, am.invoice_date, am.invoice_date_due, "
+            "SELECT am.id, am.name, am.move_type, am.state, "
+            "am.payment_state, aj.code, rp.id, rp.name, am.date, "
+            "am.invoice_date, am.invoice_date_due, "
             "am.ref, am.amount_untaxed_signed, am.amount_tax_signed, "
             "am.amount_total_signed, am.amount_residual_signed, cur.name "
-            "FROM account_move am JOIN account_journal aj ON aj.id = am.journal_id "
+            "FROM account_move am "
+            "JOIN account_journal aj ON aj.id = am.journal_id "
             "LEFT JOIN res_partner rp ON rp.id = am.partner_id "
             "LEFT JOIN res_currency cur ON cur.id = am.currency_id "
             "WHERE am.company_id = %(s)s AND am.move_type = ANY(%(t)s) "
@@ -718,7 +1025,8 @@ class SourceSqlOdoo17:
             )
         return res
 
-    def fermer(self):
+    def fermer(self) -> None:
+        """Ferme la connexion PostgreSQL."""
         self._cx.close()
 
 
@@ -736,19 +1044,25 @@ class SourceXmlRpcOdoo17:
 
     def __init__(
         self,
-        url,
-        base,
-        utilisateur,
-        cle_api,
-        societe=None,
-        timeout=120,
-        proxy_commun=None,
-        proxy_objet=None,
-        journal=None,
-    ):
-        import xmlrpc.client
+        url: str,
+        base: str,
+        utilisateur: str,
+        cle_api: str,
+        societe: int | None = None,
+        timeout: float = 120,
+        proxy_commun: Any = None,
+        proxy_objet: Any = None,
+        journal: Journal | None = None,
+    ) -> None:
+        """Se connecte à l'API, vérifie la version et s'authentifie.
 
+        `proxy_commun` / `proxy_objet` : proxys XML-RPC (objets dynamiques)
+        fournis par les tests ; créés ici s'ils sont absents.
+        Erreurs : ErreurSource (version autre que 17, authentification
+        refusée, base multi-sociétés sans `societe`).
+        """
         self.journal = ou_muet(journal)
+        self._noms_an: dict[int, str] | None = None
         self.journal.dire(
             "Connexion à %s, base %s (API XML-RPC, lecture seule)"
             % (url, base)
@@ -758,25 +1072,14 @@ class SourceXmlRpcOdoo17:
         self.base = base
         self._cle = cle_api
         if proxy_objet is None:
-
-            class _Transport(
-                xmlrpc.client.SafeTransport
-                if self.url.startswith("https")
-                else xmlrpc.client.Transport
-            ):
-                def make_connection(self, host):
-                    conn = super().make_connection(host)
-                    conn.timeout = timeout
-                    return conn
-
-            proxy_commun = xmlrpc.client.ServerProxy(
+            proxy_commun = ProxyXmlRpc(
                 self.url + "/xmlrpc/2/common",
-                transport=_Transport(),
+                transport=transport_xmlrpc(self.url, timeout),
                 allow_none=True,
             )
-            proxy_objet = xmlrpc.client.ServerProxy(
+            proxy_objet = ProxyXmlRpc(
                 self.url + "/xmlrpc/2/object",
-                transport=_Transport(),
+                transport=transport_xmlrpc(self.url, timeout),
                 allow_none=True,
             )
         self._objet = proxy_objet
@@ -791,8 +1094,9 @@ class SourceXmlRpcOdoo17:
         self.uid = proxy_commun.authenticate(base, utilisateur, cle_api, {})
         if not self.uid:
             raise ErreurSource(
-                "Authentification refusée : vérifiez l'URL, la base, le login et "
-                "la clé API (Préférences > Sécurité du compte > Clés API)."
+                "Authentification refusée : vérifiez l'URL, la base, le "
+                "login et la clé API (Préférences > Sécurité du compte > "
+                "Clés API)."
             )
         self.societe = societe or self._societe_unique()
         self.journal.dire(
@@ -801,7 +1105,23 @@ class SourceXmlRpcOdoo17:
             "detail",
         )
 
-    def _appel(self, modele, methode, args, kwargs=None):
+    def _appel(
+        self,
+        modele: str,
+        methode: str,
+        args: list[Any],
+        kwargs: Mapping[str, object] | None = None,
+    ) -> Any:
+        """Appelle `methode` sur `modele` par execute_kw (lecture seule).
+
+        Rôle : unique point de passage vers l'API (garde lecture seule).
+        Paramètres : modele, methode (une de METHODES_AUTORISEES), args,
+        kwargs (contexte fr_FR, archivés compris, par défaut).
+        Retour : la réponse XML-RPC brute (structure dynamique).
+        Erreurs : PermissionError si la méthode n'est pas autorisée ;
+        FauteXmlRpc / OSError venant du serveur.
+        Usages : toutes les lectures de cette classe.
+        """
         if methode not in self.METHODES_AUTORISEES:
             raise PermissionError(
                 "Méthode %r interdite : source en lecture seule." % methode
@@ -812,9 +1132,17 @@ class SourceXmlRpcOdoo17:
             self.base, self.uid, self._cle, modele, methode, args, kw
         )
 
-    def _tout_lire(self, modele, domaine, champs):
-        """search_read paginé par id croissant (stable même si la base bouge)."""
-        res, dernier = [], 0
+    def _tout_lire(
+        self, modele: str, domaine: Domaine, champs: list[str]
+    ) -> list[dict[str, Any]]:
+        """search_read paginé par id croissant (stable même si la base bouge).
+
+        Retour : tous les enregistrements XML-RPC bruts du domaine.
+        Usages : comptes, journaux, tiers, factures, lignes, instantane,
+        noms_analytiques.
+        """
+        res: list[dict[str, Any]] = []
+        dernier = 0
         while True:
             lot = self._appel(
                 modele,
@@ -827,8 +1155,23 @@ class SourceXmlRpcOdoo17:
                 return res
             dernier = lot[-1]["id"]
 
-    def _societe_unique(self):
-        ids = [
+    def _lire_par_lots(
+        self, modele: str, ids: Sequence[int], champs: list[str]
+    ) -> Iterator[dict[str, Any]]:
+        """Lit les enregistrements `ids` de `modele` par lots (read).
+
+        Rôle : lire de nombreux enregistrements sans dépasser TAILLE_LOT.
+        Paramètres : modele ; ids — identifiants à lire ; champs à lire.
+        Retour : les enregistrements XML-RPC bruts, lot après lot.
+        Erreurs : celles de `_appel`.
+        Usages : `lignes` (pièces, tiers, rapprochements).
+        """
+        for lot in _lots(ids, self.TAILLE_LOT):
+            yield from self._appel(modele, "read", [lot], {"fields": champs})
+
+    def _societe_unique(self) -> int:
+        """Identifiant de l'unique société ; ErreurSource sinon."""
+        ids: list[int] = [
             s["id"]
             for s in self._appel(
                 "res.company", "search_read", [[]], {"fields": ["id"]}
@@ -840,13 +1183,21 @@ class SourceXmlRpcOdoo17:
             )
         return ids[0]
 
-    def societe_info(self):
-        s = self._appel(
-            "res.company",
-            "read",
-            [[self.societe]],
-            {"fields": ["name", "company_registry", "vat", "currency_id"]},
+    def _lire_societe(self, champs: list[str]) -> dict[str, Any]:
+        """Lit `champs` de la société (enregistrement XML-RPC brut).
+
+        Usages : `societe_info`, `verrous`.
+        """
+        societe: dict[str, Any] = self._appel(
+            "res.company", "read", [[self.societe]], {"fields": champs}
         )[0]
+        return societe
+
+    def societe_info(self) -> Enregistrement:
+        """Identité de la société lue (nom, SIREN, TVA, devise)."""
+        s = self._lire_societe(
+            ["name", "company_registry", "vat", "currency_id"]
+        )
         return {
             "id": self.societe,
             "nom": s["name"],
@@ -857,13 +1208,17 @@ class SourceXmlRpcOdoo17:
 
     def lignes(
         self,
-        debut=None,
-        fin=None,
-        etats=("posted",),
-        comptes=None,
-        ecriture=None,
-    ):
-        dom = [
+        debut: date | None = None,
+        fin: date | None = None,
+        etats: Sequence[str] = ("posted",),
+        comptes: Iterable[str] | None = None,
+        ecriture: int | None = None,
+    ) -> list[Enregistrement]:
+        """Lignes d'écritures, triées comme cle_tri (liste complète).
+
+        comptes : liste de codes (grand livre) ; ecriture : id d'une écriture.
+        """
+        dom: Domaine = [
             ("company_id", "=", self.societe),
             ("parent_state", "in", list(etats)),
             ("display_type", "not in", list(TYPES_AFFICHAGE)),
@@ -906,48 +1261,40 @@ class SourceXmlRpcOdoo17:
         )
         plan = {c["id"]: c for c in self.comptes()}
         journaux = {j["id"]: j for j in self.journaux()}
-        pieces = {}
-        for lot in _lots(
-            sorted({_m2o(b["move_id"])[0] for b in brutes}), self.TAILLE_LOT
-        ):
-            for m in self._appel(
+        pieces = {
+            m["id"]: m
+            for m in self._lire_par_lots(
                 "account.move",
-                "read",
-                [lot],
-                {
-                    "fields": [
-                        "name",
-                        "move_type",
-                        "state",
-                        "journal_id",
-                        "date",
-                        "invoice_date",
-                        "ref",
-                        "write_date",
-                        "auto_post",
-                    ]
-                },
-            ):
-                pieces[m["id"]] = m
+                sorted({_m2o(b["move_id"])[0] for b in brutes}),
+                [
+                    "name",
+                    "move_type",
+                    "state",
+                    "journal_id",
+                    "date",
+                    "invoice_date",
+                    "ref",
+                    "write_date",
+                    "auto_post",
+                ],
+            )
+        }
         ids_tiers = sorted({_m2o(b["partner_id"])[0] for b in brutes} - {None})
-        tiers = {}
-        for lot in _lots(ids_tiers, self.TAILLE_LOT):
-            for p in self._appel(
-                "res.partner", "read", [lot], {"fields": ["name", "ref"]}
-            ):
-                tiers[p["id"]] = p
+        tiers = {
+            p["id"]: p
+            for p in self._lire_par_lots(
+                "res.partner", ids_tiers, ["name", "ref"]
+            )
+        }
         ids_rec = sorted(
             {_m2o(b["full_reconcile_id"])[0] for b in brutes} - {None}
         )
-        rapprochements = {}
-        for lot in _lots(ids_rec, self.TAILLE_LOT):
-            for r in self._appel(
-                "account.full.reconcile",
-                "read",
-                [lot],
-                {"fields": ["create_date"]},
-            ):
-                rapprochements[r["id"]] = _date(r["create_date"])
+        rapprochements = {
+            r["id"]: _date(r["create_date"])
+            for r in self._lire_par_lots(
+                "account.full.reconcile", ids_rec, ["create_date"]
+            )
+        }
         res = []
         for b in brutes:
             m = pieces[_m2o(b["move_id"])[0]]
@@ -1001,11 +1348,14 @@ class SourceXmlRpcOdoo17:
                     ),
                 }
             )
-        # Filtre redondant côté CONCORDE : on ne fait pas aveuglément confiance au domaine.
+        # Filtre redondant côté CONCORDE : on ne fait pas aveuglément
+        # confiance au domaine.
         if comptes:
-            res = [l for l in res if l["compte"] in set(comptes)]
+            res = [ligne for ligne in res if ligne["compte"] in set(comptes)]
         if ecriture:
-            res = [l for l in res if l["ecriture_id"] == int(ecriture)]
+            res = [
+                ligne for ligne in res if ligne["ecriture_id"] == int(ecriture)
+            ]
         res.sort(key=cle_tri)
         if bavard:
             self.journal.dire(
@@ -1018,8 +1368,13 @@ class SourceXmlRpcOdoo17:
             )
         return res
 
-    def noms_analytiques(self):
-        if getattr(self, "_noms_an", None) is None:
+    def noms_analytiques(self) -> dict[int, str]:
+        """{id: code ou nom} des comptes analytiques (mis en cache).
+
+        Si le module analytique est absent ou illisible (droits), rend {}
+        et le signale au journal : les comptes s'affichent par numéro.
+        """
+        if self._noms_an is None:
             try:
                 self._noms_an = {
                     a["id"]: _texte(a.get("code")) or _texte(a.get("name"))
@@ -1027,9 +1382,7 @@ class SourceXmlRpcOdoo17:
                         "account.analytic.account", [], ["code", "name"]
                     )
                 }
-            except (
-                Exception
-            ) as exc:  # module absent ou droits insuffisants : on continue
+            except Exception as exc:  # module absent ou droits insuffisants
                 self._noms_an = {}
                 self.journal.dire(
                     "Comptes analytiques illisibles (%s) : affichés par numéro"
@@ -1038,37 +1391,43 @@ class SourceXmlRpcOdoo17:
                 )
         return self._noms_an
 
-    def balance(self, debut=None, fin=None, etats=("posted",)):
+    def balance(
+        self,
+        debut: date | None = None,
+        fin: date | None = None,
+        etats: Sequence[str] = ("posted",),
+    ) -> list[Enregistrement]:
+        """Balance générale calculée à partir des lignes lues par l'API."""
         return balance_depuis_lignes(
             self.comptes(), self.lignes(debut, fin, etats)
         )
 
-    def balance_tiers(self, debut=None, fin=None, etats=("posted",)):
+    def balance_tiers(
+        self,
+        debut: date | None = None,
+        fin: date | None = None,
+        etats: Sequence[str] = ("posted",),
+    ) -> list[Enregistrement]:
+        """Soldes par compte client / fournisseur et par tiers."""
         return balance_tiers_depuis_lignes(self.lignes(debut, fin, etats))
 
-    def ecriture(self, ident):
+    def ecriture(self, ident: int | str) -> list[Enregistrement]:
+        """Une écriture et ses lignes (toutes états confondus)."""
         return self.lignes(etats=ETATS, ecriture=int(ident))
 
-    def verrous(self):
-        s = self._appel(
-            "res.company",
-            "read",
-            [[self.societe]],
-            {
-                "fields": [
-                    "period_lock_date",
-                    "fiscalyear_lock_date",
-                    "tax_lock_date",
-                ]
-            },
-        )[0]
+    def verrous(self) -> dict[str, date | None]:
+        """Dates de verrouillage : période, exercice, TVA."""
+        s = self._lire_societe(
+            ["period_lock_date", "fiscalyear_lock_date", "tax_lock_date"]
+        )
         return {
             "periode": _date(s["period_lock_date"]),
             "exercice": _date(s["fiscalyear_lock_date"]),
             "tva": _date(s["tax_lock_date"]),
         }
 
-    def instantane(self):
+    def instantane(self) -> "Instantane":
+        """Photo légère de la base (voir `SourceSqlOdoo17.instantane`)."""
         ecritures = {
             str(m["id"]): [m["state"], str(m["write_date"]), _texte(m["name"])]
             for m in self._tout_lire(
@@ -1078,16 +1437,14 @@ class SourceXmlRpcOdoo17:
             )
         }
         comptes = {str(c["id"]): c["code"] for c in self.comptes()}
-        v = self.verrous()
         return {
             "ecritures": ecritures,
             "comptes": comptes,
-            "verrous": {
-                k: (d.isoformat() if d else None) for k, d in v.items()
-            },
+            "verrous": _verrous_texte(self.verrous()),
         }
 
-    def comptes(self):
+    def comptes(self) -> list[Enregistrement]:
+        """Plan comptable de la société (ordre des id)."""
         return [
             {
                 "id": c["id"],
@@ -1104,7 +1461,8 @@ class SourceXmlRpcOdoo17:
             )
         ]
 
-    def journaux(self):
+    def journaux(self) -> list[Enregistrement]:
+        """Journaux de la société (ordre des id)."""
         return [
             {
                 "id": j["id"],
@@ -1120,7 +1478,8 @@ class SourceXmlRpcOdoo17:
             )
         ]
 
-    def tiers(self):
+    def tiers(self) -> list[Enregistrement]:
+        """Tiers partagés ou propres à la société (ordre des id)."""
         res = []
         for p in self._tout_lire(
             "res.partner",
@@ -1169,8 +1528,14 @@ class SourceXmlRpcOdoo17:
             )
         return res
 
-    def factures(self, debut=None, fin=None, etats=ETATS):
-        dom = [
+    def factures(
+        self,
+        debut: date | None = None,
+        fin: date | None = None,
+        etats: Sequence[str] = ETATS,
+    ) -> list[Enregistrement]:
+        """Factures et avoirs de la période, triés par date et numéro."""
+        dom: Domaine = [
             ("company_id", "=", self.societe),
             ("move_type", "in", list(TYPES_FACTURE)),
             ("state", "in", list(etats)),
@@ -1227,5 +1592,5 @@ class SourceXmlRpcOdoo17:
         res.sort(key=lambda f: (f["date"] or date.min, f["numero"]))
         return res
 
-    def fermer(self):
-        pass
+    def fermer(self) -> None:
+        """Rien à fermer : l'API XML-RPC est sans connexion persistante."""

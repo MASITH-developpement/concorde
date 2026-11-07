@@ -12,7 +12,7 @@ Passerelle de liaison comptable : migration Quadra → Odoo, et passerelle de do
 | `injectors/` | Envoi vers Odoo par XML-RPC (`odoo17`, `odoo18`) et chaîne de conversion 14→19. |
 | `interface/` | **Interface web** (ADR-0002, 0003) : Alertes, Comptes, Analyser, Télécharger, Journal, Historique, Bases ; surveillance automatique toutes les 15 min : `serveur.py` (Python standard), `auth.py`, `static/` (HTML, CSS, JS). En ligne sur https://concorde.57-129-168-243.sslip.io, service `concorde-interface`. |
 | `scripts/` | Commandes. `concorde_odoo.py` : `telecharger` et `analyser` (voir README). `concorde_interface_mdp.py` : changer le mot de passe de l'interface. |
-| `tests/` | `python3 -m unittest tests.test_moteur tests.test_demat tests.test_odoo_donnees tests.test_interface tests.test_surveillance tests.test_migration tests.test_bases_locales tests.test_injection tests.test_comparaison tests.test_rapport_jour` (165 tests). |
+| `tests/` | `python3 -m pytest` (172 tests, aucun sauté) ; contrôles qualité : voir `.github/workflows/qualite.yml`. |
 | `deploy/` | Docker (Odoo 17 + PostgreSQL), modules Odoo 17 à 20, webhook de déploiement, service `concorde-interface.service`. |
 | `docs/adr/` | Décisions d'architecture. ADR-0001 : passerelle de données Odoo 17. ADR-0002 : interface web. ADR-0003 : comptes, alertes, journal. ADR-0004 : migration ERP → Odoo. ADR-0005 : suppression de bases (local seulement). ADR-0006 : alignement prod sur test. ADR-0007 : sécurité du serveur. |
 | `samples/` | FEC synthétique de test. |

@@ -3,22 +3,24 @@
 """CONCORDE ⇄ Odoo 17 — télécharger et analyser les données comptables.
 
 Deux sources de lecture, mêmes résultats (ADR-0001) :
-  --source sql      PostgreSQL direct, lecture seule — rapide (150 000 lignes ≈ 10 s).
-                    Identifiants : PGHOST, PGPORT, PGUSER, PGPASSWORD (variables).
+  --source sql      PostgreSQL direct, lecture seule — rapide
+                    (150 000 lignes ≈ 10 s). Identifiants : variables
+                    PGHOST, PGPORT, PGUSER, PGPASSWORD.
   --source xmlrpc   API Odoo — marche partout (Odoo Online compris).
                     Clé API : variable ODOO_API_KEY (jamais en argument).
 
 Exemples (depuis la racine du dépôt) :
   python3 -m scripts.concorde_odoo --source sql --base testalbhade \\
-      telecharger --format fec xlsx csv --du 2025-01-01 --au 2025-12-31 -o sorties/
-  python3 -m scripts.concorde_odoo --source xmlrpc --url https://client.odoo.com \\
-      --base client --user compta@client.fr analyser --json analyse.json
+      telecharger --format fec xlsx csv --du 2025-01-01 --au 2025-12-31 \\
+      -o sorties/
+  python3 -m scripts.concorde_odoo --source xmlrpc \\
+      --url https://client.odoo.com --base client \\
+      --user compta@client.fr analyser --json analyse.json
 
 Codes retour : 0 = conforme / fait, 1 = erreur, 2 = anomalies relevées.
 """
 
 import argparse
-import json
 import os
 import sys
 from datetime import date
@@ -28,13 +30,22 @@ from core.guardian import Guardian
 from core.odoo_source import ErreurSource, SourceSqlOdoo17, SourceXmlRpcOdoo17
 from core.passerelle import FORMATS, OBJETS, analyser_source, telecharger
 from core.telecharger import ErreurFec
+from scripts.outils_cli import avertir_si_non_chiffre, ecrire_rapport_json
+
+# Source de lecture ouverte par ouvrir_source (classes de core.odoo_source).
+SourceOdoo = SourceSqlOdoo17 | SourceXmlRpcOdoo17
 
 
-def _date(texte):
+def _date(texte: str) -> date:
+    """Date AAAA-MM-JJ lue sur la ligne de commande."""
     return date.fromisoformat(texte)
 
 
-def ouvrir_source(args):
+def ouvrir_source(args: argparse.Namespace) -> SourceOdoo:
+    """Ouvre la source choisie (--source sql ou xmlrpc).
+
+    Lève ErreurSource si la clé API, --url ou --user manquent en xmlrpc.
+    """
     if args.source == "sql":
         return SourceSqlOdoo17(args.base, societe=args.societe)
     cle = os.environ.get("ODOO_API_KEY")
@@ -44,19 +55,16 @@ def ouvrir_source(args):
         )
     if not (args.url and args.user):
         raise ErreurSource("--url et --user sont requis avec --source xmlrpc.")
-    if not args.url.startswith(
-        ("https://", "http://localhost", "http://127.0.0.1")
-    ):
-        print(
-            "ATTENTION : connexion non chiffrée (http) — la clé API circule en clair.",
-            file=sys.stderr,
-        )
+    avertir_si_non_chiffre(args.url)
     return SourceXmlRpcOdoo17(
         args.url, args.base, args.user, cle, societe=args.societe
     )
 
 
-def cmd_telecharger(args, source, guardian):
+def cmd_telecharger(
+    args: argparse.Namespace, source: SourceOdoo, guardian: Guardian
+) -> int:
+    """Sous-commande telecharger : écrit les fichiers demandés ; rend 0."""
     produits = telecharger(
         source,
         args.sortie,
@@ -87,17 +95,20 @@ def cmd_telecharger(args, source, guardian):
     return 0
 
 
-def cmd_analyser(args, source, guardian):
+def cmd_analyser(
+    args: argparse.Namespace, source: SourceOdoo, guardian: Guardian
+) -> int:
+    """Sous-commande analyser : 0 si conforme, 2 si anomalies."""
     d = analyser_source(source, args.du, args.au, args.validees, guardian)
     print(rendu_texte(d))
     if args.json:
-        with open(args.json, "w", encoding="utf-8") as f:
-            json.dump(d, f, ensure_ascii=False, indent=2, default=str)
+        ecrire_rapport_json(args.json, d)
         print("\nRapport complet (JSON) : %s" % args.json)
     return 0 if d["statut"] == "conforme" else 2
 
 
-def main(argv=None):
+def main(argv: list[str] | None = None) -> int:
+    """Analyse la ligne de commande et lance la sous-commande."""
     ap = argparse.ArgumentParser(description="CONCORDE ⇄ Odoo 17")
     ap.add_argument("--source", choices=("sql", "xmlrpc"), required=True)
     ap.add_argument("--base", required=True, help="Nom de la base Odoo")

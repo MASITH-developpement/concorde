@@ -3,27 +3,33 @@
 """Migration ERP -> Odoo 17 (ADR-0004).
 
 Sans option : portes 1 à 5, rien n'est écrit dans une base.
---tester : porte 6 en plus — envoi dans la base de TEST du serveur (CONCORDE_TEST_*),
-           relecture et comparaison au centime. --reinitialiser-test la remet vierge avant.
+--tester : porte 6 en plus — envoi dans la base de TEST du serveur
+           (CONCORDE_TEST_*), relecture et comparaison au centime.
+           --reinitialiser-test la remet vierge avant.
 
   python3 -m scripts.concorde_migrer FICHIER.fec -o lots/client_2025 \\
-      [--table table_comptes.xlsx | --comptes-identiques] [--filtres filtres.json] \\
-      [--filtre '{"nom": "AN janvier", "journaux": ["AN"], "du": "2025-01-01", "au": "2025-01-31"}']
+      [--table table_comptes.xlsx | --comptes-identiques] \\
+      [--filtres filtres.json] \\
+      [--filtre '{"nom": "AN janvier", "journaux": ["AN"],
+                  "du": "2025-01-01", "au": "2025-01-31"}']
 
 Filtres (JSON, une liste) — voir core/migration/filtres.py. Exemples :
-  [{"nom": "À-nouveaux 2025", "journaux": ["AN"], "du": "2025-01-01", "au": "2025-01-31"},
+  [{"nom": "À-nouveaux 2025", "journaux": ["AN"],
+    "du": "2025-01-01", "au": "2025-01-31"},
    {"nom": "Comptes 640", "comptes": ["640"]},
    {"nom": "Lignes nulles", "portee": "lignes_nulles"}]
 
-Codes retour : 0 = lot prêt (ou testé avec --tester), 2 = lot bloqué, 1 = erreur.
+Codes retour : 0 = lot prêt (ou testé avec --tester), 2 = lot bloqué,
+1 = erreur.
 """
 
 import argparse
 import json
 import os
 import sys
+from typing import Any
 
-from core.journal import Journal
+from core.journal import Evenement, Journal
 from core.migration.circuit import PORTES, executer
 from core.migration.correspondance import ErreurTable, charger_table
 
@@ -37,13 +43,15 @@ COULEURS = {
 }
 
 
-def afficher(ev):
+def afficher(ev: Evenement) -> None:
+    """Affiche un événement du journal, en couleur sur un terminal."""
     c = COULEURS.get(ev["niveau"], "") if sys.stdout.isatty() else ""
     fin = "\033[0m" if c else ""
     print("%s  %s%s%s" % (ev["t"][11:19], c, ev["message"], fin), flush=True)
 
 
-def main(argv=None):
+def main(argv: list[str] | None = None) -> int:
+    """Prépare le lot de migration ; rend le code retour (0, 1 ou 2)."""
     ap = argparse.ArgumentParser(
         description="CONCORDE — migration ERP -> Odoo, portes 1 à 5"
     )
@@ -78,7 +86,8 @@ def main(argv=None):
     args = ap.parse_args(argv)
 
     try:
-        regles = []
+        # Filtres JSON fournis par l'utilisateur : structure dynamique.
+        regles: list[Any] = []
         if args.filtres:
             with open(args.filtres, encoding="utf-8") as f:
                 regles += json.load(f)

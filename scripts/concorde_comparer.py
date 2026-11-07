@@ -1,13 +1,13 @@
 #!/usr/bin/env python3
 # CONCORDE — (c) MASITH / Stéphane Moreau. Tous droits réservés.
-"""Vérifier, analyser et comparer deux bases Odoo 17 sur une période — lecture seule.
+"""Vérifier, analyser et comparer deux bases Odoo 17 — lecture seule.
 
   python3 -m scripts.concorde_comparer --a testalbhade --b testalbhade_cmp \\
-      --du 2025-11-01 --au 2025-11-30 [--brouillons] [--date-copie 2026-10-14T18:01:57] \\
-      [-o dossier]
+      --du 2025-11-01 --au 2025-11-30 [--brouillons] \\
+      [--date-copie 2026-10-14T18:01:57] [-o dossier]
 
-Bases du serveur en SQL (PGHOST, PGUSER, PGPASSWORD). Codes retour : 0 = identiques,
-2 = différences ou anomalies, 1 = erreur.
+Bases du serveur en SQL (PGHOST, PGUSER, PGPASSWORD).
+Codes retour : 0 = identiques, 2 = différences ou anomalies, 1 = erreur.
 """
 
 import argparse
@@ -15,16 +15,19 @@ import sys
 from datetime import date
 
 from core.comparaison import comparer_bases
-from core.journal import Journal
+from core.journal import Evenement, Journal
 from core.odoo_source import SourceSqlOdoo17
+from scripts.outils_cli import premiere_ligne
 
 
-def afficher(ev):
+def afficher(ev: Evenement) -> None:
+    """Affiche un événement du journal : heure puis message."""
     print("%s  %s" % (ev["t"][11:19], ev["message"]), flush=True)
 
 
-def main(argv=None):
-    ap = argparse.ArgumentParser(description=__doc__.splitlines()[0])
+def main(argv: list[str] | None = None) -> int:
+    """Compare les bases --a et --b ; rend le code retour (0, 1 ou 2)."""
+    ap = argparse.ArgumentParser(description=premiere_ligne(__doc__))
     ap.add_argument("--a", required=True, help="Base A (référence)")
     ap.add_argument("--b", required=True, help="Base B (comparée)")
     ap.add_argument("--du", type=date.fromisoformat)

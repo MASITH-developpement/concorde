@@ -33,9 +33,11 @@ import hashlib
 import hmac
 import json
 import os
+import shutil
 import subprocess
 import sys
 from http.server import BaseHTTPRequestHandler, HTTPServer
+from typing import Any
 
 PORT = int(os.environ.get("CONCORDE_WEBHOOK_PORT", "9000"))
 SECRET = os.environ.get("CONCORDE_WEBHOOK_SECRET", "")
@@ -44,7 +46,8 @@ FICHIER_LOG = os.path.join(RACINE, "deploy", "log", "webhook.log")
 NETTOYER_IMAGES = os.environ.get("CONCORDE_WEBHOOK_NETTOYER", "") == "1"
 
 
-def journaliser(message: str):
+def journaliser(message: str) -> None:
+    """Ajoute une ligne au journal local deploy/log/webhook.log."""
     os.makedirs(os.path.dirname(FICHIER_LOG), exist_ok=True)
     with open(FICHIER_LOG, "a", encoding="utf-8") as f:
         f.write(message + "\n")
@@ -60,8 +63,12 @@ def signature_valable(corps: bytes, entete: str) -> bool:
     return hmac.compare_digest(attendu, entete.split("=", 1)[1].strip())
 
 
-def deployer() -> tuple:
-    """Séquence fixe de déploiement. Retourne (ok, sortie)."""
+def deployer() -> tuple[bool, str]:
+    """Séquence fixe de déploiement. Retourne (ok, sortie).
+
+    Chaque commande est lancée par le chemin absolu de son exécutable
+    (FileNotFoundError explicite si git ou docker est introuvable).
+    """
     etapes = [
         ["git", "pull", "origin", "main"],
         ["docker", "compose", "up", "-d", "--build"],
@@ -70,8 +77,17 @@ def deployer() -> tuple:
         etapes.append(["docker", "image", "prune", "-f"])
     sortie = []
     for etape in etapes:
+        executable = shutil.which(etape[0])
+        if executable is None:
+            raise FileNotFoundError(
+                "Exécutable introuvable dans le PATH : %s" % etape[0]
+            )
         r = subprocess.run(
-            etape, cwd=RACINE, capture_output=True, text=True, timeout=600
+            [executable] + etape[1:],
+            cwd=RACINE,
+            capture_output=True,
+            text=True,
+            timeout=600,
         )
         sortie.append("$ %s\n%s%s" % (" ".join(etape), r.stdout, r.stderr))
         if r.returncode != 0:
@@ -80,7 +96,10 @@ def deployer() -> tuple:
 
 
 class Gestionnaire(BaseHTTPRequestHandler):
-    def do_POST(self):
+    """Reçoit les appels de GitHub (POST /webhook) et la sonde GET."""
+
+    def do_POST(self) -> None:
+        """Vérifie la signature et la branche, puis déploie."""
         if self.path != "/webhook":
             self.send_response(404)
             self.end_headers()
@@ -96,7 +115,8 @@ class Gestionnaire(BaseHTTPRequestHandler):
             self.wfile.write(b"signature invalide")
             return
         try:
-            payload = json.loads(corps.decode("utf-8"))
+            # Charge utile GitHub : JSON dynamique.
+            payload: Any = json.loads(corps.decode("utf-8"))
         except ValueError:
             self.send_response(400)
             self.end_headers()
@@ -118,17 +138,22 @@ class Gestionnaire(BaseHTTPRequestHandler):
         self.end_headers()
         self.wfile.write(b"deploiement ok" if ok else b"deploiement echec")
 
-    def do_GET(self):
-        # sonde simple, sans information sensible
+    def do_GET(self) -> None:
+        """Sonde simple, sans information sensible."""
         self.send_response(200)
         self.end_headers()
         self.wfile.write(b"concorde-webhook actif")
 
-    def log_message(self, fmt, *args):
-        pass  # journalisation maison uniquement, pas de bruit stderr
+    def log_message(self, fmt: str, *args: Any) -> None:
+        """Journalisation maison uniquement : pas de bruit sur stderr."""
 
 
-def main():
+def main() -> None:
+    """Démarre le service (refus sans CONCORDE_WEBHOOK_SECRET).
+
+    Écoute sur toutes les interfaces : GitHub doit joindre le port
+    depuis Internet ; la signature HMAC protège chaque requête.
+    """
     if not SECRET:
         print(
             "ERREUR : CONCORDE_WEBHOOK_SECRET manquant. "

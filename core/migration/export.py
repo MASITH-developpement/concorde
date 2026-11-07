@@ -4,58 +4,102 @@
 Produit, à partir du lot filtré et traduit :
   - un FEC de contrôle (comptes Odoo), au format DGFiP ;
   - le CSV d'import Odoo (écritures), pour mémoire et contrôle croisé ;
-  - le fichier des lignes retirées par les filtres (rien ne disparaît sans trace).
+  - le fichier des lignes retirées par les filtres (rien ne disparaît sans
+    trace).
 Puis RELIT le FEC produit avec le connecteur FEC et compare au lot :
 nombre de lignes et d'écritures, totaux, équilibre de chaque écriture,
-solde de chaque compte Odoo, nombre de lignes par tiers. Un centime d'écart = BLOQUANT.
+solde de chaque compte Odoo, nombre de lignes par tiers. Un centime
+d'écart = BLOQUANT.
 """
 
 import os
+from collections.abc import Iterator
+import datetime
+from typing import TypedDict
 
 from ..analyser import Rapport
-from ..journal import nombre_texte, ou_muet
+from ..journal import Journal, nombre_texte, ou_muet
 from ..telecharger import csv_ecritures, generer_fec
 from ..xlsx_ecrire import Centimes, ecrire_xlsx, euros_texte
 from .connecteur_fec import lire_fec
-from .lot import cle_ecriture
+from .lot import (
+    CleEcriture,
+    CleTotaux,
+    Lot,
+    annoncer_constats,
+    cle_ecriture,
+    cle_texte,
+    lignes_par_tiers,
+)
 
 
-def _vers_format_sortie(lot):
+class LigneSortie(TypedDict):
+    """Ligne au format attendu par core/telecharger (FEC et CSV)."""
+
+    etat: str
+    ecriture_id: int
+    ecriture: str
+    journal_code: str
+    journal_lib: str
+    date: datetime.date
+    piece_date: datetime.date | None
+    reference: str
+    compte: str
+    compte_lib: str
+    compte_type: str
+    tiers_id: str | None
+    tiers_ref: str
+    tiers_nom: str
+    libelle: str
+    debit: int
+    credit: int
+    lettrage: str
+    date_lettrage: datetime.date | None
+    montant_devise: int | None
+    devise: str
+
+
+def _vers_format_sortie(lot: Lot) -> Iterator[LigneSortie]:
     """Lignes du lot -> format attendu par core/telecharger (FEC et CSV)."""
-    ids = {}
-    for l in lot.lignes:
-        eid = ids.setdefault(cle_ecriture(l), len(ids) + 1)
+    ids: dict[CleEcriture, int] = {}
+    for ligne in lot.lignes:
+        eid = ids.setdefault(cle_ecriture(ligne), len(ids) + 1)
         yield {
             "etat": "posted",
             "ecriture_id": eid,
-            "ecriture": l["ecriture"],
-            "journal_code": l["journal_code"],
-            "journal_lib": l["journal_lib"],
-            "date": l["date"],
-            "piece_date": l["piece_date"],
-            "reference": l["piece"],
-            "compte": l["compte_cible"] or l["compte"],
-            "compte_lib": l["compte_lib"],
+            "ecriture": ligne["ecriture"],
+            "journal_code": ligne["journal_code"],
+            "journal_lib": ligne["journal_lib"],
+            "date": ligne["date"],
+            "piece_date": ligne["piece_date"],
+            "reference": ligne["piece"],
+            "compte": ligne["compte_cible"] or ligne["compte"],
+            "compte_lib": ligne["compte_lib"],
             # le compte auxiliaire suit le tiers, quel que soit le compte cible
-            "compte_type": "asset_receivable" if l["tiers_ref"] else "",
-            "tiers_id": l["tiers_ref"] or None,
-            "tiers_ref": l["tiers_ref"],
-            "tiers_nom": l["tiers_nom"],
-            "libelle": l["libelle"],
-            "debit": l["debit"],
-            "credit": l["credit"],
-            "lettrage": l["lettrage"],
-            "date_lettrage": l["date_lettrage"],
-            "montant_devise": l["montant_devise"],
-            "devise": l["devise"],
+            "compte_type": "asset_receivable" if ligne["tiers_ref"] else "",
+            "tiers_id": ligne["tiers_ref"] or None,
+            "tiers_ref": ligne["tiers_ref"],
+            "tiers_nom": ligne["tiers_nom"],
+            "libelle": ligne["libelle"],
+            "debit": ligne["debit"],
+            "credit": ligne["credit"],
+            "lettrage": ligne["lettrage"],
+            "date_lettrage": ligne["date_lettrage"],
+            "montant_devise": ligne["montant_devise"],
+            "devise": ligne["devise"],
         }
 
 
-def exporter(lot, dossier, journal=None):
-    """Écrit les fichiers et contrôle la conformité. Retourne (Rapport, fichiers)."""
+def exporter(
+    lot: Lot, dossier: str, journal: Journal | None = None
+) -> tuple[Rapport, dict[str, str]]:
+    """Écrit les fichiers et contrôle la conformité.
+
+    Retourne (Rapport, {nature du fichier: chemin}).
+    """
     j = ou_muet(journal)
     os.makedirs(dossier, exist_ok=True)
-    fichiers = {}
+    fichiers: dict[str, str] = {}
     fec = os.path.join(dossier, "controle_FEC_comptes_odoo.txt")
     with j.etape("Export du FEC de contrôle (comptes Odoo)") as e:
         r_fec = generer_fec(_vers_format_sortie(lot), fec, encodage="utf-8")
@@ -87,17 +131,17 @@ def exporter(lot, dossier, journal=None):
                     (
                         [
                             motif,
-                            l["n"],
-                            l["journal_code"],
-                            l["ecriture"],
-                            l["date"],
-                            l["compte"],
-                            l["tiers_ref"],
-                            l["libelle"],
-                            Centimes(l["debit"]),
-                            Centimes(l["credit"]),
+                            ligne["n"],
+                            ligne["journal_code"],
+                            ligne["ecriture"],
+                            ligne["date"],
+                            ligne["compte"],
+                            ligne["tiers_ref"],
+                            ligne["libelle"],
+                            Centimes(ligne["debit"]),
+                            Centimes(ligne["credit"]),
                         ]
-                        for l, motif in lot.retirees
+                        for ligne, motif in lot.retirees
                     ),
                 )
             ],
@@ -112,29 +156,32 @@ def exporter(lot, dossier, journal=None):
     with j.etape(
         "Conformité : relecture du FEC produit et comparaison au centime"
     ) as e:
-        with open(fec, "rb") as f:
-            relu = lire_fec(f.read(), os.path.basename(fec))
+        with open(fec, "rb") as f_fec:
+            relu = lire_fec(f_fec.read(), os.path.basename(fec))
         r = comparer(lot, relu)
         e.conclure(
             "conforme" if not r.constats else "%d écart(s)" % len(r.constats)
         )
-    for c in r.constats:
-        j.dire("%s : %s" % (c["message"], nombre_texte(c["nombre"])), "erreur")
+    annoncer_constats(r, j)
     return r, fichiers
 
 
-def comparer(lot, relu):
-    """Compare le lot (comptes cibles) au FEC relu. Rapport des écarts (BLOQUANT)."""
+def comparer(lot: Lot, relu: Lot) -> Rapport:
+    """Compare le lot (comptes cibles) au FEC relu.
+
+    Retourne le Rapport des écarts (tous BLOQUANT).
+    """
     r = Rapport()
     a, b = lot.totaux(), relu.totaux()
     r.info("entree", a)
     r.info("sortie", b)
-    for k, nom in (
+    libelles_totaux: tuple[tuple[CleTotaux, str], ...] = (
         ("lignes", "lignes"),
         ("ecritures", "écritures"),
         ("debit", "débit"),
         ("credit", "crédit"),
-    ):
+    )
+    for k, nom in libelles_totaux:
         if a[k] != b[k]:
             r.constat(
                 "BLOQUANT",
@@ -167,24 +214,16 @@ def comparer(lot, relu):
     )
     desequ = [
         k
-        for k, ls in relu.ecritures().items()
-        if sum(l["debit"] - l["credit"] for l in ls)
+        for k, lignes_relues in relu.ecritures().items()
+        if sum(ligne["debit"] - ligne["credit"] for ligne in lignes_relues)
     ]
     r.constat(
         "BLOQUANT",
         "MIG_ECRITURE_DESEQUILIBREE",
         "Écritures déséquilibrées en sortie",
-        ["%s/%s" % k for k in desequ],
+        [cle_texte(k) for k in desequ],
     )
-
-    def par_tiers(lignes):
-        d = {}
-        for l in lignes:
-            if l["tiers_ref"]:
-                d[l["tiers_ref"]] = d.get(l["tiers_ref"], 0) + 1
-        return d
-
-    ta, tb = par_tiers(lot.lignes), par_tiers(relu.lignes)
+    ta, tb = lignes_par_tiers(lot.lignes), lignes_par_tiers(relu.lignes)
     r.constat(
         "BLOQUANT",
         "MIG_ECART_TIERS",

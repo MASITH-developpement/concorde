@@ -101,8 +101,22 @@ cat > "$MODULE_DIR/static/description/logo.svg" <<'SVGEOF2'
 </svg>
 SVGEOF2
 
-# 3) forcer le rafraichissement de l'icone en base (Odoo la met en cache en piece jointe)
-docker exec concorde-postgres psql -U odoo -d concorde -c "DELETE FROM ir_attachment WHERE res_model='ir.module.module' AND res_field='icon' AND res_id IN (SELECT id FROM ir_module_module WHERE name='concorde');" || true
+# 3) forcer le rafraichissement de l'icone en base (Odoo la met en cache en piece jointe).
+# Seul cas sans rien a effacer : base neuve, ou la table ir_attachment n'existe pas
+# encore (teste explicitement). Toute autre erreur arrete le script.
+PSQL_CONCORDE=(docker exec concorde-postgres psql -U odoo -d concorde -v ON_ERROR_STOP=1)
+if ! TABLE_PJ_PRESENTE=$("${PSQL_CONCORDE[@]}" -AtX -c "SELECT to_regclass('public.ir_attachment') IS NOT NULL;"); then
+    echo "ERREUR : base concorde injoignable (conteneur concorde-postgres) - installation arretee." >&2
+    exit 1
+fi
+if [ "$TABLE_PJ_PRESENTE" = "t" ]; then
+    if ! "${PSQL_CONCORDE[@]}" -c "DELETE FROM ir_attachment WHERE res_model='ir.module.module' AND res_field='icon' AND res_id IN (SELECT id FROM ir_module_module WHERE name='concorde');"; then
+        echo "ERREUR : effacement de l'icone en cache (ir_attachment) refuse - installation arretee." >&2
+        exit 1
+    fi
+else
+    echo "Base neuve : table ir_attachment absente, aucune icone en cache a effacer."
+fi
 
 # Icone du module : balance bordeaux/or, rendu fidele aux coordonnees du logo SVG
 python3 - "$MODULE_DIR/static/description/icon.png" <<'PYEOF'

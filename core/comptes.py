@@ -1,43 +1,72 @@
 # CONCORDE v1.0 — (c) MASITH / Stéphane Moreau. Tous droits réservés.
 """Travail par compte comptable : balance, grand livre, alertes par compte.
 
-Règles d'alerte (plan comptable général français, sur le solde = débit - crédit) :
+Règles d'alerte (plan comptable général français, sur le solde
+= débit - crédit) :
 
   BLOQUANT  balance déséquilibrée ; caisse (53x) créditrice
   ALERTE    banque (512x) créditrice ; client créditeur (par tiers) ;
-            fournisseur débiteur (par tiers) ; compte d'attente 47x / 58x non soldé ;
-            charge (6x) créditrice, produit (7x) débiteur — sauf 6x9 / 7x9 (rabais)
-            et 603 / 713 (variations de stocks), dont le sens est libre ;
-            TVA déductible (4456x) créditrice ; TVA collectée (4457x) débitrice ;
+            fournisseur débiteur (par tiers) ;
+            compte d'attente 47x / 58x non soldé ;
+            charge (6x) créditrice, produit (7x) débiteur — sauf 6x9 / 7x9
+            (rabais) et 603 / 713 (variations de stocks), dont le sens est
+            libre ;
+            TVA déductible (4456x) créditrice ;
+            TVA collectée (4457x) débitrice ;
             compte déprécié avec un solde.
 
 Lecture seule. Montants en centimes.
 """
 
+from collections.abc import Callable, Iterable, Mapping, Sequence
+from typing import Any
+
 from .analyser import Rapport
-from .journal import nombre_texte, ou_muet
+from .journal import Journal, nombre_texte, ou_muet
 from .xlsx_ecrire import euros_texte
 
+# Compte, ligne ou solde par tiers : dictionnaire produit par la source
+# (lignes SQL / XML-RPC Odoo, fichiers) dont les valeurs sont hétérogènes
+# (texte, centimes, booléens, identifiants).
+Enregistrement = Mapping[str, Any]
 
-def solde_texte(c):
-    """Solde lisible : '1 234,56 D' / '12,00 C' / '0,00'."""
+# (code alerte, niveau, condition(compte, solde), message)
+Regle = tuple[str, str, Callable[[Enregistrement, int], bool], str]
+
+
+def solde_texte(c: Enregistrement) -> str:
+    """Rend le solde lisible d'un compte ou d'un tiers.
+
+    Rôle : afficher débit - crédit avec son sens.
+    Paramètres : c, enregistrement portant les clés 'debit' et 'credit'
+    (centimes).
+    Retour : '1234,56 D' (débiteur), '12,00 C' (créditeur) ou '0,00'.
+    Erreurs : KeyError si 'debit' ou 'credit' manque.
+    Usages : alertes_balance (comptes et tiers), comparaison.
+    """
     s = c["debit"] - c["credit"]
     if not s:
         return "0,00"
     return "%s %s" % (euros_texte(abs(s), ","), "D" if s > 0 else "C")
 
 
-def _sens_libre(code):
-    """Comptes de gestion dont le solde peut normalement être dans les deux sens :
-    6x9 / 7x9 (rabais, remises, ristournes), 603 (variation des stocks achetés),
-    713 (variation de la production stockée)."""
+def _sens_libre(code: str) -> bool:
+    """Dit si un compte de gestion peut avoir un solde dans les deux sens.
+
+    Rôle : exclure des alertes charge créditrice / produit débiteur les
+    comptes 6x9 / 7x9 (rabais, remises, ristournes), 603 (variation des
+    stocks achetés) et 713 (variation de la production stockée).
+    Paramètres : code, numéro de compte.
+    Retour : True si le sens du solde est libre.
+    Erreurs : aucune.
+    Usages : règles CHARGE_CREDITRICE et PRODUIT_DEBITEUR de REGLES.
+    """
     return (len(code) >= 3 and code[2] == "9") or code.startswith(
         ("603", "713")
     )
 
 
-REGLES = (
-    # (code alerte, niveau, condition(compte, solde), message)
+REGLES: tuple[Regle, ...] = (
     (
         "CAISSE_CREDITRICE",
         "BLOQUANT",
@@ -93,13 +122,27 @@ REGLES = (
 )
 
 
-def alertes_balance(balance, balance_tiers=(), journal=None):
-    """Applique les règles. Retourne (Rapport, {code compte: [codes d'alerte]})."""
+def alertes_balance(
+    balance: Sequence[Enregistrement],
+    balance_tiers: Iterable[Enregistrement] = (),
+    journal: Journal | None = None,
+) -> tuple[Rapport, dict[str, list[str]]]:
+    """Applique les règles d'alerte à une balance.
+
+    Rôle : contrôler la balance générale et la balance par tiers.
+    Paramètres : balance, comptes (clés code, libelle, type, debit, credit,
+    lignes, deprecie) ; balance_tiers, soldes par (compte, tiers) (clés
+    compte, tiers_id, tiers_nom, tiers_ref, debit, credit) ; journal,
+    journal d'activité (muet si absent).
+    Retour : (Rapport, {code compte: [codes d'alerte]}).
+    Erreurs : KeyError si une clé attendue manque.
+    Usages : passerelle, interface/serveur, tests.
+    """
     j = ou_muet(journal)
     r = Rapport()
-    par_compte = {}
-    debit = sum(c["debit"] for c in balance)
-    credit = sum(c["credit"] for c in balance)
+    par_compte: dict[str, list[str]] = {}
+    debit: int = sum(c["debit"] for c in balance)
+    credit: int = sum(c["credit"] for c in balance)
     r.info("comptes", len(balance))
     r.info("comptes_mouvementes", sum(1 for c in balance if c["lignes"]))
     r.info("total_debit", euros_texte(debit, ","))
@@ -154,7 +197,8 @@ def alertes_balance(balance, balance_tiers=(), journal=None):
 
     # Par tiers : clients créditeurs, fournisseurs débiteurs.
     types = {c["code"]: c["type"] for c in balance}
-    clients, fournisseurs = [], []
+    clients: list[tuple[int, str, str]] = []
+    fournisseurs: list[tuple[int, str, str]] = []
     for t in balance_tiers:
         s = t["debit"] - t["credit"]
         if not t["tiers_id"]:
@@ -185,24 +229,33 @@ def alertes_balance(balance, balance_tiers=(), journal=None):
     return r, par_compte
 
 
-def grand_livre(lignes, offset=0, limite=500):
-    """Lignes d'un compte avec solde cumulé. Retourne (page, totaux).
+def grand_livre(
+    lignes: Iterable[Enregistrement], offset: int = 0, limite: int = 500
+) -> tuple[list[dict[str, Any]], dict[str, int]]:
+    """Rend une page du grand livre d'un compte avec solde cumulé.
 
-    `lignes` est trié par date (ordre des sources) ; le cumul est calculé sur
-    tout le compte, puis la page demandée est découpée.
+    Rôle : calculer le cumul sur tout le compte, puis découper la page.
+    Paramètres : lignes, lignes du compte triées par date (ordre des
+    sources), clés debit et credit en centimes ; offset, rang de la
+    première ligne rendue ; limite, nombre maximal de lignes rendues.
+    Retour : (page, totaux) — page = lignes enrichies de 'cumul', totaux =
+    {lignes, debit, credit, solde}.
+    Erreurs : KeyError si 'debit' ou 'credit' manque.
+    Usages : interface/serveur, tests.
     """
     cumul = 0
-    toutes = []
+    toutes: list[dict[str, Any]] = []
     debit = credit = 0
-    for l in lignes:
-        cumul += l["debit"] - l["credit"]
-        debit += l["debit"]
-        credit += l["credit"]
-        toutes.append(dict(l, cumul=cumul))
+    for ligne in lignes:
+        cumul += ligne["debit"] - ligne["credit"]
+        debit += ligne["debit"]
+        credit += ligne["credit"]
+        toutes.append(dict(ligne, cumul=cumul))
     totaux = {
         "lignes": len(toutes),
         "debit": debit,
         "credit": credit,
         "solde": debit - credit,
     }
-    return toutes[offset : offset + limite], totaux
+    fin_page = offset + limite
+    return toutes[offset:fin_page], totaux

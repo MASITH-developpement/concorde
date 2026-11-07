@@ -1,34 +1,47 @@
 # CONCORDE v1.0 — (c) MASITH / Stéphane Moreau. Tous droits réservés.
-"""Interface web de CONCORDE — bibliothèque standard Python uniquement (ADR-0002, 0003).
+"""Interface web de CONCORDE — bibliothèque standard Python uniquement.
 
+Choix d'architecture : ADR-0002 et ADR-0003.
 Écoute sur 127.0.0.1 seulement : Caddy fournit le HTTPS devant.
 Un seul utilisateur, mot de passe haché (interface/auth.py).
 
 Configuration (variables d'environnement) :
-  CONCORDE_UI_MDP           empreinte scrypt du mot de passe (scripts/concorde_interface_mdp.py)
+  CONCORDE_UI_MDP           empreinte scrypt du mot de passe
+                            (scripts/concorde_interface_mdp.py)
   CONCORDE_UI_PORT          port d'écoute (défaut 18090)
-  CONCORDE_UI_DONNEES       dossier des résultats (défaut /var/lib/concorde-interface)
-  CONCORDE_UI_SURVEILLANCE  minutes entre deux passages de surveillance (défaut 15, 0 = jamais)
+  CONCORDE_UI_DONNEES       dossier des résultats
+                            (défaut /var/lib/concorde-interface)
+  CONCORDE_UI_SURVEILLANCE  minutes entre deux passages de surveillance
+                            (défaut 15, 0 = jamais)
   CONCORDE_ODOO_URL         Odoo à surveiller (défaut http://127.0.0.1:8017)
   PGHOST PGPORT PGUSER PGPASSWORD   accès PostgreSQL des bases Odoo 17 ;
-                            à défaut, POSTGRES_USER / POSTGRES_PASSWORD (deploy/.env).
+                            à défaut, POSTGRES_USER / POSTGRES_PASSWORD
+                            (deploy/.env).
 
 API (JSON ; toute requête qui modifie exige l'en-tête X-Concorde: 1) :
   POST /api/connexion  /api/deconnexion          GET /api/etat
-  GET  /api/bases                                POST /api/distants  DELETE /api/distants/<id>
-  POST /api/taches     GET /api/taches           GET /api/taches/<id>?depuis=<n>
-  GET  /api/taches/<id>/fichiers/<n>  /zip  /rapport.json  /constats/<code>.csv
-  GET  /api/comptes?base=…            GET /api/comptes/<code>/grand-livre?base=…
+  GET  /api/bases
+  POST /api/distants   DELETE /api/distants/<id>
+  POST /api/taches     GET /api/taches
+  GET  /api/taches/<id>?depuis=<n>
+  GET  /api/taches/<id>/fichiers/<n>  /zip  /rapport.json
+  GET  /api/taches/<id>/constats/<code>.csv
+  GET  /api/comptes?base=…
+  GET  /api/comptes/<code>/grand-livre?base=…
   GET  /api/ecritures/<id>?base=…
   GET  /api/alertes   GET /api/alertes/resume    POST /api/alertes/vue
   POST /api/surveillance                         GET /api/journal?depuis=<n>
   GET  /api/sauvegardes    GET /api/cles    POST /api/cles/revoquer
-  GET  /api/comparer/choix?base_a=…&base_b=…   comptes et analytiques des deux bases
-  GET  /api/rapport?jour=…   POST /api/rapport   GET /api/rapport/export?jour=…  (rapport du jour)
+  GET  /api/comparer/choix?base_a=…&base_b=…
+       (comptes et analytiques des deux bases)
+  GET  /api/rapport?jour=…   POST /api/rapport   GET /api/rapport/export?jour=…
+       (rapport du jour)
   POST /api/distants/<id>/cle   DELETE /api/distants/<id>/cle
-  POST /api/bases/nom  {base_id, libelle}   nom parlant d'une base (vide = retiré)
+  POST /api/bases/nom  {base_id, libelle}
+       (nom parlant d'une base, vide = retiré)
   (suppression / réinitialisation d'une base LOCALE : POST /api/taches avec
-   action = supprimer_base | reinitialiser_base et confirmation = nom retapé — ADR-0005)
+   action = supprimer_base | reinitialiser_base et confirmation = nom
+   retapé — ADR-0005)
 """
 
 import csv
@@ -44,11 +57,12 @@ import time
 import traceback
 import uuid
 import zipfile
+from collections.abc import Callable, Iterable
 from datetime import date, datetime
 from http.cookies import SimpleCookie
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
+from typing import Any, ClassVar
 from urllib.parse import parse_qs, urlparse
-
 
 from core import bases_locales
 from core import rapport_jour
@@ -62,8 +76,10 @@ from core.odoo_source import (
     ErreurSource,
     SourceSqlOdoo17,
     SourceXmlRpcOdoo17,
+    transport_xmlrpc,
 )
 from core.passerelle import FORMATS, OBJETS, analyser_source, telecharger
+from core.xml_sur import ProxyXmlRpc
 from core.surveillance import (
     DOSSIER_SECURITE,
     CentreAlertes,
@@ -74,6 +90,13 @@ from core.surveillance import (
 )
 from interface.auth import Sessions, verifier
 
+# Objet JSON (tâche, base, constat, corps de requête) : contenu dynamique,
+# relu depuis le disque ou reçu du navigateur, d'où les valeurs Any.
+ObjetJson = dict[str, Any]
+# Paramètres d'URL (?cle=valeur), dernière valeur gardée.
+ParametresUrl = dict[str, str]
+SourceOdoo = SourceSqlOdoo17 | SourceXmlRpcOdoo17
+
 STATIQUE = os.path.join(os.path.dirname(os.path.abspath(__file__)), "static")
 COOKIE = "concorde_session"
 CORPS_MAX = 64 * 1024
@@ -82,7 +105,7 @@ LIMITE_GRAND_LIVRE = 500
 _marceau = Marceau()
 
 
-def _bases_ecriture_configurees():
+def _bases_ecriture_configurees() -> set[str]:
     """Bases locales dont CONCORDE a les identifiants d'écriture (API Odoo).
 
     Aujourd'hui : la base de test (CONCORDE_TEST_BASE / CONCORDE_TEST_MDP dans
@@ -92,14 +115,205 @@ def _bases_ecriture_configurees():
     return {base} if base and os.environ.get("CONCORDE_TEST_MDP") else set()
 
 
-def _json_defaut(o):
-    if isinstance(o, (date, datetime)):
-        return o.isoformat()
-    return str(o)
+def _json_defaut(valeur: object) -> str:
+    """Conversion JSON des valeurs non natives : dates en ISO, sinon texte."""
+    if isinstance(valeur, (date, datetime)):
+        return valeur.isoformat()
+    return str(valeur)
 
 
-def _date(texte):
+def _date(texte: str | None) -> date | None:
+    """Date AAAA-MM-JJ, ou None si vide.
+
+    Rôle : lire les dates de période saisies dans l'interface.
+    Paramètres : texte, la date saisie (ou None / vide).
+    Retour : la date, ou None si texte est vide.
+    Erreurs : ValueError si la date est mal formée.
+    Usages : Taches._executer_tache, Taches._comparer,
+    Gestionnaire._params_tache, Gestionnaire._source_requete.
+    """
     return date.fromisoformat(texte) if texte else None
+
+
+def _jour_valide(jour: str) -> bool:
+    """Vrai si jour est une date AAAA-MM-JJ.
+
+    Rôle : valider le jour d'un rapport avant de le lire ou l'enregistrer.
+    Paramètres : jour, le texte reçu.
+    Retour : True si la date est lisible, False sinon.
+    Erreurs : aucune.
+    Usages : Gestionnaire.do_POST (/api/rapport), Gestionnaire._rapport.
+    """
+    try:
+        date.fromisoformat(jour)
+    except ValueError:
+        return False
+    return True
+
+
+def _motif_erreur(exc: BaseException) -> str:
+    """Texte « Type : message » d'une exception.
+
+    Rôle : décrire une erreur pour l'écran ou le diagnostic.
+    Paramètres : exc, l'exception attrapée.
+    Retour : le texte, par exemple « ValueError : date invalide ».
+    Erreurs : aucune.
+    Usages : Bases._lister_sql (bases écartées), Taches._executer_tache.
+    """
+    return "%s : %s" % (type(exc).__name__, exc)
+
+
+def _lire_json(chemin: str) -> Any:
+    """Contenu d'un fichier JSON (UTF-8).
+
+    Rôle : relire un fichier de données de l'interface.
+    Paramètres : chemin, le fichier à lire.
+    Retour : la valeur JSON décodée (dynamique, d'où Any).
+    Erreurs : OSError si le fichier est illisible, ValueError si le JSON
+    est invalide.
+    Usages : Bases.charger_libelles, Taches._recharger,
+    Surveillance._surveiller_base, Gestionnaire._rapport,
+    Gestionnaire._constat_csv.
+    """
+    with open(chemin, encoding="utf-8") as fichier:
+        return json.load(fichier)
+
+
+def _ecrire_json_atomique(
+    chemin: str,
+    donnees: object,
+    ascii_seul: bool = True,
+    retrait: int | None = None,
+    conversion: Callable[[object], str] | None = None,
+) -> None:
+    """Écrit un fichier JSON d'un seul coup (fichier .tmp puis renommage).
+
+    Rôle : qu'un fichier de données ne soit jamais lu à moitié écrit.
+    Paramètres : chemin, le fichier final ; donnees, la valeur à écrire ;
+    ascii_seul, retrait et conversion sont passés à json.dump
+    (ensure_ascii, indent, default).
+    Retour : aucun.
+    Erreurs : OSError si l'écriture échoue, TypeError si une valeur n'est
+    pas convertible en JSON.
+    Usages : Bases.renommer, Taches._sauver, Surveillance._surveiller_base,
+    Gestionnaire.do_POST (/api/rapport).
+    """
+    temporaire = chemin + ".tmp"
+    with open(temporaire, "w", encoding="utf-8") as fichier:
+        json.dump(
+            donnees,
+            fichier,
+            ensure_ascii=ascii_seul,
+            indent=retrait,
+            default=conversion,
+        )
+    os.replace(temporaire, chemin)
+
+
+def _fichier_instantane(dossier: str, nom_base: str) -> str:
+    """Chemin de la photo de surveillance d'une base.
+
+    Rôle : nommer la photo d'une base sans caractère dangereux.
+    Paramètres : dossier, celui des photos ; nom_base, la base Odoo.
+    Retour : le chemin du fichier JSON de la photo.
+    Erreurs : aucune.
+    Usages : Taches._supprimer_base, Surveillance._surveiller_base.
+    """
+    return os.path.join(dossier, re.sub(r"[^\w-]", "_", nom_base) + ".json")
+
+
+def _explication(constat: ObjetJson) -> dict[str, Any]:
+    """Explication en clair d'un constat (assistant Marceau).
+
+    Rôle : joindre à un constat son explication lisible.
+    Paramètres : constat, avec ses clés « code » et « message ».
+    Retour : l'explication rendue par Marceau.expliquer_alerte.
+    Erreurs : celles de Marceau.expliquer_alerte.
+    Usages : _constat_explique, Taches._comparer.
+    """
+    return _marceau.expliquer_alerte(constat["code"], constat["message"])
+
+
+def _constat_explique(constat: ObjetJson) -> ObjetJson:
+    """Copie d'un constat, sans sa liste d'éléments, avec son explication.
+
+    Rôle : préparer un constat pour l'écran (allégé et expliqué).
+    Paramètres : constat, le constat complet.
+    Retour : la copie allégée, avec la clé « explication ».
+    Erreurs : celles de _explication.
+    Usages : Taches._executer_tache, Gestionnaire._balance.
+    """
+    return dict(
+        {cle: valeur for cle, valeur in constat.items() if cle != "elements"},
+        explication=_explication(constat),
+    )
+
+
+def _evenement_info(code: str, message: str, exemple: str) -> ObjetJson:
+    """Constat d'information pour le centre d'alertes.
+
+    Rôle : décrire une action faite (base supprimée, clé révoquée…).
+    Paramètres : code, le code du constat ; message, son libellé ;
+    exemple, le détail affiché.
+    Retour : le constat, de niveau INFO et de nombre 1.
+    Erreurs : aucune.
+    Usages : Taches._supprimer_base, Gestionnaire.do_POST
+    (/api/cles/revoquer).
+    """
+    return {
+        "code": code,
+        "niveau": "INFO",
+        "nombre": 1,
+        "message": message,
+        "exemples": [exemple],
+    }
+
+
+def _noms_bases_locales(bases: "Bases", rafraichir: bool = False) -> list[str]:
+    """Noms des bases de ce serveur (lues en SQL).
+
+    Rôle : lister les bases locales pour les contrôles de suppression,
+    de clés API et du centre d'alertes.
+    Paramètres : bases, l'annuaire ; rafraichir, relire PostgreSQL.
+    Retour : les noms des bases locales.
+    Erreurs : celles de Bases.lister.
+    Usages : Taches._supprimer_base, Gestionnaire.do_GET (/api/cles),
+    Gestionnaire.do_POST (/api/cles/revoquer).
+    """
+    return [
+        base["nom"]
+        for base in bases.lister(rafraichir=rafraichir)
+        if base["source"] == "sql"
+    ]
+
+
+def _disposition_piece_jointe(nom_fichier: str) -> str:
+    """Valeur de l'en-tête Content-Disposition d'un téléchargement.
+
+    Rôle : proposer au navigateur d'enregistrer la réponse sous ce nom.
+    Paramètres : nom_fichier, le nom proposé.
+    Retour : le texte de l'en-tête.
+    Erreurs : aucune.
+    Usages : Gestionnaire._fichier, _rapport, _zip, _constat_csv.
+    """
+    return 'attachment; filename="%s"' % nom_fichier
+
+
+def _cookie_session(jeton: str | None) -> dict[str, str]:
+    """En-tête Set-Cookie de la session.
+
+    Rôle : poser le cookie de session (HttpOnly, Secure, SameSite=Strict).
+    Paramètres : jeton, celui de la session ouverte ; None efface le cookie.
+    Retour : l'en-tête à envoyer, sous forme {nom : valeur}.
+    Erreurs : aucune.
+    Usages : Gestionnaire._connexion, Gestionnaire.do_POST
+    (/api/deconnexion).
+    """
+    if jeton is None:
+        debut = "%s=; Path=/; Max-Age=0" % COOKIE
+    else:
+        debut = "%s=%s; Path=/" % (COOKIE, jeton)
+    return {"Set-Cookie": debut + "; HttpOnly; Secure; SameSite=Strict"}
 
 
 # ---------------------------------------------------------------------------
@@ -108,76 +322,88 @@ def _date(texte):
 
 
 class Bases:
-    """Annuaire des bases. Les clés API des Odoo distants restent en mémoire."""
+    """Annuaire des bases ; les clés API des Odoo distants restent en RAM."""
 
     DUREE_CACHE = 60
 
-    def __init__(self, fabrique_sql=None):
+    def __init__(
+        self, fabrique_sql: Callable[..., SourceSqlOdoo17] | None = None
+    ) -> None:
+        """Annuaire vide ; fabrique_sql ouvre une base SQL (remplaçable)."""
         self._fabrique_sql = fabrique_sql or SourceSqlOdoo17
-        self._distants = {}
-        self._cache = (0, [])
+        self._distants: dict[str, ObjetJson] = {}
+        self._cache: tuple[float, list[ObjetJson]] = (0.0, [])
         self._verrou = threading.Lock()
         self.pg_ok, self.pg_erreur = True, ""
-        self._libelles = {}  # {id de base : nom parlant} — bases du serveur
-        self._fichier_libelles = None
+        # Bases du serveur écartées au dernier passage : {nom : motif}.
+        self.bases_ignorees: dict[str, str] = {}
+        # {id de base : nom parlant} — bases du serveur
+        self._libelles: dict[str, str] = {}
+        self._fichier_libelles: str | None = None
 
-    # --- noms parlants -------------------------------------------------------------------
+    # --- noms parlants -------------------------------------------------------
     LIBELLE_MAX = 60
 
-    def charger_libelles(self, chemin):
-        """Noms parlants des bases du serveur, gardés d'un redémarrage à l'autre."""
+    def charger_libelles(self, chemin: str) -> None:
+        """Relit les noms parlants des bases du serveur (gardés sur disque)."""
         self._fichier_libelles = chemin
         if os.path.isfile(chemin):
             try:
-                with open(chemin, encoding="utf-8") as f:
-                    self._libelles = {
-                        k: str(v) for k, v in json.load(f).items()
-                    }
+                self._libelles = {
+                    cle: str(valeur)
+                    for cle, valeur in _lire_json(chemin).items()
+                }
             except (OSError, ValueError):
                 self._libelles = {}
 
     @classmethod
-    def nettoyer_libelle(cls, libelle):
-        libelle = " ".join(
+    def nettoyer_libelle(cls, libelle: object) -> str:
+        """Nom parlant sur une ligne, espaces réduits.
+
+        ValueError si le nom dépasse LIBELLE_MAX caractères.
+        """
+        texte = " ".join(
             str(libelle or "").split()
         )  # espaces et retours ligne
-        if len(libelle) > cls.LIBELLE_MAX:
+        if len(texte) > cls.LIBELLE_MAX:
             raise ValueError(
                 "Nom trop long (%d caractères au plus)." % cls.LIBELLE_MAX
             )
-        return libelle
+        return texte
 
-    def renommer(self, ident, libelle):
-        """Donne (ou retire, si vide) un nom parlant à une base. Retourne le nom gardé."""
-        libelle = self.nettoyer_libelle(libelle)
-        connues = {
-            b["id"] for b in self.lister()
-        }  # hors verrou (lister le prend)
+    def renommer(self, ident: str, libelle: object) -> str:
+        """Donne (ou retire, si vide) un nom parlant ; rend le nom gardé."""
+        texte = self.nettoyer_libelle(libelle)
+        # hors verrou (lister le prend)
+        connues = {base["id"] for base in self.lister()}
         if ident not in connues:
             raise ValueError("Base inconnue : %s" % ident)
         with self._verrou:
             if ident in self._distants:
-                self._distants[ident]["libelle"] = libelle
-                return libelle
-            if libelle:
-                self._libelles[ident] = libelle
+                self._distants[ident]["libelle"] = texte
+                return texte
+            if texte:
+                self._libelles[ident] = texte
             else:
                 self._libelles.pop(ident, None)
             if self._fichier_libelles:
-                tmp = self._fichier_libelles + ".tmp"
-                with open(tmp, "w", encoding="utf-8") as f:
-                    json.dump(self._libelles, f, ensure_ascii=False, indent=1)
-                os.replace(tmp, self._fichier_libelles)
-        return libelle
+                _ecrire_json_atomique(
+                    self._fichier_libelles,
+                    self._libelles,
+                    ascii_seul=False,
+                    retrait=1,
+                )
+        return texte
 
-    def _lister_sql(self):
+    def _lister_sql(self) -> list[ObjetJson]:
+        """Bases Odoo 17 du serveur PostgreSQL, avec leur société."""
         try:
             import psycopg2
         except ImportError:
             self.pg_ok, self.pg_erreur = False, "psycopg2 n'est pas installé"
             return []
         try:
-            cx = psycopg2.connect(dbname="postgres", connect_timeout=5)
+            connexion = psycopg2.connect(dbname="postgres", connect_timeout=5)
         except Exception as exc:
             self.pg_ok = False
             self.pg_erreur = "%s (PGHOST=%s)" % (
@@ -187,87 +413,126 @@ class Bases:
             return []
         self.pg_ok, self.pg_erreur = True, ""
         try:
-            with cx.cursor() as cur:
-                cur.execute(
+            with connexion.cursor() as curseur:
+                curseur.execute(
                     "SELECT datname FROM pg_database WHERE NOT datistemplate "
                     "AND datname <> 'postgres' ORDER BY datname"
                 )
-                noms = [r[0] for r in cur.fetchall()]
+                noms: list[str] = [ligne[0] for ligne in curseur.fetchall()]
         finally:
-            cx.close()
-        bases = []
+            connexion.close()
+        bases: list[ObjetJson] = []
+        ignorees: dict[str, str] = {}
         for nom in noms:
             try:
-                s = self._fabrique_sql(nom)
-            except Exception:
-                continue  # pas une base Odoo 17 (ou inaccessible)
+                source = self._fabrique_sql(nom)
+            except Exception as exc:
+                # pas une base Odoo 17 (ou inaccessible) : écartée, motif gardé
+                ignorees[nom] = _motif_erreur(exc)
+                continue
             try:
-                soc = s.societe_info()
-                bases.append(
-                    {
-                        "id": "sql:" + nom,
-                        "nom": nom,
-                        "source": "sql",
-                        "version": s.version_serveur,
-                        "societe": soc["nom"],
-                        "devise": soc["devise"],
-                        "siren": soc["siren"],
-                    }
-                )
-            except Exception:
-                pass
+                bases.append(self._description_sql(nom, source))
+            except Exception as exc:
+                # société illisible : base écartée, motif gardé
+                ignorees[nom] = _motif_erreur(exc)
             finally:
-                s.fermer()
+                source.fermer()
+        self.bases_ignorees = ignorees
         return bases
 
-    def _modeles(self):
+    @staticmethod
+    def _description_sql(nom: str, source: SourceSqlOdoo17) -> ObjetJson:
+        """Fiche d'une base du serveur (version Odoo, société)."""
+        societe = source.societe_info()
+        return {
+            "id": "sql:" + nom,
+            "nom": nom,
+            "source": "sql",
+            "version": source.version_serveur,
+            "societe": societe["nom"],
+            "devise": societe["devise"],
+            "siren": societe["siren"],
+        }
+
+    def _modeles(self) -> dict[str, str]:
+        """Bases modèles connues ; vide si PostgreSQL ne répond pas."""
         try:
-            return bases_locales.lister_modeles()
+            modeles: dict[str, str] = bases_locales.lister_modeles()
         except Exception:
             return {}
+        return modeles
 
-    def lister(self, rafraichir=False):
+    def lister(self, rafraichir: bool = False) -> list[ObjetJson]:
+        """Toutes les bases (serveur puis distantes), sans clé API.
+
+        Rôle : décrire les bases proposées à l'écran et aux tâches.
+        Paramètres : rafraichir, relire PostgreSQL sans attendre le cache.
+        Retour : les fiches des bases (copies).
+        Erreurs : celles de bases_locales.protegees.
+        Usages : Bases.renommer, Bases.nom, Taches, Surveillance,
+        Gestionnaire, _noms_bases_locales.
+        """
         with self._verrou:
-            t, sql = self._cache
-            if rafraichir or time.monotonic() - t > self.DUREE_CACHE:
+            instant_cache, sql = self._cache
+            if (
+                rafraichir
+                or time.monotonic() - instant_cache > self.DUREE_CACHE
+            ):
                 sql = self._lister_sql()
                 modeles = self._modeles() if sql else {}
-                prot = bases_locales.protegees()
+                protegees = bases_locales.protegees()
                 ecriture = _bases_ecriture_configurees()
-                for b in sql:
-                    b["modele"] = modeles.get(b["nom"])
-                    b["protegee"] = b["nom"] in prot
-                    # Lecture : SQL en lecture seule. Écriture : toujours par l'API d'Odoo
-                    # (ADR-0001), possible seulement si CONCORDE a les identifiants.
-                    b["lecture"] = "SQL direct (lecture seule)"
-                    b["ecriture"] = (
+                for base in sql:
+                    base["modele"] = modeles.get(base["nom"])
+                    base["protegee"] = base["nom"] in protegees
+                    # Lecture : SQL en lecture seule. Écriture : toujours par
+                    # l'API d'Odoo (ADR-0001), possible seulement si CONCORDE
+                    # a les identifiants.
+                    base["lecture"] = "SQL direct (lecture seule)"
+                    base["ecriture"] = (
                         "API Odoo — identifiants configurés"
-                        if b["nom"] in ecriture
+                        if base["nom"] in ecriture
                         else "API Odoo — à configurer"
                     )
-                    b["ecriture_ok"] = b["nom"] in ecriture
+                    base["ecriture_ok"] = base["nom"] in ecriture
                 self._cache = (time.monotonic(), sql)
             distants = [
                 dict(
-                    {k: v for k, v in d.items() if k != "cle"},
-                    cle_presente=bool(d.get("cle")),
-                    lecture="API Odoo (%s)" % d["url"],
-                    ecriture="API Odoo — même clé (étapes 7 et 8 de la migration)",
-                    ecriture_ok=bool(d.get("cle")),
+                    {
+                        cle: valeur
+                        for cle, valeur in distant.items()
+                        if cle != "cle"
+                    },
+                    cle_presente=bool(distant.get("cle")),
+                    lecture="API Odoo (%s)" % distant["url"],
+                    ecriture=(
+                        "API Odoo — même clé "
+                        "(étapes 7 et 8 de la migration)"
+                    ),
+                    ecriture_ok=bool(distant.get("cle")),
                 )
-                for d in self._distants.values()
+                for distant in self._distants.values()
             ]
             sql = [
-                dict(b, libelle=self._libelles.get(b["id"], "")) for b in sql
+                dict(base, libelle=self._libelles.get(base["id"], ""))
+                for base in sql
             ]
         return sql + distants
 
-    def ajouter_distant(self, url, base, utilisateur, cle, libelle=""):
+    def ajouter_distant(
+        self,
+        url: str,
+        base: str,
+        utilisateur: str,
+        cle: str,
+        libelle: object = "",
+    ) -> str:
+        """Ajoute un Odoo distant après un essai de connexion ; rend son id."""
         if not re.match(r"^https?://", url or ""):
             raise ErreurSource("URL invalide (http:// ou https://).")
-        libelle = self.nettoyer_libelle(libelle)
-        s = SourceXmlRpcOdoo17(url, base, utilisateur, cle, timeout=30)
-        soc = s.societe_info()
+        texte = self.nettoyer_libelle(libelle)
+        source = SourceXmlRpcOdoo17(url, base, utilisateur, cle, timeout=30)
+        societe = source.societe_info()
         ident = "xmlrpc:" + uuid.uuid4().hex[:8]
         with self._verrou:
             self._distants[ident] = {
@@ -276,64 +541,85 @@ class Bases:
                 "source": "xmlrpc",
                 "url": url.rstrip("/"),
                 "utilisateur": utilisateur,
-                "version": s.version_serveur,
-                "societe": soc["nom"],
-                "devise": soc["devise"],
-                "siren": soc["siren"],
+                "version": source.version_serveur,
+                "societe": societe["nom"],
+                "devise": societe["devise"],
+                "siren": societe["siren"],
                 "cle": cle,
-                "libelle": libelle or "%s (%s)" % (soc["nom"], base),
+                "libelle": texte or "%s (%s)" % (societe["nom"], base),
             }
         return ident
 
-    def supprimer_cle(self, ident):
-        """Efface la clé API gardée par CONCORDE ; la base reste listée, déconnectée."""
+    def supprimer_cle(self, ident: str) -> bool:
+        """Efface la clé API gardée ; la base reste listée, déconnectée."""
         with self._verrou:
-            d = self._distants.get(ident)
-            if not d:
+            distant = self._distants.get(ident)
+            if not distant:
                 return False
-            d["cle"] = None
+            distant["cle"] = None
             return True
 
-    def saisir_cle(self, ident, cle):
+    def saisir_cle(self, ident: str, cle: str) -> None:
+        """Remplace la clé API d'un Odoo distant après l'avoir essayée."""
         with self._verrou:
-            d = self._distants.get(ident)
-        if not d:
+            distant = self._distants.get(ident)
+        if not distant:
             raise ErreurSource("Base inconnue : %s" % ident)
         SourceXmlRpcOdoo17(
-            d["url"], d["nom"], d["utilisateur"], cle, timeout=30
-        )  # test
+            distant["url"],
+            distant["nom"],
+            distant["utilisateur"],
+            cle,
+            timeout=30,
+        )  # essai de connexion avec la nouvelle clé
         with self._verrou:
-            d["cle"] = cle
+            distant["cle"] = cle
 
-    def retirer_distant(self, ident):
+    def retirer_distant(self, ident: str) -> bool:
+        """Retire un Odoo distant de l'annuaire (rien ne change chez lui)."""
         with self._verrou:
             return self._distants.pop(ident, None) is not None
 
-    def ouvrir(self, ident, journal=None):
+    def ouvrir(self, ident: str, journal: Journal | None = None) -> SourceOdoo:
+        """Ouvre la source de lecture d'une base (SQL ou XML-RPC).
+
+        Rôle : donner accès aux données d'une base de l'annuaire.
+        Paramètres : ident, l'id de la base ; journal, où raconter.
+        Retour : la source ouverte (à fermer par l'appelant).
+        Erreurs : ErreurSource si la base est inconnue ou sans clé API ;
+        erreurs de connexion de la source.
+        Usages : Taches, Surveillance, Gestionnaire.
+        """
         if ident.startswith("sql:"):
             return self._fabrique_sql(ident[4:], journal=journal)
         with self._verrou:
-            d = self._distants.get(ident)
-        if not d:
+            distant = self._distants.get(ident)
+        if not distant:
             raise ErreurSource("Base inconnue : %s" % ident)
-        if not d.get("cle"):
+        if not distant.get("cle"):
             raise ErreurSource(
                 "Clé API supprimée pour « %s » : ressaisissez-la dans l'écran "
-                "Bases." % d["nom"]
+                "Bases." % distant["nom"]
             )
         return SourceXmlRpcOdoo17(
-            d["url"], d["nom"], d["utilisateur"], d["cle"], journal=journal
+            distant["url"],
+            distant["nom"],
+            distant["utilisateur"],
+            distant["cle"],
+            journal=journal,
         )
 
-    def nom(self, ident):
-        b = next((b for b in self.lister() if b["id"] == ident), None)
-        if not b:
-            return ident
-        return (
-            "%s (%s)" % (b["libelle"], b["nom"])
-            if b.get("libelle")
-            else b["nom"]
+    def nom(self, ident: str) -> str:
+        """Nom affiché d'une base : « nom parlant (nom) » ou son nom seul."""
+        fiche = next(
+            (base for base in self.lister() if base["id"] == ident), None
         )
+        if not fiche:
+            return ident
+        nom_base: str = fiche["nom"]
+        if fiche.get("libelle"):
+            return "%s (%s)" % (fiche["libelle"], nom_base)
+        return nom_base
 
 
 # ---------------------------------------------------------------------------
@@ -342,41 +628,53 @@ class Bases:
 
 
 class Taches:
-    def __init__(self, dossier, bases, centre=None):
+    """Tâches longues exécutées en arrière-plan, gardées sur disque."""
+
+    def __init__(
+        self,
+        dossier: str,
+        bases: Bases,
+        centre: CentreAlertes | None = None,
+    ) -> None:
+        """Prépare le dossier des tâches et relit l'historique."""
         self.dossier = dossier
         self.bases = bases
         self.centre = centre
-        self._taches = {}
-        self._journaux = {}
+        self._taches: dict[str, ObjetJson] = {}
+        self._journaux: dict[str, Journal] = {}
         self._verrou = threading.Lock()
         self._places = threading.Semaphore(TACHES_SIMULTANEES)
         os.makedirs(dossier, exist_ok=True)
         self._recharger()
 
-    def _meta(self, ident):
+    def _meta(self, ident: str) -> str:
+        """Chemin du fichier tache.json d'une tâche."""
         return os.path.join(self.dossier, ident, "tache.json")
 
-    def _recharger(self):
+    def _recharger(self) -> None:
         """Historique : relit les tâches des sessions précédentes."""
         for nom in sorted(os.listdir(self.dossier)):
             chemin = self._meta(nom)
-            if os.path.isfile(chemin):
-                try:
-                    with open(chemin, encoding="utf-8") as f:
-                        t = json.load(f)
-                except (OSError, ValueError):
-                    continue
-                if t.get("statut") in ("en_attente", "en_cours"):
-                    t["statut"] = "interrompue"
-                    t["erreur"] = "Service redémarré pendant la tâche."
-                self._taches[t["id"]] = t
+            if not os.path.isfile(chemin):
+                continue
+            try:
+                tache = _lire_json(chemin)
+            except (OSError, ValueError):
+                continue  # fiche illisible : tâche absente de l'historique
+            if tache.get("statut") in ("en_attente", "en_cours"):
+                tache["statut"] = "interrompue"
+                tache["erreur"] = "Service redémarré pendant la tâche."
+            self._taches[tache["id"]] = tache
 
-    def _sauver(self, t):
-        os.makedirs(os.path.join(self.dossier, t["id"]), exist_ok=True)
-        tmp = self._meta(t["id"]) + ".tmp"
-        with open(tmp, "w", encoding="utf-8") as f:
-            json.dump(t, f, ensure_ascii=False, default=_json_defaut)
-        os.replace(tmp, self._meta(t["id"]))
+    def _sauver(self, tache: ObjetJson) -> None:
+        """Enregistre la fiche d'une tâche (écriture atomique)."""
+        os.makedirs(os.path.join(self.dossier, tache["id"]), exist_ok=True)
+        _ecrire_json_atomique(
+            self._meta(tache["id"]),
+            tache,
+            ascii_seul=False,
+            conversion=_json_defaut,
+        )
 
     ACTIONS = {
         "analyser": "analyse",
@@ -386,30 +684,44 @@ class Taches:
         "comparer": "comparaison",
     }
 
-    def creer(self, action, base_id, params):
-        if action not in self.ACTIONS:
+    def creer(
+        self, action: str | None, base_id: str | None, params: ObjetJson
+    ) -> str:
+        """Crée une tâche et la lance en arrière-plan ; rend son id.
+
+        Rôle : point d'entrée de POST /api/taches.
+        Paramètres : action (clé de ACTIONS), base_id (id de la base),
+        params (paramètres validés par Gestionnaire._params_tache).
+        Retour : l'id de la tâche.
+        Erreurs : ValueError si l'action ou une base est inconnue, ou si la
+        suppression vise une base distante.
+        Usages : Gestionnaire.do_POST, tests/test_interface.py.
+        """
+        if action is None or action not in self.ACTIONS:
             raise ValueError("Action inconnue : %s" % action)
         if action in ("supprimer_base", "reinitialiser_base") and not str(
             base_id
         ).startswith("sql:"):
             raise ValueError(
                 "Seules les bases de ce serveur peuvent être supprimées ou "
-                "réinitialisées. Une base client distante ne se supprime jamais "
-                "depuis CONCORDE : utilisez « Retirer de CONCORDE »."
+                "réinitialisées. Une base client distante ne se supprime "
+                "jamais depuis CONCORDE : utilisez « Retirer de CONCORDE »."
             )
         base = next(
-            (b for b in self.bases.lister() if b["id"] == base_id), None
+            (fiche for fiche in self.bases.lister() if fiche["id"] == base_id),
+            None,
         )
         if base is None:
             raise ValueError("Base inconnue : %s" % base_id)
         if action == "comparer" and not any(
-            b["id"] == params.get("base_b") for b in self.bases.lister()
+            fiche["id"] == params.get("base_b")
+            for fiche in self.bases.lister()
         ):
             raise ValueError("Base B inconnue : %s" % params.get("base_b"))
         ident = datetime.now().strftime("%Y%m%d-%H%M%S-") + secrets.token_hex(
             3
         )
-        t = {
+        tache: ObjetJson = {
             "id": ident,
             "action": action,
             "base_id": base_id,
@@ -431,305 +743,330 @@ class Taches:
             "etape",
         )
         with self._verrou:
-            self._taches[ident] = t
+            self._taches[ident] = tache
             self._journaux[ident] = journal
-        self._sauver(t)
+        self._sauver(tache)
         threading.Thread(
-            target=self._executer, args=(t, journal), daemon=True
+            target=self._executer, args=(tache, journal), daemon=True
         ).start()
         return ident
 
-    def _executer(self, t, j):
+    def _executer(self, tache: ObjetJson, journal: Journal) -> None:
+        """Attend une place libre puis exécute la tâche."""
         if not self._places.acquire(blocking=False):
-            j.dire(
+            journal.dire(
                 "Deux tâches tournent déjà : celle-ci attend son tour", "info"
             )
             self._places.acquire()
         try:
-            self._executer_tache(t, j)
+            self._executer_tache(tache, journal)
         finally:
             self._places.release()
 
-    def _executer_tache(self, t, j):
-        t["statut"] = "en_cours"
-        self._sauver(t)
+    def _executer_tache(self, tache: ObjetJson, journal: Journal) -> None:
+        """Exécute la tâche ; toute erreur est rendue à l'écran."""
+        tache["statut"] = "en_cours"
+        self._sauver(tache)
         debut = time.monotonic()
         guardian = Guardian()
         guardian.self_check()
-        j.dire("Guardian : contrôle d'intégrité de démarrage réussi", "detail")
-        source = None
+        journal.dire(
+            "Guardian : contrôle d'intégrité de démarrage réussi", "detail"
+        )
+        source: SourceOdoo | None = None
         try:
-            p = t["params"]
-            if t["action"] in ("supprimer_base", "reinitialiser_base"):
-                self._supprimer_base(t, p, j, guardian)
-                t["statut"] = "terminee"
+            parametres = tache["params"]
+            if tache["action"] in ("supprimer_base", "reinitialiser_base"):
+                self._supprimer_base(tache, parametres, journal, guardian)
+                tache["statut"] = "terminee"
                 return
-            if t["action"] == "comparer":
-                self._comparer(t, p, j, guardian)
-                t["statut"] = "terminee"
+            if tache["action"] == "comparer":
+                self._comparer(tache, parametres, journal, guardian)
+                tache["statut"] = "terminee"
                 return
-            source = self.bases.ouvrir(t["base_id"], journal=j)
-            if t["action"] == "analyser":
-                rapport = analyser_source(
-                    source,
-                    _date(p.get("du")),
-                    _date(p.get("au")),
-                    bool(p.get("validees")),
-                    guardian,
-                    journal=j,
-                )
-                chemin = os.path.join(self.dossier, t["id"], "rapport.json")
-                with open(chemin, "w", encoding="utf-8") as f:
-                    json.dump(
-                        rapport, f, ensure_ascii=False, default=_json_defaut
-                    )
-                # Résultat allégé (exemples) ; listes complètes dans rapport.json.
-                t["resultat"] = json.loads(
-                    json.dumps(
-                        {k: v for k, v in rapport.items() if k != "constats"},
-                        default=_json_defaut,
-                    )
-                )
-                t["resultat"]["constats"] = [
-                    dict(
-                        {k: v for k, v in c.items() if k != "elements"},
-                        explication=_marceau.expliquer_alerte(
-                            c["code"], c["message"]
-                        ),
-                    )
-                    for c in rapport["constats"]
-                ]
-                if (
-                    self.centre is not None
-                    and not p.get("du")
-                    and not p.get("au")
-                ):
-                    for origine in ("analyse", "balance"):
-                        nouvelles, resolues = self.centre.synchroniser(
-                            origine,
-                            t["base"],
-                            [
-                                c
-                                for c in rapport["constats"]
-                                if c.get("origine", "analyse") == origine
-                            ],
-                        )
-                        _raconter_centre(j, nouvelles, resolues)
+            source = self.bases.ouvrir(tache["base_id"], journal=journal)
+            if tache["action"] == "analyser":
+                self._analyser(tache, parametres, source, journal, guardian)
             else:
-                sortie = os.path.join(self.dossier, t["id"], "fichiers")
-                produits = telecharger(
-                    source,
-                    sortie,
-                    formats=p.get("formats") or ["xlsx"],
-                    objets=p.get("objets") or list(OBJETS),
-                    du=_date(p.get("du")),
-                    au=_date(p.get("au")),
-                    brouillons=bool(p.get("brouillons")),
-                    separateur="\t" if p.get("separateur") == "tab" else "|",
-                    encodage=p.get("encodage") or "iso-8859-15",
-                    guardian=guardian,
-                    journal=j,
-                )
-                fichiers = []
-                for prod in produits:
-                    for f in prod["fichiers"]:
-                        fichiers.append(
-                            {
-                                "n": len(fichiers),
-                                "format": prod["format"],
-                                "nom": os.path.relpath(f, sortie),
-                                "chemin": f,
-                                "taille": os.path.getsize(f),
-                            }
-                        )
-                t["fichiers"] = fichiers
-                t["resultat"] = {
-                    "produits": [
-                        {
-                            "format": p_["format"],
-                            "resume": p_["resume"],
-                            "alertes": p_["alertes"],
-                        }
-                        for p_ in produits
-                    ]
-                }
-                j.dire(
-                    "%d fichier(s) prêt(s) au téléchargement" % len(fichiers),
-                    "ok",
-                )
-            t["statut"] = "terminee"
-        except (
-            Exception
-        ) as exc:  # erreur rendue telle quelle à l'écran (jamais muet)
-            t["statut"] = "echec"
-            t["erreur"] = "%s : %s" % (type(exc).__name__, exc)
-            j.dire("Échec : %s" % t["erreur"], "erreur")
+                self._telecharger(tache, parametres, source, journal, guardian)
+            tache["statut"] = "terminee"
+        except Exception as exc:
+            # erreur rendue telle quelle à l'écran (jamais muet)
+            tache["statut"] = "echec"
+            tache["erreur"] = _motif_erreur(exc)
+            journal.dire("Échec : %s" % tache["erreur"], "erreur")
             traceback.print_exc()
         finally:
             if source is not None:
                 source.fermer()
-            t["duree_s"] = round(time.monotonic() - debut, 1)
-            t["empreinte_guardian"] = guardian.empreinte_courante()
-            if t["statut"] == "terminee":
-                j.dire(
+            tache["duree_s"] = round(time.monotonic() - debut, 1)
+            tache["empreinte_guardian"] = guardian.empreinte_courante()
+            if tache["statut"] == "terminee":
+                journal.dire(
                     "Terminé en %s" % duree_texte(time.monotonic() - debut),
                     "ok",
                 )
-            t["journal"] = j.tout()
-            self._sauver(t)
+            tache["journal"] = journal.tout()
+            self._sauver(tache)
 
-    def _supprimer_base(self, t, p, j, guardian):
-        """Suppression / réinitialisation d'une base LOCALE (core/bases_locales, ADR-0005)."""
-        nom = t["base"]
-        locales = [
-            b["nom"]
-            for b in self.bases.lister(rafraichir=True)
-            if b["source"] == "sql"
+    def _analyser(
+        self,
+        tache: ObjetJson,
+        parametres: ObjetJson,
+        source: SourceOdoo,
+        journal: Journal,
+        guardian: Guardian,
+    ) -> None:
+        """Analyse d'une base : rapport.json complet, résultat allégé."""
+        rapport = analyser_source(
+            source,
+            _date(parametres.get("du")),
+            _date(parametres.get("au")),
+            bool(parametres.get("validees")),
+            guardian,
+            journal=journal,
+        )
+        chemin = os.path.join(self.dossier, tache["id"], "rapport.json")
+        with open(chemin, "w", encoding="utf-8") as fichier:
+            json.dump(
+                rapport, fichier, ensure_ascii=False, default=_json_defaut
+            )
+        # Résultat allégé (exemples) ; listes complètes dans rapport.json.
+        tache["resultat"] = json.loads(
+            json.dumps(
+                {
+                    cle: valeur
+                    for cle, valeur in rapport.items()
+                    if cle != "constats"
+                },
+                default=_json_defaut,
+            )
+        )
+        tache["resultat"]["constats"] = [
+            _constat_explique(constat) for constat in rapport["constats"]
         ]
+        if (
+            self.centre is not None
+            and not parametres.get("du")
+            and not parametres.get("au")
+        ):
+            for origine in ("analyse", "balance"):
+                nouvelles, resolues = self.centre.synchroniser(
+                    origine,
+                    tache["base"],
+                    [
+                        constat
+                        for constat in rapport["constats"]
+                        if constat.get("origine", "analyse") == origine
+                    ],
+                )
+                _raconter_centre(journal, nouvelles, resolues)
+
+    def _telecharger(
+        self,
+        tache: ObjetJson,
+        parametres: ObjetJson,
+        source: SourceOdoo,
+        journal: Journal,
+        guardian: Guardian,
+    ) -> None:
+        """Export d'une base dans les formats choisis ; fichiers listés."""
+        sortie = os.path.join(self.dossier, tache["id"], "fichiers")
+        produits = telecharger(
+            source,
+            sortie,
+            formats=parametres.get("formats") or ["xlsx"],
+            objets=parametres.get("objets") or list(OBJETS),
+            du=_date(parametres.get("du")),
+            au=_date(parametres.get("au")),
+            brouillons=bool(parametres.get("brouillons")),
+            separateur="\t" if parametres.get("separateur") == "tab" else "|",
+            encodage=parametres.get("encodage") or "iso-8859-15",
+            guardian=guardian,
+            journal=journal,
+        )
+        fichiers: list[ObjetJson] = []
+        for produit in produits:
+            for chemin_fichier in produit["fichiers"]:
+                fichiers.append(
+                    {
+                        "n": len(fichiers),
+                        "format": produit["format"],
+                        "nom": os.path.relpath(chemin_fichier, sortie),
+                        "chemin": chemin_fichier,
+                        "taille": os.path.getsize(chemin_fichier),
+                    }
+                )
+        tache["fichiers"] = fichiers
+        tache["resultat"] = {
+            "produits": [
+                {
+                    "format": produit["format"],
+                    "resume": produit["resume"],
+                    "alertes": produit["alertes"],
+                }
+                for produit in produits
+            ]
+        }
+        journal.dire(
+            "%d fichier(s) prêt(s) au téléchargement" % len(fichiers),
+            "ok",
+        )
+
+    def _supprimer_base(
+        self,
+        tache: ObjetJson,
+        parametres: ObjetJson,
+        journal: Journal,
+        guardian: Guardian,
+    ) -> None:
+        """Suppression / réinitialisation d'une base LOCALE (ADR-0005).
+
+        Le contrôle et l'action sont faits par core/bases_locales.
+        """
+        nom = tache["base"]
+        locales = _noms_bases_locales(self.bases, rafraichir=True)
         with self._verrou:
             en_cours = {
-                x["base"]
-                for x in self._taches.values()
-                if x["id"] != t["id"]
-                and x["statut"] in ("en_attente", "en_cours")
+                autre["base"]
+                for autre in self._taches.values()
+                if autre["id"] != tache["id"]
+                and autre["statut"] in ("en_attente", "en_cours")
             }
         dossier = os.path.join(self.dossier, "sauvegardes")
-        modeles = (
-            bases_locales.lister_modeles()
-        )  # côté serveur : décide « base de test »
-        if t["action"] == "reinitialiser_base":
+        # côté serveur : décide « base de test »
+        modeles = bases_locales.lister_modeles()
+        if tache["action"] == "reinitialiser_base":
             chemin = bases_locales.reinitialiser(
                 nom,
-                p.get("confirmation"),
+                parametres.get("confirmation"),
                 locales,
                 modeles,
                 dossier,
                 en_cours,
-                journal=j,
+                journal=journal,
             )
         else:
             chemin = bases_locales.supprimer(
                 nom,
-                p.get("confirmation"),
+                parametres.get("confirmation"),
                 locales,
                 dossier,
                 en_cours,
-                journal=j,
+                journal=journal,
                 modeles=modeles,
             )
         sauvegarde = os.path.basename(chemin) if chemin else None
         guardian.tracer(
-            "bases", t["action"], "%s sauvegarde=%s" % (nom, sauvegarde)
+            "bases", tache["action"], "%s sauvegarde=%s" % (nom, sauvegarde)
         )
-        t["resultat"] = {"sauvegarde": sauvegarde, "base": nom}
+        tache["resultat"] = {"sauvegarde": sauvegarde, "base": nom}
         self.bases.lister(rafraichir=True)
         if self.centre is not None:
-            code = (
-                "BASE_SUPPRIMEE"
-                if t["action"] == "supprimer_base"
-                else "BASE_REINITIALISEE"
-            )
+            supprimee = tache["action"] == "supprimer_base"
             self.centre.evenements(
                 nom,
                 [
-                    {
-                        "code": code,
-                        "niveau": "INFO",
-                        "nombre": 1,
-                        "message": (
+                    _evenement_info(
+                        (
+                            "BASE_SUPPRIMEE"
+                            if supprimee
+                            else "BASE_REINITIALISEE"
+                        ),
+                        (
                             "Base supprimée"
-                            if code == "BASE_SUPPRIMEE"
+                            if supprimee
                             else "Base réinitialisée"
                         ),
-                        "exemples": [
-                            (
-                                "Sauvegarde : %s" % sauvegarde
-                                if sauvegarde
-                                else "Base de test : pas de sauvegarde"
-                            )
-                        ],
-                    }
+                        (
+                            "Sauvegarde : %s" % sauvegarde
+                            if sauvegarde
+                            else "Base de test : pas de sauvegarde"
+                        ),
+                    )
                 ],
             )
-            if t["action"] == "supprimer_base":
+            if supprimee:
                 self.centre.tout_resoudre_absents(
-                    {
-                        b["nom"]
-                        for b in self.bases.lister()
-                        if b["source"] == "sql"
-                    }
+                    set(_noms_bases_locales(self.bases))
                 )
         if self.surveillance_dossier:
-            photo = os.path.join(
-                self.surveillance_dossier,
-                re.sub(r"[^\w-]", "_", nom) + ".json",
-            )
+            photo = _fichier_instantane(self.surveillance_dossier, nom)
             if os.path.isfile(photo):
                 os.remove(photo)  # la prochaine photo repart de zéro
 
-    surveillance_dossier = None
+    surveillance_dossier: str | None = None
 
-    def _comparer(self, t, p, j, guardian):
-        """Vérifier, analyser et comparer deux bases sur une période (lecture seule)."""
-        a = self.bases.ouvrir(t["base_id"], journal=j)
+    def _comparer(
+        self,
+        tache: ObjetJson,
+        parametres: ObjetJson,
+        journal: Journal,
+        guardian: Guardian,
+    ) -> None:
+        """Vérifie, analyse et compare deux bases (lecture seule)."""
+        source_a = self.bases.ouvrir(tache["base_id"], journal=journal)
         try:
-            b = self.bases.ouvrir(p["base_b"], journal=j)
+            source_b = self.bases.ouvrir(parametres["base_b"], journal=journal)
         except Exception:
-            a.fermer()
+            source_a.fermer()
             raise
         try:
-            etats = ("posted", "draft") if p.get("brouillons") else ("posted",)
-            res = comparer_bases(
-                a,
-                b,
-                _date(p.get("du")),
-                _date(p.get("au")),
+            etats = (
+                ("posted", "draft")
+                if parametres.get("brouillons")
+                else ("posted",)
+            )
+            resultat = comparer_bases(
+                source_a,
+                source_b,
+                _date(parametres.get("du")),
+                _date(parametres.get("au")),
                 etats,
-                p.get("date_copie") or None,
-                os.path.join(self.dossier, t["id"], "fichiers"),
-                j,
-                p.get("comptes") or None,
-                p.get("analytiques") or None,
+                parametres.get("date_copie") or None,
+                os.path.join(self.dossier, tache["id"], "fichiers"),
+                journal,
+                parametres.get("comptes") or None,
+                parametres.get("analytiques") or None,
             )
         finally:
-            a.fermer()
-            b.fermer()
+            source_a.fermer()
+            source_b.fermer()
         guardian.tracer(
             "comparer",
-            res["comparaison"]["statut"],
-            res["comparaison"]["empreinte"],
+            resultat["comparaison"]["statut"],
+            resultat["comparaison"]["empreinte"],
         )
-        for c in res["comparaison"]["constats"]:
-            c["explication"] = _marceau.expliquer_alerte(
-                c["code"], c["message"]
-            )
+        for constat in resultat["comparaison"]["constats"]:
+            constat["explication"] = _explication(constat)
         for cote in ("analyse_A", "analyse_B"):
-            for c in res[cote]["constats"]:
-                c["explication"] = _marceau.expliquer_alerte(
-                    c["code"], c["message"]
-                )
-        if res.get("fichier"):
-            t["fichiers"] = [
+            for constat in resultat[cote]["constats"]:
+                constat["explication"] = _explication(constat)
+        if resultat.get("fichier"):
+            tache["fichiers"] = [
                 {
                     "n": 0,
                     "format": "xlsx",
-                    "nom": os.path.basename(res["fichier"]),
-                    "chemin": res["fichier"],
-                    "taille": os.path.getsize(res["fichier"]),
+                    "nom": os.path.basename(resultat["fichier"]),
+                    "chemin": resultat["fichier"],
+                    "taille": os.path.getsize(resultat["fichier"]),
                 }
             ]
-            res["fichier"] = os.path.basename(res["fichier"])
-        t["base_b"] = self.bases.nom(p["base_b"])
-        t["resultat"] = json.loads(json.dumps(res, default=_json_defaut))
+            resultat["fichier"] = os.path.basename(resultat["fichier"])
+        tache["base_b"] = self.bases.nom(parametres["base_b"])
+        tache["resultat"] = json.loads(
+            json.dumps(resultat, default=_json_defaut)
+        )
 
-    def lister(self):
+    def lister(self) -> list[ObjetJson]:
+        """Résumé des tâches, des plus récentes aux plus anciennes."""
         with self._verrou:
             taches = list(self._taches.values())
-        taches.sort(key=lambda t: t["cree_le"], reverse=True)
+        taches.sort(key=lambda tache: tache["cree_le"], reverse=True)
         return [
             {
-                k: t.get(k)
-                for k in (
+                cle: tache.get(cle)
+                for cle in (
                     "id",
                     "action",
                     "base",
@@ -741,73 +1078,123 @@ class Taches:
                     "params",
                 )
             }
-            for t in taches
+            for tache in taches
         ]
 
-    def du_jour(self, jour):
+    def du_jour(self, jour: str) -> list[ObjetJson]:
         """Tâches créées ce jour-là (copies complètes, sans leur journal)."""
         with self._verrou:
             return [
-                {k: v for k, v in t.items() if k != "journal"}
-                for t in self._taches.values()
-                if (t.get("cree_le") or "")[:10] == jour
+                {
+                    cle: valeur
+                    for cle, valeur in tache.items()
+                    if cle != "journal"
+                }
+                for tache in self._taches.values()
+                if (tache.get("cree_le") or "")[:10] == jour
             ]
 
-    def echecs_24h(self):
+    def echecs_24h(self) -> list[tuple[str, str, str, str]]:
+        """Tâches en échec depuis 24 h : (créée le, action, base, erreur)."""
         with self._verrou:
             taches = list(self._taches.values())
         return [
-            (t["cree_le"], t["action"], t["base"], t.get("erreur") or "?")
-            for t in taches
-            if t["statut"] == "echec" and depuis_24h(t["cree_le"])
+            (
+                tache["cree_le"],
+                tache["action"],
+                tache["base"],
+                tache.get("erreur") or "?",
+            )
+            for tache in taches
+            if tache["statut"] == "echec" and depuis_24h(tache["cree_le"])
         ]
 
-    def obtenir(self, ident, depuis=0):
+    def obtenir(self, ident: str, depuis: int = 0) -> ObjetJson | None:
+        """Vue d'une tâche et de son journal à partir de l'index depuis."""
         with self._verrou:
-            t = self._taches.get(ident)
+            tache = self._taches.get(ident)
             journal = self._journaux.get(ident)
-        if t is None:
+        if tache is None:
             return None
-        vue = {k: v for k, v in t.items() if k != "journal"}
+        vue = {
+            cle: valeur for cle, valeur in tache.items() if cle != "journal"
+        }
         vue["fichiers"] = [
-            {k: f[k] for k in ("n", "format", "nom", "taille")}
-            for f in t["fichiers"]
+            {cle: fichier[cle] for cle in ("n", "format", "nom", "taille")}
+            for fichier in tache["fichiers"]
         ]
         if journal is not None:
             vue["journal"], vue["journal_suivant"] = journal.depuis(depuis)
         else:
-            evs = t.get("journal") or []
-            vue["journal"], vue["journal_suivant"] = evs[depuis:], len(evs)
+            evenements = tache.get("journal") or []
+            vue["journal"] = evenements[depuis:]
+            vue["journal_suivant"] = len(evenements)
         return vue
 
-    def fichier(self, ident, n):
-        """Chemin d'un fichier produit, uniquement s'il est enregistré dans la tâche."""
+    def fichier(self, ident: str, numero: int) -> str | None:
+        """Chemin d'un fichier produit, s'il est enregistré dans la tâche."""
         with self._verrou:
-            t = self._taches.get(ident)
-        if not t:
+            tache = self._taches.get(ident)
+        if not tache:
             return None
-        f = next((f for f in t["fichiers"] if f["n"] == n), None)
-        if not f:
+        produit = next(
+            (
+                fichier
+                for fichier in tache["fichiers"]
+                if fichier["n"] == numero
+            ),
+            None,
+        )
+        if not produit:
             return None
-        chemin = os.path.realpath(f["chemin"])
+        chemin = os.path.realpath(produit["chemin"])
         if not chemin.startswith(os.path.realpath(self.dossier) + os.sep):
             return None
         return chemin if os.path.isfile(chemin) else None
 
-    def rapport(self, ident):
+    def rapport(self, ident: str) -> str | None:
+        """Chemin du rapport.json d'une analyse terminée, sinon None."""
         with self._verrou:
-            t = self._taches.get(ident)
-        if not t or t["action"] != "analyser" or t["statut"] != "terminee":
+            tache = self._taches.get(ident)
+        if (
+            not tache
+            or tache["action"] != "analyser"
+            or tache["statut"] != "terminee"
+        ):
             return None
         chemin = os.path.join(self.dossier, ident, "rapport.json")
         return chemin if os.path.isfile(chemin) else None
 
 
-def _raconter_centre(j, nouvelles, resolues):
-    for m in nouvelles:
-        j.dire("Nouvelle alerte : %s" % m, "alerte")
-    for m in resolues:
-        j.dire("Alerte résolue : %s" % m, "ok")
+def _raconter_centre(
+    journal: Journal,
+    nouvelles: Iterable[str],
+    resolues: Iterable[str],
+    nom_base: str | None = None,
+) -> None:
+    """Raconte les alertes apparues et résolues au centre d'alertes.
+
+    Rôle : rendre visibles dans le journal les changements d'alertes.
+    Paramètres : journal, où raconter ; nouvelles et resolues, les messages
+    rendus par CentreAlertes.synchroniser ; nom_base, préfixe des lignes
+    (« base — nouvelle alerte : … ») si fourni.
+    Retour : aucun.
+    Erreurs : aucune.
+    Usages : Taches._analyser, Surveillance.passer,
+    Surveillance._surveiller_base.
+    """
+    if nom_base is None:
+        prefixe, nouvelle, resolue = "", "Nouvelle alerte", "Alerte résolue"
+    else:
+        prefixe, nouvelle, resolue = (
+            nom_base + " — ",
+            "nouvelle alerte",
+            "alerte résolue",
+        )
+    for message in nouvelles:
+        journal.dire("%s%s : %s" % (prefixe, nouvelle, message), "alerte")
+    for message in resolues:
+        journal.dire("%s%s : %s" % (prefixe, resolue, message), "ok")
 
 
 # ---------------------------------------------------------------------------
@@ -816,20 +1203,25 @@ def _raconter_centre(j, nouvelles, resolues):
 
 
 class Surveillance:
-    def __init__(self, app, minutes):
+    """Passages périodiques : serveur, sécurité, changements et balances."""
+
+    def __init__(self, app: "Application", minutes: int) -> None:
+        """Prépare le dossier des photos ; minutes = 0 : aucun passage auto."""
         self.app = app
         self.minutes = minutes
         self.dossier = os.path.join(app.dossier, "instantanes")
         os.makedirs(self.dossier, exist_ok=True)
         self._verrou = threading.Lock()
-        self.dernier_passage = None
+        self.dernier_passage: str | None = None
         self.en_cours = False
 
-    def demarrer(self):
+    def demarrer(self) -> None:
+        """Lance la boucle périodique (si minutes > 0)."""
         if self.minutes > 0:
             threading.Thread(target=self._boucle, daemon=True).start()
 
-    def _boucle(self):
+    def _boucle(self) -> None:
+        """Passage toutes les minutes ; une erreur n'arrête pas la boucle."""
         time.sleep(10)  # laisse le service démarrer
         while True:
             try:
@@ -838,74 +1230,73 @@ class Surveillance:
                 traceback.print_exc()
             time.sleep(self.minutes * 60)
 
-    def lancer_maintenant(self):
+    def lancer_maintenant(self) -> bool:
+        """Lance un passage immédiat ; False si un passage est en cours."""
         if self.en_cours:
             return False
         threading.Thread(target=self.passer, daemon=True).start()
         return True
 
-    def _verifier_odoo(self):
-        import xmlrpc.client
-
+    def _verifier_odoo(self) -> tuple[bool, str]:
+        """Odoo répond-il (XML-RPC, 5 s au plus) ? Rend (succès, message)."""
         url = os.environ.get(
             "CONCORDE_ODOO_URL", "http://127.0.0.1:8017"
         ).rstrip("/")
-
-        class _Transport(xmlrpc.client.Transport):
-            def make_connection(self, host):
-                c = super().make_connection(host)
-                c.timeout = 5
-                return c
-
         try:
-            v = xmlrpc.client.ServerProxy(
-                url + "/xmlrpc/2/common", transport=_Transport()
+            version_odoo = ProxyXmlRpc(
+                url + "/xmlrpc/2/common", transport=transport_xmlrpc(url, 5)
             ).version()
+            if not isinstance(version_odoo, dict):
+                return False, "%s : réponse inattendue (%r)" % (
+                    url,
+                    version_odoo,
+                )
             return True, "Odoo %s répond (%s)" % (
-                v.get("server_version", "?"),
+                version_odoo.get("server_version", "?"),
                 url,
             )
         except Exception as exc:
             return False, "%s : %s" % (url, exc)
 
-    def passer(self):
+    def passer(self) -> None:
+        """Un passage complet de surveillance (un seul à la fois)."""
         if not self._verrou.acquire(blocking=False):
             return
         self.en_cours = True
-        j = self.app.journal
+        journal = self.app.journal
         debut = time.monotonic()
         try:
-            j.dire("Surveillance : début du passage", "etape")
+            journal.dire("Surveillance : début du passage", "etape")
             bases = [
-                b
-                for b in self.app.bases.lister(rafraichir=True)
-                if b["source"] == "sql"
+                base
+                for base in self.app.bases.lister(rafraichir=True)
+                if base["source"] == "sql"
             ]
             if self.app.bases.pg_ok:
-                j.dire(
+                journal.dire(
                     "PostgreSQL joignable : %d base(s) Odoo 17" % len(bases),
                     "ok",
                 )
             else:
-                j.dire(
+                journal.dire(
                     "PostgreSQL injoignable : %s" % self.app.bases.pg_erreur,
                     "erreur",
                 )
             odoo_ok, odoo_msg = self._verifier_odoo()
-            j.dire(
+            journal.dire(
                 odoo_msg if odoo_ok else "Odoo injoignable : %s" % odoo_msg,
                 "ok" if odoo_ok else "erreur",
             )
-            for b in bases:
+            for base in bases:
                 try:
-                    self._surveiller_base(b, j)
+                    self._surveiller_base(base, journal)
                 except Exception as exc:
-                    j.dire(
+                    journal.dire(
                         "Base %s : surveillance impossible — %s"
-                        % (b["nom"], exc),
+                        % (base["nom"], exc),
                         "erreur",
                     )
-            tech = controles_techniques(
+            techniques = controles_techniques(
                 self.app.bases.pg_ok,
                 self.app.bases.pg_erreur,
                 odoo_ok,
@@ -913,22 +1304,22 @@ class Surveillance:
                 self.app.dossier,
                 self.app.taches.echecs_24h(),
                 [
-                    e
-                    for e in list(self.app.sessions.historique_echecs)
-                    if depuis_24h(e[0])
+                    echec
+                    for echec in list(self.app.sessions.historique_echecs)
+                    if depuis_24h(echec[0])
                 ],
             )
             nouvelles, resolues = self.app.centre.synchroniser(
-                "technique", "serveur", tech.constats
+                "technique", "serveur", techniques.constats
             )
-            _raconter_centre(j, nouvelles, resolues)
-            sec, sec_infos = constats_securite()
+            _raconter_centre(journal, nouvelles, resolues)
+            securite, infos_securite = constats_securite()
             nouvelles, resolues = self.app.centre.synchroniser(
-                "securite", "serveur", sec
+                "securite", "serveur", securite
             )
-            _raconter_centre(j, nouvelles, resolues)
-            for nom, i in sec_infos.items():
-                j.dire(
+            _raconter_centre(journal, nouvelles, resolues)
+            for nom, infos in infos_securite.items():
+                journal.dire(
                     "Sécurité — dernier %s : %s (%s)"
                     % (
                         (
@@ -936,94 +1327,96 @@ class Surveillance:
                             if nom == "controle"
                             else "antivirus ClamAV"
                         ),
-                        (i.get("statut") or "?").upper(),
-                        i["date"].replace("T", " "),
+                        (infos.get("statut") or "?").upper(),
+                        infos["date"].replace("T", " "),
                     ),
-                    "ok" if i.get("statut") == "conforme" else "alerte",
+                    "ok" if infos.get("statut") == "conforme" else "alerte",
                 )
-            j.dire(
-                "Disque : %s libre" % tech.infos.get("disque_libre", "?"),
+            journal.dire(
+                "Disque : %s libre"
+                % techniques.infos.get("disque_libre", "?"),
                 "detail",
             )
             bases_locales.purger_sauvegardes(
-                os.path.join(self.app.dossier, "sauvegardes"), journal=j
+                os.path.join(self.app.dossier, "sauvegardes"), journal=journal
             )
-            r = self.app.centre.resume()
-            j.dire(
-                "Surveillance terminée en %s — %d alerte(s) active(s), %d à voir"
+            resume = self.app.centre.resume()
+            journal.dire(
+                "Surveillance terminée en %s — %d alerte(s) active(s), "
+                "%d à voir"
                 % (
                     duree_texte(time.monotonic() - debut),
-                    r["actives"],
-                    r["non_vues"],
+                    resume["actives"],
+                    resume["non_vues"],
                 ),
-                "alerte" if r["non_vues"] else "ok",
+                "alerte" if resume["non_vues"] else "ok",
             )
             self.dernier_passage = datetime.now().isoformat(timespec="seconds")
         finally:
             self.en_cours = False
             self._verrou.release()
 
-    def _surveiller_base(self, b, j):
-        source = self.app.bases.ouvrir(b["id"])  # sans journal : on résume ici
+    def _surveiller_base(self, base: ObjetJson, journal: Journal) -> None:
+        """Photo d'une base comparée à la précédente, puis sa balance."""
+        # sans journal : on résume ici
+        source = self.app.bases.ouvrir(base["id"])
         try:
-            chemin = os.path.join(
-                self.dossier, re.sub(r"[^\w-]", "_", b["nom"]) + ".json"
-            )
+            chemin = _fichier_instantane(self.dossier, base["nom"])
             ancien = None
             if os.path.isfile(chemin):
-                with open(chemin, encoding="utf-8") as f:
-                    ancien = json.load(f)
+                ancien = _lire_json(chemin)
             nouveau = source.instantane()
             changements = comparer_instantanes(ancien, nouveau)
-            presents = [c for c in changements.constats if c["nombre"]]
+            presents = [
+                constat
+                for constat in changements.constats
+                if constat["nombre"]
+            ]
             if presents:
-                self.app.centre.evenements(b["nom"], presents)
-                for c in presents:
-                    j.dire(
+                self.app.centre.evenements(base["nom"], presents)
+                for constat in presents:
+                    journal.dire(
                         "%s — %s : %s"
-                        % (b["nom"], c["message"], nombre_texte(c["nombre"])),
-                        "alerte" if c["niveau"] == "ALERTE" else "info",
+                        % (
+                            base["nom"],
+                            constat["message"],
+                            nombre_texte(constat["nombre"]),
+                        ),
+                        "alerte" if constat["niveau"] == "ALERTE" else "info",
                     )
             else:
-                j.dire(
+                journal.dire(
                     "%s — aucun changement depuis le dernier passage"
-                    % b["nom"],
+                    % base["nom"],
                     "detail",
                 )
-            tmp = chemin + ".tmp"
-            with open(tmp, "w", encoding="utf-8") as f:
-                json.dump(nouveau, f)
-            os.replace(tmp, chemin)
+            _ecrire_json_atomique(chemin, nouveau)
 
-            bal, _ = alertes_balance(source.balance(), source.balance_tiers())
+            rapport_balance, _ = alertes_balance(
+                source.balance(), source.balance_tiers()
+            )
             nouvelles, resolues = self.app.centre.synchroniser(
-                "balance", b["nom"], bal.constats
+                "balance", base["nom"], rapport_balance.constats
             )
-            n = sum(
+            nombre_anomalies = sum(
                 1
-                for c in bal.constats
-                if c["niveau"] in ("BLOQUANT", "ALERTE")
+                for constat in rapport_balance.constats
+                if constat["niveau"] in ("BLOQUANT", "ALERTE")
             )
-            j.dire(
+            desequilibree = any(
+                constat["code"] == "BALANCE_DESEQUILIBREE"
+                for constat in rapport_balance.constats
+            )
+            journal.dire(
                 "%s — balance : %s, %d anomalie(s) par compte"
                 % (
-                    b["nom"],
-                    (
-                        "équilibrée"
-                        if not any(
-                            c["code"] == "BALANCE_DESEQUILIBREE"
-                            for c in bal.constats
-                        )
-                        else "DÉSÉQUILIBRÉE"
-                    ),
-                    n,
+                    base["nom"],
+                    "DÉSÉQUILIBRÉE" if desequilibree else "équilibrée",
+                    nombre_anomalies,
                 ),
-                "alerte" if n else "ok",
+                "alerte" if nombre_anomalies else "ok",
             )
-            for m in nouvelles:
-                j.dire("%s — nouvelle alerte : %s" % (b["nom"], m), "alerte")
-            for m in resolues:
-                j.dire("%s — alerte résolue : %s" % (b["nom"], m), "ok")
+            _raconter_centre(journal, nouvelles, resolues, base["nom"])
         finally:
             source.fermer()
 
@@ -1034,9 +1427,16 @@ class Surveillance:
 
 
 class Application:
+    """État partagé du service : sessions, bases, tâches, alertes."""
+
     def __init__(
-        self, empreinte_mdp, dossier, bases=None, minutes_surveillance=0
-    ):
+        self,
+        empreinte_mdp: str,
+        dossier: str,
+        bases: Bases | None = None,
+        minutes_surveillance: int = 0,
+    ) -> None:
+        """Assemble le service autour du dossier de données."""
         self.empreinte_mdp = empreinte_mdp
         self.dossier = dossier
         os.makedirs(dossier, exist_ok=True)
@@ -1055,23 +1455,28 @@ class Application:
 
 
 class Gestionnaire(BaseHTTPRequestHandler):
+    """Traitement d'une requête HTTP : fichiers statiques et API JSON."""
+
     server_version = "CONCORDE"
     sys_version = ""
-    app = None  # Application, injectée par creer_serveur()
+    app: ClassVar[Application]  # injectée par creer_serveur()
 
-    # --- outils ---------------------------------------------------------------
-    def log_message(self, fmt, *args):
-        sys.stderr.write("%s %s\n" % (self._ip(), fmt % args))
+    # --- outils --------------------------------------------------------------
+    def log_message(self, format: str, *args: object) -> None:
+        """Journal d'accès sur la sortie d'erreur, avec l'IP réelle."""
+        sys.stderr.write("%s %s\n" % (self._ip(), format % args))
 
-    def _ip(self):
-        ip = self.client_address[0]
+    def _ip(self) -> str:
+        """Adresse du client (celle transmise par Caddy si en local)."""
+        ip: str = self.client_address[0]
         if ip in ("127.0.0.1", "::1"):  # derrière Caddy : IP réelle transmise
             transmise = self.headers.get("X-Forwarded-For", "")
             if transmise:
                 return transmise.split(",")[-1].strip()
         return ip
 
-    def _entetes_securite(self):
+    def _entetes_securite(self) -> None:
+        """En-têtes de sécurité communs à toutes les réponses."""
         self.send_header("X-Content-Type-Options", "nosniff")
         self.send_header("X-Frame-Options", "DENY")
         self.send_header("Referrer-Policy", "no-referrer")
@@ -1085,22 +1490,29 @@ class Gestionnaire(BaseHTTPRequestHandler):
 
     def _envoyer(
         self,
-        code,
-        corps=b"",
-        type_="application/json; charset=utf-8",
-        entetes=None,
-    ):
+        code: int,
+        corps: bytes = b"",
+        type_: str = "application/json; charset=utf-8",
+        entetes: dict[str, str] | None = None,
+    ) -> None:
+        """Envoie une réponse complète (corps omis pour HEAD)."""
         self.send_response(code)
         self.send_header("Content-Type", type_)
         self.send_header("Content-Length", str(len(corps)))
         self._entetes_securite()
-        for k, v in (entetes or {}).items():
-            self.send_header(k, v)
+        for nom, valeur in (entetes or {}).items():
+            self.send_header(nom, valeur)
         self.end_headers()
         if self.command != "HEAD":
             self.wfile.write(corps)
 
-    def _json(self, code, donnees, entetes=None):
+    def _json(
+        self,
+        code: int,
+        donnees: object,
+        entetes: dict[str, str] | None = None,
+    ) -> None:
+        """Envoie une réponse JSON."""
         self._envoyer(
             code,
             json.dumps(
@@ -1109,32 +1521,41 @@ class Gestionnaire(BaseHTTPRequestHandler):
             entetes=entetes,
         )
 
-    def _erreur(self, code, message):
+    def _erreur(self, code: int, message: str) -> None:
+        """Envoie une erreur JSON {"erreur": message}."""
         self._json(code, {"erreur": message})
 
-    def _corps(self):
-        n = int(self.headers.get("Content-Length") or 0)
-        if n > CORPS_MAX:
+    def _corps(self) -> ObjetJson:
+        """Corps JSON de la requête (objet) ; ValueError si refusé."""
+        taille = int(self.headers.get("Content-Length") or 0)
+        if taille > CORPS_MAX:
             raise ValueError("Requête trop volumineuse.")
-        brut = self.rfile.read(n) if n else b"{}"
+        brut = self.rfile.read(taille) if taille else b"{}"
         donnees = json.loads(brut.decode("utf-8") or "{}")
         if not isinstance(donnees, dict):
             raise ValueError("Objet JSON attendu.")
         return donnees
 
-    def _requete(self):
+    def _requete(self) -> ParametresUrl:
+        """Paramètres de l'URL (dernière valeur de chaque paramètre)."""
         return {
-            k: v[-1] for k, v in parse_qs(urlparse(self.path).query).items()
+            cle: valeurs[-1]
+            for cle, valeurs in parse_qs(urlparse(self.path).query).items()
         }
 
-    def _jeton(self):
-        c = SimpleCookie(self.headers.get("Cookie", ""))
-        return c[COOKIE].value if COOKIE in c else None
+    def _jeton(self) -> str | None:
+        """Jeton de session lu dans le cookie, ou None."""
+        cookies = SimpleCookie(self.headers.get("Cookie", ""))
+        return cookies[COOKIE].value if COOKIE in cookies else None
 
-    def _connecte(self):
+    def _connecte(self) -> bool:
+        """Vrai si la requête porte une session valide."""
         return self.app.sessions.valide(self._jeton())
 
-    def _fichier(self, chemin, nom, type_=None):
+    def _fichier(
+        self, chemin: str, nom: str, type_: str | None = None
+    ) -> None:
+        """Envoie un fichier en téléchargement, par blocs de 64 Kio."""
         type_ = (
             type_ or mimetypes.guess_type(nom)[0] or "application/octet-stream"
         )
@@ -1144,22 +1565,24 @@ class Gestionnaire(BaseHTTPRequestHandler):
         self.send_header("Content-Length", str(taille))
         nom_ascii = re.sub(r"[^A-Za-z0-9._-]", "_", nom)
         self.send_header(
-            "Content-Disposition", 'attachment; filename="%s"' % nom_ascii
+            "Content-Disposition", _disposition_piece_jointe(nom_ascii)
         )
         self._entetes_securite()
         self.end_headers()
-        with open(chemin, "rb") as f:
+        with open(chemin, "rb") as fichier:
             while True:
-                bloc = f.read(1 << 16)
+                bloc = fichier.read(1 << 16)
                 if not bloc:
                     break
                 self.wfile.write(bloc)
 
-    # --- routage --------------------------------------------------------------
-    def do_HEAD(self):
+    # --- routage -------------------------------------------------------------
+    def do_HEAD(self) -> None:
+        """HEAD : comme GET, sans le corps."""
         self.do_GET()
 
-    def do_GET(self):
+    def do_GET(self) -> None:
+        """Routes GET : fichiers statiques et lectures de l'API."""
         chemin = urlparse(self.path).path
         if not chemin.startswith("/api/"):
             return self._statique(chemin)
@@ -1167,55 +1590,73 @@ class Gestionnaire(BaseHTTPRequestHandler):
             return self._json(200, {"connecte": self._connecte()})
         if not self._connecte():
             return self._erreur(401, "Connexion requise.")
-        q = self._requete()
+        requete = self._requete()
         if chemin == "/api/bases":
             return self._json(
                 200,
-                {"bases": self.app.bases.lister(rafraichir="rafraichir" in q)},
+                {
+                    "bases": self.app.bases.lister(
+                        rafraichir="rafraichir" in requete
+                    )
+                },
             )
         if chemin == "/api/taches":
             return self._json(200, {"taches": self.app.taches.lister()})
-        m = re.fullmatch(r"/api/taches/([\w-]+)", chemin)
-        if m:
-            t = self.app.taches.obtenir(m.group(1), int(q.get("depuis") or 0))
+        correspondance = re.fullmatch(r"/api/taches/([\w-]+)", chemin)
+        if correspondance:
+            tache = self.app.taches.obtenir(
+                correspondance.group(1), int(requete.get("depuis") or 0)
+            )
             return (
-                self._json(200, t)
-                if t
+                self._json(200, tache)
+                if tache
                 else self._erreur(404, "Tâche inconnue.")
             )
-        m = re.fullmatch(r"/api/taches/([\w-]+)/fichiers/(\d+)", chemin)
-        if m:
-            f = self.app.taches.fichier(m.group(1), int(m.group(2)))
-            if not f:
+        correspondance = re.fullmatch(
+            r"/api/taches/([\w-]+)/fichiers/(\d+)", chemin
+        )
+        if correspondance:
+            produit = self.app.taches.fichier(
+                correspondance.group(1), int(correspondance.group(2))
+            )
+            if not produit:
                 return self._erreur(404, "Fichier inconnu.")
-            return self._fichier(f, os.path.basename(f))
-        m = re.fullmatch(r"/api/taches/([\w-]+)/zip", chemin)
-        if m:
-            return self._zip(m.group(1))
-        m = re.fullmatch(r"/api/taches/([\w-]+)/rapport\.json", chemin)
-        if m:
-            r = self.app.taches.rapport(m.group(1))
-            if not r:
+            return self._fichier(produit, os.path.basename(produit))
+        correspondance = re.fullmatch(r"/api/taches/([\w-]+)/zip", chemin)
+        if correspondance:
+            return self._zip(correspondance.group(1))
+        correspondance = re.fullmatch(
+            r"/api/taches/([\w-]+)/rapport\.json", chemin
+        )
+        if correspondance:
+            rapport = self.app.taches.rapport(correspondance.group(1))
+            if not rapport:
                 return self._erreur(404, "Rapport indisponible.")
-            return self._fichier(r, "concorde_analyse_%s.json" % m.group(1))
-        m = re.fullmatch(
+            return self._fichier(
+                rapport, "concorde_analyse_%s.json" % correspondance.group(1)
+            )
+        correspondance = re.fullmatch(
             r"/api/taches/([\w-]+)/constats/([A-Z_]+)\.csv", chemin
         )
-        if m:
-            return self._constat_csv(m.group(1), m.group(2))
+        if correspondance:
+            return self._constat_csv(
+                correspondance.group(1), correspondance.group(2)
+            )
         if chemin == "/api/comptes":
-            return self._balance(q)
-        m = re.fullmatch(r"/api/comptes/([\w.-]+)/grand-livre", chemin)
-        if m:
-            return self._grand_livre(m.group(1), q)
-        m = re.fullmatch(r"/api/ecritures/(\d+)", chemin)
-        if m:
-            return self._ecriture(int(m.group(1)), q)
+            return self._balance(requete)
+        correspondance = re.fullmatch(
+            r"/api/comptes/([\w.-]+)/grand-livre", chemin
+        )
+        if correspondance:
+            return self._grand_livre(correspondance.group(1), requete)
+        correspondance = re.fullmatch(r"/api/ecritures/(\d+)", chemin)
+        if correspondance:
+            return self._ecriture(int(correspondance.group(1)), requete)
         if chemin == "/api/alertes":
             return self._json(
                 200,
                 {
-                    "alertes": self.app.centre.lister(q.get("statut")),
+                    "alertes": self.app.centre.lister(requete.get("statut")),
                     "dernier_passage": self.app.surveillance.dernier_passage,
                     "en_cours": self.app.surveillance.en_cours,
                 },
@@ -1223,11 +1664,7 @@ class Gestionnaire(BaseHTTPRequestHandler):
         if chemin == "/api/alertes/resume":
             return self._json(200, self.app.centre.resume())
         if chemin == "/api/cles":
-            locales = [
-                b["nom"]
-                for b in self.app.bases.lister()
-                if b["source"] == "sql"
-            ]
+            locales = _noms_bases_locales(self.app.bases)
             try:
                 cles = bases_locales.lister_cles_api(locales)
             except Exception as exc:
@@ -1236,11 +1673,11 @@ class Gestionnaire(BaseHTTPRequestHandler):
                 )
             return self._json(200, {"cles": cles})
         if chemin == "/api/rapport":
-            return self._rapport(q)
+            return self._rapport(requete)
         if chemin == "/api/rapport/export":
-            return self._rapport(q, export=True)
+            return self._rapport(requete, export=True)
         if chemin == "/api/comparer/choix":
-            return self._choix_comparaison(q)
+            return self._choix_comparaison(requete)
         if chemin == "/api/sauvegardes":
             return self._json(
                 200,
@@ -1252,15 +1689,21 @@ class Gestionnaire(BaseHTTPRequestHandler):
                 },
             )
         if chemin == "/api/journal":
-            evs, suivant = self.app.journal.depuis(int(q.get("depuis") or 0))
-            return self._json(200, {"journal": evs, "suivant": suivant})
+            evenements, suivant = self.app.journal.depuis(
+                int(requete.get("depuis") or 0)
+            )
+            return self._json(200, {"journal": evenements, "suivant": suivant})
         return self._erreur(404, "Route inconnue.")
 
-    def _verifier_origine(self):
-        """Anti-CSRF : en-tête personnalisé exigé (impossible depuis un formulaire tiers)."""
+    def _verifier_origine(self) -> bool:
+        """Anti-CSRF : en-tête personnalisé exigé.
+
+        Un formulaire d'un site tiers ne peut pas poser cet en-tête.
+        """
         return self.headers.get("X-Concorde") == "1"
 
-    def do_POST(self):
+    def do_POST(self) -> None:
+        """Routes POST : connexion et actions qui modifient."""
         chemin = urlparse(self.path).path
         if not self._verifier_origine():
             return self._erreur(403, "Requête refusée.")
@@ -1272,14 +1715,7 @@ class Gestionnaire(BaseHTTPRequestHandler):
             return self._connexion(corps)
         if chemin == "/api/deconnexion":
             self.app.sessions.fermer(self._jeton())
-            return self._json(
-                200,
-                {"ok": True},
-                entetes={
-                    "Set-Cookie": "%s=; Path=/; Max-Age=0; HttpOnly; Secure; SameSite=Strict"
-                    % COOKIE
-                },
-            )
+            return self._json(200, {"ok": True}, entetes=_cookie_session(None))
         if not self._connecte():
             return self._erreur(401, "Connexion requise.")
         if chemin == "/api/taches":
@@ -1319,74 +1755,25 @@ class Gestionnaire(BaseHTTPRequestHandler):
                 "info",
             )
             return self._json(200, {"ok": True, "libelle": nom})
-        m = re.fullmatch(r"/api/distants/(xmlrpc:\w+)/cle", chemin)
-        if m:
+        correspondance = re.fullmatch(
+            r"/api/distants/(xmlrpc:\w+)/cle", chemin
+        )
+        if correspondance:
             try:
                 self.app.bases.saisir_cle(
-                    m.group(1), str(corps.get("cle") or "")
+                    correspondance.group(1), str(corps.get("cle") or "")
                 )
             except Exception as exc:
                 return self._erreur(400, "Clé refusée : %s" % exc)
             self.app.journal.dire(
-                "Clé API ressaisie pour %s" % self.app.bases.nom(m.group(1))
+                "Clé API ressaisie pour %s"
+                % self.app.bases.nom(correspondance.group(1))
             )
             return self._json(200, {"ok": True})
         if chemin == "/api/cles/revoquer":
-            locales = [
-                b["nom"]
-                for b in self.app.bases.lister()
-                if b["source"] == "sql"
-            ]
-            base = str(corps.get("base") or "")
-            try:
-                nom = bases_locales.revoquer_cle_api(
-                    base,
-                    corps.get("id"),
-                    str(corps.get("confirmation") or ""),
-                    locales,
-                    journal=self.app.journal,
-                )
-            except bases_locales.SuppressionInterdite as exc:
-                return self._erreur(400, str(exc))
-            except Exception as exc:
-                return self._erreur(500, "Révocation impossible : %s" % exc)
-            self.app.centre.evenements(
-                base,
-                [
-                    {
-                        "code": "CLE_API_REVOQUEE",
-                        "niveau": "INFO",
-                        "nombre": 1,
-                        "message": "Clé API révoquée",
-                        "exemples": ["Clé « %s »" % nom],
-                    }
-                ],
-            )
-            return self._json(200, {"ok": True, "cle": nom})
+            return self._revoquer_cle(corps)
         if chemin == "/api/rapport":
-            jour = str(corps.get("jour") or "")
-            try:
-                date.fromisoformat(jour)
-            except ValueError:
-                return self._erreur(400, "Date invalide (AAAA-MM-JJ).")
-            saisie = rapport_jour.nettoyer_saisie(corps)
-            dossier = os.path.join(self.app.dossier, "rapports")
-            os.makedirs(dossier, exist_ok=True)
-            tmp = os.path.join(dossier, jour + ".json.tmp")
-            with open(tmp, "w", encoding="utf-8") as f:
-                json.dump(saisie, f, ensure_ascii=False, indent=1)
-            os.replace(tmp, os.path.join(dossier, jour + ".json"))
-            self.app.journal.dire(
-                "Rapport du %s enregistré (%d conclusion(s) masquée(s), "
-                "%d ajout(s))"
-                % (
-                    jour,
-                    sum(1 for c in saisie["conclusions"] if not c["visible"]),
-                    len(saisie["ajouts"]),
-                ),
-                "info",
-            )
-            return self._rapport({"jour": jour})
+            return self._enregistrer_rapport(corps)
         if chemin == "/api/alertes/vue":
             self.app.centre.marquer_vue(corps.get("id"))
             return self._json(200, self.app.centre.resume())
@@ -1405,28 +1792,36 @@ class Gestionnaire(BaseHTTPRequestHandler):
             )
         return self._erreur(404, "Route inconnue.")
 
-    def do_DELETE(self):
+    def do_DELETE(self) -> None:
+        """Routes DELETE : clé API et bases distantes."""
         chemin = urlparse(self.path).path
         if not self._verifier_origine():
             return self._erreur(403, "Requête refusée.")
         if not self._connecte():
             return self._erreur(401, "Connexion requise.")
-        m = re.fullmatch(r"/api/distants/(xmlrpc:\w+)/cle", chemin)
-        if m and self.app.bases.supprimer_cle(m.group(1)):
+        correspondance = re.fullmatch(
+            r"/api/distants/(xmlrpc:\w+)/cle", chemin
+        )
+        if correspondance and self.app.bases.supprimer_cle(
+            correspondance.group(1)
+        ):
             self.app.journal.dire(
                 "Clé API supprimée de CONCORDE pour %s (rien ne change chez "
-                "le client)" % self.app.bases.nom(m.group(1)),
+                "le client)" % self.app.bases.nom(correspondance.group(1)),
                 "info",
             )
             return self._json(200, {"ok": True})
-        m = re.fullmatch(r"/api/distants/(xmlrpc:\w+)", chemin)
-        if m and self.app.bases.retirer_distant(m.group(1)):
+        correspondance = re.fullmatch(r"/api/distants/(xmlrpc:\w+)", chemin)
+        if correspondance and self.app.bases.retirer_distant(
+            correspondance.group(1)
+        ):
             self.app.journal.dire("Base distante retirée de CONCORDE", "info")
             return self._json(200, {"ok": True})
         return self._erreur(404, "Base inconnue.")
 
-    # --- actions --------------------------------------------------------------
-    def _connexion(self, corps):
+    # --- actions -------------------------------------------------------------
+    def _connexion(self, corps: ObjetJson) -> None:
+        """Contrôle du mot de passe, anti-force brute, ouverture de session."""
         ip = self._ip()
         if self.app.sessions.bloquee(ip):
             self.app.journal.dire(
@@ -1444,85 +1839,159 @@ class Gestionnaire(BaseHTTPRequestHandler):
             return self._erreur(401, "Mot de passe incorrect.")
         jeton = self.app.sessions.ouvrir(ip)
         self.app.journal.dire("Connexion réussie depuis %s" % ip, "info")
-        return self._json(
-            200,
-            {"ok": True},
-            entetes={
-                "Set-Cookie": "%s=%s; Path=/; HttpOnly; Secure; SameSite=Strict"
-                % (COOKIE, jeton)
-            },
+        return self._json(200, {"ok": True}, entetes=_cookie_session(jeton))
+
+    def _revoquer_cle(self, corps: ObjetJson) -> None:
+        """Révoque une clé API d'une base locale (POST /api/cles/revoquer)."""
+        locales = _noms_bases_locales(self.app.bases)
+        base = str(corps.get("base") or "")
+        try:
+            nom = bases_locales.revoquer_cle_api(
+                base,
+                corps.get("id"),
+                str(corps.get("confirmation") or ""),
+                locales,
+                journal=self.app.journal,
+            )
+        except bases_locales.SuppressionInterdite as exc:
+            return self._erreur(400, str(exc))
+        except Exception as exc:
+            return self._erreur(500, "Révocation impossible : %s" % exc)
+        self.app.centre.evenements(
+            base,
+            [
+                _evenement_info(
+                    "CLE_API_REVOQUEE", "Clé API révoquée", "Clé « %s »" % nom
+                )
+            ],
         )
+        return self._json(200, {"ok": True, "cle": nom})
+
+    def _enregistrer_rapport(self, corps: ObjetJson) -> None:
+        """Enregistre les choix du rapport du jour (POST /api/rapport)."""
+        jour = str(corps.get("jour") or "")
+        if not _jour_valide(jour):
+            return self._erreur(400, "Date invalide (AAAA-MM-JJ).")
+        saisie = rapport_jour.nettoyer_saisie(corps)
+        dossier = os.path.join(self.app.dossier, "rapports")
+        os.makedirs(dossier, exist_ok=True)
+        _ecrire_json_atomique(
+            os.path.join(dossier, jour + ".json"),
+            saisie,
+            ascii_seul=False,
+            retrait=1,
+        )
+        self.app.journal.dire(
+            "Rapport du %s enregistré (%d conclusion(s) masquée(s), "
+            "%d ajout(s))"
+            % (
+                jour,
+                sum(
+                    1
+                    for conclusion in saisie["conclusions"]
+                    if not conclusion["visible"]
+                ),
+                len(saisie["ajouts"]),
+            ),
+            "info",
+        )
+        return self._rapport({"jour": jour})
 
     @staticmethod
-    def _params_tache(corps):
-        p = {}
+    def _params_tache(corps: ObjetJson) -> ObjetJson:
+        """Paramètres d'une tâche, validés ; ValueError si invalides."""
+        params: ObjetJson = {}
         for cle in ("du", "au"):
-            v = corps.get(cle) or None
-            if v:
-                _date(v)  # valide AAAA-MM-JJ (ValueError sinon)
-            p[cle] = v
-        if p["du"] and p["au"] and p["du"] > p["au"]:
+            valeur = corps.get(cle) or None
+            if valeur:
+                _date(valeur)  # valide AAAA-MM-JJ (ValueError sinon)
+            params[cle] = valeur
+        if params["du"] and params["au"] and params["du"] > params["au"]:
             raise ValueError("La date de début est après la date de fin.")
-        p["validees"] = bool(corps.get("validees"))
-        p["brouillons"] = bool(corps.get("brouillons"))
-        p["formats"] = [f for f in corps.get("formats") or [] if f in FORMATS]
-        p["objets"] = [o for o in corps.get("objets") or [] if o in OBJETS]
-        if corps.get("action") == "telecharger" and not p["formats"]:
+        params["validees"] = bool(corps.get("validees"))
+        params["brouillons"] = bool(corps.get("brouillons"))
+        params["formats"] = [
+            choix for choix in corps.get("formats") or [] if choix in FORMATS
+        ]
+        params["objets"] = [
+            choix for choix in corps.get("objets") or [] if choix in OBJETS
+        ]
+        if corps.get("action") == "telecharger" and not params["formats"]:
             raise ValueError("Choisissez au moins un format.")
-        if corps.get("action") == "telecharger" and not p["objets"]:
+        if corps.get("action") == "telecharger" and not params["objets"]:
             raise ValueError("Choisissez au moins un type de données.")
-        p["separateur"] = "tab" if corps.get("separateur") == "tab" else "pipe"
-        p["encodage"] = (
+        params["separateur"] = (
+            "tab" if corps.get("separateur") == "tab" else "pipe"
+        )
+        params["encodage"] = (
             "utf-8" if corps.get("encodage") == "utf-8" else "iso-8859-15"
         )
         if corps.get("action") in ("supprimer_base", "reinitialiser_base"):
-            p["confirmation"] = str(corps.get("confirmation") or "")
+            params["confirmation"] = str(corps.get("confirmation") or "")
         if corps.get("action") == "comparer":
-            p["base_b"] = str(corps.get("base_id_b") or "")
-            if not p["base_b"] or p["base_b"] == corps.get("base_id"):
+            params["base_b"] = str(corps.get("base_id_b") or "")
+            if not params["base_b"] or params["base_b"] == corps.get(
+                "base_id"
+            ):
                 raise ValueError("Choisissez deux bases différentes.")
-            dc = (corps.get("date_copie") or "").strip()
-            if dc:
-                datetime.fromisoformat(
-                    dc
-                )  # ValueError si la date est invalide
-            p["date_copie"] = dc
+            date_copie = (corps.get("date_copie") or "").strip()
+            if date_copie:
+                # ValueError si la date est invalide
+                datetime.fromisoformat(date_copie)
+            params["date_copie"] = date_copie
             for cle in ("comptes", "analytiques"):
-                v = corps.get(cle) or []
-                if not isinstance(v, list) or len(v) > 5000:
+                liste = corps.get(cle) or []
+                if not isinstance(liste, list) or len(liste) > 5000:
                     raise ValueError("Liste « %s » invalide." % cle)
-                p[cle] = sorted(
-                    {str(x).strip()[:120] for x in v if str(x).strip()}
+                params[cle] = sorted(
+                    {
+                        str(element).strip()[:120]
+                        for element in liste
+                        if str(element).strip()
+                    }
                 )
-        return p
+        return params
 
-    def _source_requete(self, q):
-        """Ouvre la base demandée (?base=…) avec les filtres communs, ou lève ValueError."""
-        base = q.get("base") or ""
-        if not any(b["id"] == base for b in self.app.bases.lister()):
+    def _source_requete(
+        self, requete: ParametresUrl
+    ) -> tuple[SourceOdoo, date | None, date | None, tuple[str, ...]]:
+        """Ouvre la base demandée (?base=…) avec les filtres communs.
+
+        Rôle : préparer les lectures de balance, grand livre et écriture.
+        Paramètres : requete, les paramètres d'URL (base, du, au, brouillons).
+        Retour : (source ouverte, début, fin, états d'écriture lus).
+        Erreurs : ValueError si la base est inconnue ou une date invalide.
+        Usages : Gestionnaire._balance, _grand_livre, _ecriture.
+        """
+        base = requete.get("base") or ""
+        if not any(fiche["id"] == base for fiche in self.app.bases.lister()):
             raise ValueError("Base inconnue.")
-        du, au = _date(q.get("du")), _date(q.get("au"))
-        etats = (
-            ("posted", "draft") if q.get("brouillons") == "1" else ("posted",)
+        debut, fin = _date(requete.get("du")), _date(requete.get("au"))
+        etats: tuple[str, ...] = (
+            ("posted", "draft")
+            if requete.get("brouillons") == "1"
+            else ("posted",)
         )
-        return self.app.bases.ouvrir(base), du, au, etats
+        return self.app.bases.ouvrir(base), debut, fin, etats
 
-    def _rapport(self, q, export=False):
-        """Rapport du jour : automatique + choix enregistrés ; export = page imprimable."""
-        jour = q.get("jour") or date.today().isoformat()
-        try:
-            date.fromisoformat(jour)
-        except ValueError:
+    def _rapport(self, requete: ParametresUrl, export: bool = False) -> None:
+        """Rapport du jour : automatique + choix enregistrés.
+
+        export = page HTML imprimable, proposée en téléchargement.
+        """
+        jour = requete.get("jour") or date.today().isoformat()
+        if not _jour_valide(jour):
             return self._erreur(400, "Date invalide (AAAA-MM-JJ).")
-        securite = {}
+        securite: ObjetJson = {}
         for nom in ("controle", "antivirus"):
             chemin = os.path.join(DOSSIER_SECURITE, nom + ".json")
             try:
-                with open(chemin, encoding="utf-8") as f:
-                    securite[nom] = json.load(f)
+                securite[nom] = _lire_json(chemin)
             except (OSError, ValueError):
-                pass
-        auto = rapport_jour.construire(
+                # contrôle pas encore passé ou fichier illisible : la
+                # rubrique reste vide dans le rapport
+                continue
+        automatique = rapport_jour.construire(
             jour,
             self.app.centre.lister(),
             self.app.taches.du_jour(jour),
@@ -1531,91 +2000,95 @@ class Gestionnaire(BaseHTTPRequestHandler):
         enregistre = None
         chemin = os.path.join(self.app.dossier, "rapports", jour + ".json")
         if os.path.isfile(chemin):
-            with open(chemin, encoding="utf-8") as f:
-                enregistre = json.load(f)
-        r = rapport_jour.fusionner(auto, enregistre)
+            enregistre = _lire_json(chemin)
+        rapport = rapport_jour.fusionner(automatique, enregistre)
         if not export:
-            return self._json(200, r)
-        corps = rapport_jour.rendu_html(r).encode("utf-8")
+            return self._json(200, rapport)
+        corps = rapport_jour.rendu_html(rapport).encode("utf-8")
         self._envoyer(
             200,
             corps,
             "text/html; charset=utf-8",
             {
-                "Content-Disposition": 'attachment; filename="concorde_rapport_%s.html"'
-                % jour
+                "Content-Disposition": _disposition_piece_jointe(
+                    "concorde_rapport_%s.html" % jour
+                )
             },
         )
 
-    def _choix_comparaison(self, q):
-        """Comptes comptables et analytiques existant dans l'une ou l'autre des deux bases."""
-        connues = {b["id"] for b in self.app.bases.lister()}
-        ids = [q.get("base_a") or "", q.get("base_b") or ""]
-        if not all(i in connues for i in ids):
+    def _choix_comparaison(self, requete: ParametresUrl) -> None:
+        """Comptes et analytiques présents dans l'une des deux bases."""
+        connues = {fiche["id"] for fiche in self.app.bases.lister()}
+        ids = [requete.get("base_a") or "", requete.get("base_b") or ""]
+        if not all(ident in connues for ident in ids):
             return self._erreur(400, "Base inconnue.")
-        comptes, analytiques = {}, {}
+        comptes: dict[str, ObjetJson] = {}
+        analytiques: dict[str, ObjetJson] = {}
         for lettre, ident in zip("AB", ids):
             try:
-                s = self.app.bases.ouvrir(ident)
+                source = self.app.bases.ouvrir(ident)
             except Exception as exc:
                 return self._erreur(
                     500, "Base %s illisible : %s" % (lettre, exc)
                 )
             try:
-                for c in s.comptes():
-                    e = comptes.setdefault(
-                        c["code"],
+                for compte in source.comptes():
+                    entree = comptes.setdefault(
+                        compte["code"],
                         {
-                            "code": c["code"],
-                            "libelle": c["libelle"],
+                            "code": compte["code"],
+                            "libelle": compte["libelle"],
                             "bases": "",
                         },
                     )
-                    e["bases"] += lettre
-                for nom in sorted(set(s.noms_analytiques().values())):
-                    e = analytiques.setdefault(nom, {"nom": nom, "bases": ""})
-                    if lettre not in e["bases"]:
-                        e["bases"] += lettre
+                    entree["bases"] += lettre
+                for nom in sorted(set(source.noms_analytiques().values())):
+                    entree = analytiques.setdefault(
+                        nom, {"nom": nom, "bases": ""}
+                    )
+                    if lettre not in entree["bases"]:
+                        entree["bases"] += lettre
             finally:
-                s.fermer()
+                source.fermer()
         return self._json(
             200,
             {
-                "comptes": sorted(comptes.values(), key=lambda c: c["code"]),
+                "comptes": sorted(
+                    comptes.values(), key=lambda compte: compte["code"]
+                ),
                 "analytiques": sorted(
-                    analytiques.values(), key=lambda a: a["nom"].lower()
+                    analytiques.values(),
+                    key=lambda analytique: analytique["nom"].lower(),
                 ),
             },
         )
 
-    def _balance(self, q):
+    def _balance(self, requete: ParametresUrl) -> None:
+        """Balance d'une base, avec ses alertes par compte."""
         try:
-            source, du, au, etats = self._source_requete(q)
+            source, debut, fin, etats = self._source_requete(requete)
         except ValueError as exc:
             return self._erreur(400, str(exc))
-        t = time.monotonic()
+        depart = time.monotonic()
         try:
-            bal = source.balance(du, au, etats)
+            balance = source.balance(debut, fin, etats)
             rapport, par_compte = alertes_balance(
-                bal, source.balance_tiers(du, au, etats)
+                balance, source.balance_tiers(debut, fin, etats)
             )
         except Exception as exc:
             return self._erreur(500, "Balance impossible : %s" % exc)
         finally:
             source.fermer()
         constats = [
-            dict(
-                {k: v for k, v in c.items() if k != "elements"},
-                explication=_marceau.expliquer_alerte(c["code"], c["message"]),
-            )
-            for c in rapport.en_dict()["constats"]
+            _constat_explique(constat)
+            for constat in rapport.en_dict()["constats"]
         ]
         self.app.journal.dire(
             "Balance de %s consultée (%s comptes, %s)"
             % (
-                self.app.bases.nom(q["base"]),
-                nombre_texte(len(bal)),
-                duree_texte(time.monotonic() - t),
+                self.app.bases.nom(requete["base"]),
+                nombre_texte(len(balance)),
+                duree_texte(time.monotonic() - depart),
             ),
             "detail",
         )
@@ -1623,23 +2096,25 @@ class Gestionnaire(BaseHTTPRequestHandler):
             200,
             {
                 "comptes": [
-                    dict(c, alertes=par_compte.get(c["code"], [])) for c in bal
+                    dict(compte, alertes=par_compte.get(compte["code"], []))
+                    for compte in balance
                 ],
                 "infos": rapport.infos,
                 "constats": constats,
             },
         )
 
-    def _grand_livre(self, code, q):
+    def _grand_livre(self, code: str, requete: ParametresUrl) -> None:
+        """Grand livre d'un compte, par pages de LIMITE_GRAND_LIVRE lignes."""
         try:
-            source, du, au, etats = self._source_requete(q)
-            offset = max(0, int(q.get("offset") or 0))
+            source, debut, fin, etats = self._source_requete(requete)
+            decalage = max(0, int(requete.get("offset") or 0))
         except ValueError as exc:
             return self._erreur(400, str(exc))
         try:
             page, totaux = grand_livre(
-                source.lignes(du, au, etats, comptes=[code]),
-                offset,
+                source.lignes(debut, fin, etats, comptes=[code]),
+                decalage,
                 LIMITE_GRAND_LIVRE,
             )
         except Exception as exc:
@@ -1652,14 +2127,15 @@ class Gestionnaire(BaseHTTPRequestHandler):
                 "compte": code,
                 "lignes": page,
                 "totaux": totaux,
-                "offset": offset,
+                "offset": decalage,
                 "limite": LIMITE_GRAND_LIVRE,
             },
         )
 
-    def _ecriture(self, ident, q):
+    def _ecriture(self, ident: int, requete: ParametresUrl) -> None:
+        """Lignes d'une écriture comptable."""
         try:
-            source, _, _, _ = self._source_requete(q)
+            source, _, _, _ = self._source_requete(requete)
         except ValueError as exc:
             return self._erreur(400, str(exc))
         try:
@@ -1672,51 +2148,62 @@ class Gestionnaire(BaseHTTPRequestHandler):
             return self._erreur(404, "Écriture introuvable.")
         return self._json(200, {"lignes": lignes, "etats": list(ETATS)})
 
-    def _zip(self, ident):
-        t = self.app.taches.obtenir(ident)
-        if not t or not t["fichiers"]:
+    def _zip(self, ident: str) -> None:
+        """Tous les fichiers d'une tâche dans une archive zip."""
+        tache = self.app.taches.obtenir(ident)
+        if not tache or not tache["fichiers"]:
             return self._erreur(404, "Aucun fichier.")
-        buf = io.BytesIO()
-        with zipfile.ZipFile(buf, "w", zipfile.ZIP_DEFLATED) as z:
-            for f in t["fichiers"]:
-                chemin = self.app.taches.fichier(ident, f["n"])
+        tampon = io.BytesIO()
+        with zipfile.ZipFile(tampon, "w", zipfile.ZIP_DEFLATED) as archive:
+            for produit in tache["fichiers"]:
+                chemin = self.app.taches.fichier(ident, produit["n"])
                 if chemin:
-                    z.write(chemin, f["nom"])
+                    archive.write(chemin, produit["nom"])
         self._envoyer(
             200,
-            buf.getvalue(),
+            tampon.getvalue(),
             "application/zip",
             {
-                "Content-Disposition": 'attachment; filename="concorde_%s.zip"'
-                % ident
+                "Content-Disposition": _disposition_piece_jointe(
+                    "concorde_%s.zip" % ident
+                )
             },
         )
 
-    def _constat_csv(self, ident, code):
-        r = self.app.taches.rapport(ident)
-        if not r:
+    def _constat_csv(self, ident: str, code: str) -> None:
+        """Éléments complets d'un constat d'analyse, en CSV."""
+        chemin_rapport = self.app.taches.rapport(ident)
+        if not chemin_rapport:
             return self._erreur(404, "Rapport indisponible.")
-        with open(r, encoding="utf-8") as f:
-            rapport = json.load(f)
-        c = next((c for c in rapport["constats"] if c["code"] == code), None)
-        if not c:
+        rapport = _lire_json(chemin_rapport)
+        constat = next(
+            (
+                candidat
+                for candidat in rapport["constats"]
+                if candidat["code"] == code
+            ),
+            None,
+        )
+        if not constat:
             return self._erreur(404, "Constat inconnu.")
-        buf = io.StringIO()
-        w = csv.writer(buf, delimiter=";", lineterminator="\r\n")
-        w.writerow([c["message"]])
-        for e in c["elements"]:
-            w.writerow([e])
+        tampon = io.StringIO()
+        ecrivain = csv.writer(tampon, delimiter=";", lineterminator="\r\n")
+        ecrivain.writerow([constat["message"]])
+        for element in constat["elements"]:
+            ecrivain.writerow([element])
         self._envoyer(
             200,
-            ("﻿" + buf.getvalue()).encode("utf-8"),
+            ("﻿" + tampon.getvalue()).encode("utf-8"),
             "text/csv; charset=utf-8",
             {
-                "Content-Disposition": 'attachment; filename="%s_%s.csv"'
-                % (code.lower(), ident)
+                "Content-Disposition": _disposition_piece_jointe(
+                    "%s_%s.csv" % (code.lower(), ident)
+                )
             },
         )
 
-    def _statique(self, chemin):
+    def _statique(self, chemin: str) -> None:
+        """Fichier de interface/static (jamais en dehors de ce dossier)."""
         if chemin in ("/", ""):
             chemin = "/index.html"
         nom = os.path.normpath(chemin.lstrip("/"))
@@ -1725,36 +2212,52 @@ class Gestionnaire(BaseHTTPRequestHandler):
             os.path.realpath(STATIQUE) + os.sep
         ) or not os.path.isfile(complet):
             return self._erreur(404, "Introuvable.")
-        with open(complet, "rb") as f:
-            corps = f.read()
+        with open(complet, "rb") as fichier:
+            corps = fichier.read()
         type_ = mimetypes.guess_type(complet)[0] or "application/octet-stream"
         if type_.startswith("text/") or type_ in ("application/javascript",):
             type_ += "; charset=utf-8"
         self._envoyer(200, corps, type_)
 
 
-def creer_serveur(app, hote="127.0.0.1", port=18090):
-    gestionnaire = type("GestionnaireConcorde", (Gestionnaire,), {"app": app})
-    serveur = ThreadingHTTPServer((hote, port), gestionnaire)
+def creer_serveur(
+    app: Application, hote: str = "127.0.0.1", port: int = 18090
+) -> ThreadingHTTPServer:
+    """Serveur HTTP multi-fils servant l'application.
+
+    Rôle : relier l'application à un gestionnaire de requêtes.
+    Paramètres : app, l'application ; hote et port d'écoute.
+    Retour : le serveur, prêt pour serve_forever().
+    Erreurs : OSError si l'adresse est déjà prise.
+    Usages : main, tests/test_interface.py.
+    """
+
+    class GestionnaireConcorde(Gestionnaire):
+        """Gestionnaire lié à cette application."""
+
+    GestionnaireConcorde.app = app
+    serveur = ThreadingHTTPServer((hote, port), GestionnaireConcorde)
     serveur.daemon_threads = True
     return serveur
 
 
-def _env_postgres():
-    """PG* (libpq) à défaut repris de POSTGRES_USER / POSTGRES_PASSWORD (deploy/.env)."""
-    for pg, docker in (
+def _env_postgres() -> None:
+    """PG* (libpq) à défaut repris de POSTGRES_USER / POSTGRES_PASSWORD."""
+    for variable_pg, variable_docker in (
         ("PGUSER", "POSTGRES_USER"),
         ("PGPASSWORD", "POSTGRES_PASSWORD"),
     ):
-        if not os.environ.get(pg) and os.environ.get(docker):
-            os.environ[pg] = os.environ[docker]
+        if not os.environ.get(variable_pg) and os.environ.get(variable_docker):
+            os.environ[variable_pg] = os.environ[variable_docker]
 
 
-def main():
+def main() -> int:
+    """Démarre l'interface (configurée par l'environnement) ; code retour."""
     empreinte = os.environ.get("CONCORDE_UI_MDP", "")
     if not empreinte.startswith("scrypt$"):
         print(
-            "ERREUR : CONCORDE_UI_MDP absent. Lancez scripts/concorde_interface_mdp.py.",
+            "ERREUR : CONCORDE_UI_MDP absent. "
+            "Lancez scripts/concorde_interface_mdp.py.",
             file=sys.stderr,
         )
         return 1
@@ -1768,7 +2271,8 @@ def main():
     serveur = creer_serveur(app, "127.0.0.1", port)
     app.surveillance.demarrer()
     print(
-        "CONCORDE interface : http://127.0.0.1:%d (données : %s, surveillance : %s)"
+        "CONCORDE interface : http://127.0.0.1:%d "
+        "(données : %s, surveillance : %s)"
         % (
             port,
             dossier,
@@ -1778,7 +2282,8 @@ def main():
     try:
         serveur.serve_forever()
     except KeyboardInterrupt:
-        pass
+        # arrêt demandé au clavier (Ctrl+C) : sortie normale, code 0
+        return 0
     return 0
 
 

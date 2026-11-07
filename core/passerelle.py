@@ -1,5 +1,5 @@
 # CONCORDE v1.0 — (c) MASITH / Stéphane Moreau. Tous droits réservés.
-"""Actions de la passerelle Odoo 17, communes à la ligne de commande et à l'interface.
+"""Actions de la passerelle Odoo 17 (ligne de commande et interface).
 
   telecharger(source, ...)  -> liste de produits (fichiers + résumé + alertes)
   analyser_source(source, ...) -> rapport d'analyse (dict)
@@ -9,11 +9,15 @@ une source (core/odoo_source.py) et un dossier de sortie.
 """
 
 import os
+from collections.abc import Callable, Iterable, Iterator, Sequence
 from datetime import date
+from typing import Any
 
-from .analyser import analyser
+from .analyser import Constat, analyser
 from .comptes import alertes_balance
-from .journal import nombre_texte, ou_muet
+from .guardian import Guardian
+from .journal import Journal, nombre_texte, ou_muet
+from .odoo_source import Enregistrement, SourceOdoo
 from .telecharger import (
     ErreurFec,
     generer_csv,
@@ -28,43 +32,63 @@ OBJETS = ("ecritures", "comptes", "journaux", "tiers", "factures")
 
 
 class Lecteur:
-    """Relit les lignes à la demande : SQL = nouvelle requête en flux ;
-    XML-RPC = lecture unique mise en cache (l'API est lente)."""
+    """Relit les lignes à la demande.
 
-    def __init__(self, source, debut, fin, etats):
+    SQL : nouvelle requête en flux ; XML-RPC : lecture unique mise en cache
+    (l'API est lente).
+    """
+
+    def __init__(
+        self,
+        source: SourceOdoo,
+        debut: date | None,
+        fin: date | None,
+        etats: Sequence[str],
+    ) -> None:
+        """Mémorise la source et la période à relire."""
         self.source, self.debut, self.fin, self.etats = (
             source,
             debut,
             fin,
             etats,
         )
-        self._cache = None
+        self._cache: list[Enregistrement] | None = None
 
-    def lignes(self):
+    def lignes(self) -> Iterator[Enregistrement]:
+        """Rend un nouvel itérateur sur les lignes de la période."""
         if self.source.nature == "sql":
-            return self.source.lignes(self.debut, self.fin, self.etats)
+            return iter(self.source.lignes(self.debut, self.fin, self.etats))
         if self._cache is None:
-            self._cache = self.source.lignes(self.debut, self.fin, self.etats)
+            self._cache = list(
+                self.source.lignes(self.debut, self.fin, self.etats)
+            )
         return iter(self._cache)
 
 
 def telecharger(
-    source,
-    dossier,
-    formats=("xlsx",),
-    objets=OBJETS,
-    du=None,
-    au=None,
-    brouillons=False,
-    separateur="|",
-    encodage="iso-8859-15",
-    guardian=None,
-    journal=None,
-):
+    source: SourceOdoo,
+    dossier: str,
+    formats: Sequence[str] = ("xlsx",),
+    objets: Iterable[str] = OBJETS,
+    du: date | None = None,
+    au: date | None = None,
+    brouillons: bool = False,
+    separateur: str = "|",
+    encodage: str = "iso-8859-15",
+    guardian: Guardian | None = None,
+    journal: Journal | None = None,
+) -> list[dict[str, Any]]:
     """Produit les fichiers demandés dans `dossier`.
 
-    Retourne une liste de dicts : {format, fichiers: [chemins], resume, alertes: [..]}.
-    Lève ErreurFec si le FEC est refusé (aucun fichier FEC n'est alors produit).
+    Rôle : action « télécharger » de la ligne de commande et de l'interface.
+    Paramètres : source Odoo ; dossier de sortie ; formats (FORMATS) ;
+    objets (OBJETS) ; période du / au ; brouillons ; separateur et
+    encodage du FEC ; guardian (traçage) ; journal d'activité.
+    Retour : liste de produits {format, fichiers: [chemins], resume,
+    alertes: [..]} (dicts JSON).
+    Erreurs : ValueError (format ou objet inconnu) ; ErreurFec si le FEC
+    est refusé (aucun fichier FEC n'est alors produit).
+    Usages : scripts/concorde_odoo.py, interface/serveur.py.
     """
     inconnus = set(formats) - set(FORMATS) | set(objets) - set(OBJETS)
     if inconnus:
@@ -91,21 +115,23 @@ def telecharger(
         % (", ".join(f.upper() for f in formats), ", ".join(sorted(objets))),
         "detail",
     )
-    objets = set(objets)
+    objets_demandes = set(objets)
     os.makedirs(dossier, exist_ok=True)
-    produits = []
-    charges = {}
+    produits: list[dict[str, Any]] = []
+    charges: dict[str, list[Enregistrement]] = {}
+    lecteurs: dict[str, Callable[[], list[Enregistrement]]] = {
+        "comptes": source.comptes,
+        "journaux": source.journaux,
+        "tiers": source.tiers,
+        "factures": lambda: source.factures(du, au),
+    }
 
-    def charger(nom):
-        if nom not in objets:
+    def charger(nom: str) -> list[Enregistrement] | None:
+        """Lit (une seule fois) l'objet `nom` s'il est demandé."""
+        if nom not in objets_demandes:
             return None
         if nom not in charges:
-            charges[nom] = {
-                "comptes": source.comptes,
-                "journaux": source.journaux,
-                "tiers": source.tiers,
-                "factures": lambda: source.factures(du, au),
-            }[nom]()
+            charges[nom] = lecteurs[nom]()
             j.dire(
                 "%s : %s lus"
                 % (nom.capitalize(), nombre_texte(len(charges[nom]))),
@@ -113,7 +139,8 @@ def telecharger(
             )
         return charges[nom]
 
-    def tracer(etape, detail):
+    def tracer(etape: str, detail: str) -> None:
+        """Trace l'étape dans Guardian s'il est fourni."""
         if guardian:
             guardian.tracer("telecharger", etape, detail)
 
@@ -140,7 +167,7 @@ def telecharger(
                 )
             )
         tracer("fec", "%s lignes=%s" % (chemin, r["lignes"]))
-        alertes = []
+        alertes: list[str] = []
         if r["caracteres_remplaces"]:
             j.dire(
                 "%d caractère(s) impossibles en %s remplacés par « ? »"
@@ -148,8 +175,8 @@ def telecharger(
                 "alerte",
             )
             alertes.append(
-                "%d caractère(s) non représentable(s) en %s remplacé(s) par « ? »"
-                % (r["caracteres_remplaces"], r["encodage"])
+                "%d caractère(s) non représentable(s) en %s remplacé(s) "
+                "par « ? »" % (r["caracteres_remplaces"], r["encodage"])
             )
         if not societe["siren"]:
             j.dire(
@@ -180,7 +207,11 @@ def telecharger(
         with j.etape("Excel : une feuille par type de données") as e:
             n = generer_xlsx(
                 chemin,
-                lignes=lecteur.lignes() if "ecritures" in objets else None,
+                lignes=(
+                    lecteur.lignes()
+                    if "ecritures" in objets_demandes
+                    else None
+                ),
                 comptes=charger("comptes"),
                 journaux=charger("journaux"),
                 tiers=charger("tiers"),
@@ -204,7 +235,11 @@ def telecharger(
         with j.etape("CSV d'import Odoo") as e:
             n = generer_csv(
                 sous,
-                lignes=lecteur.lignes() if "ecritures" in objets else None,
+                lignes=(
+                    lecteur.lignes()
+                    if "ecritures" in objets_demandes
+                    else None
+                ),
                 comptes=charger("comptes"),
                 journaux=charger("journaux"),
                 tiers=charger("tiers"),
@@ -226,11 +261,23 @@ def telecharger(
 
 
 def analyser_source(
-    source, du=None, au=None, validees=False, guardian=None, journal=None
-):
+    source: SourceOdoo,
+    du: date | None = None,
+    au: date | None = None,
+    validees: bool = False,
+    guardian: Guardian | None = None,
+    journal: Journal | None = None,
+) -> dict[str, Any]:
     """Analyse complète d'une base (écritures, tiers, balance).
 
-    Retourne le rapport (dict, listes complètes). Le journal raconte chaque étape.
+    Rôle : action « analyser » ; le journal raconte chaque étape.
+    Paramètres : source Odoo ; période du / au ; validees (écritures
+    validées seules, sinon brouillons compris) ; guardian (scellement) ;
+    journal d'activité.
+    Retour : le rapport (`Rapport.en_dict`, listes complètes).
+    Erreurs : celles de la source (ErreurSource, ErreurMontant…).
+    Usages : comparaison.comparer_bases, scripts/concorde_odoo.py,
+    interface/serveur.py.
     """
     j = ou_muet(journal)
     etats = ("posted",) if validees else ("posted", "draft")
@@ -280,9 +327,8 @@ def analyser_source(
             % nombre_texte(bal.infos["comptes_mouvementes"])
         )
     for c in bal.constats:
-        c["origine"] = (
-            "balance"  # même alerte que la surveillance : pas de doublon
-        )
+        # Même alerte que la surveillance : pas de doublon.
+        c["origine"] = "balance"
     rapport.constats.extend(bal.constats)
     rapport.info("comptes_en_alerte", alertes_comptes)
     d = rapport.en_dict()
@@ -305,7 +351,8 @@ def analyser_source(
     return d
 
 
-def _raconter_constats(j, constats):
+def _raconter_constats(j: Journal, constats: Iterable[Constat]) -> None:
+    """Annonce chaque constat au journal, au niveau correspondant."""
     for c in constats:
         niveau = {"BLOQUANT": "erreur", "ALERTE": "alerte"}.get(
             c["niveau"], "detail"

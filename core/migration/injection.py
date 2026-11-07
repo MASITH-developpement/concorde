@@ -1,19 +1,24 @@
 # CONCORDE v1.0 — (c) MASITH / Stéphane Moreau. Tous droits réservés.
-"""Porte 6 — envoi du lot dans la BASE DE TEST du serveur, puis relecture (ADR-0004).
+"""Porte 6 — envoi du lot dans la BASE DE TEST du serveur, puis relecture.
 
-Cible verrouillée : uniquement la base de test configurée (CONCORDE_TEST_URL / _BASE /
-_USER / _MDP, adresse locale). Les portes 7 et 8 (base client) viendront ensuite.
+ADR-0004. Cible verrouillée : uniquement la base de test configurée
+(CONCORDE_TEST_URL / _BASE / _USER / _MDP, adresse locale). Les portes 7 et
+8 (base client) viendront ensuite.
 
 Déroulé :
-  1. connexion à la base de test (API XML-RPC d'Odoo — jamais de SQL pour écrire) ;
-  2. préparation : comptes, journaux et tiers manquants créés (codes et libellés LUS
-     dans le FEC ; type de compte par les règles du PCG ci-dessous, jamais deviné) ;
+  1. connexion à la base de test (API XML-RPC d'Odoo — jamais de SQL pour
+     écrire) ;
+  2. préparation : comptes, journaux et tiers manquants créés (codes et
+     libellés LUS dans le FEC ; type de compte par les règles du PCG
+     ci-dessous, jamais deviné) ;
   3. écritures créées EN BROUILLON par paquets, référence unique
-     « CONCORDE/<lot>/<journal>/<n°> » : une écriture déjà présente n'est jamais renvoyée ;
+     « CONCORDE/<lot>/<journal>/<n°> » : une écriture déjà présente n'est
+     jamais renvoyée ;
   4. validation (action_post) ;
   5. lettrage refait par l'API (reconcile), lettre par lettre ;
   6. relecture SQL de la base de test et comparaison au lot, au centime :
-     lignes, écritures, totaux, solde par compte, lignes par tiers, lettres. 0 écart exigé.
+     lignes, écritures, totaux, solde par compte, lignes par tiers, lettres.
+     0 écart exigé.
 
 Toute erreur d'Odoo est gardée avec l'écriture en cause (jamais muet).
 """
@@ -21,23 +26,41 @@ Toute erreur d'Odoo est gardée avec l'écriture en cause (jamais muet).
 import os
 import threading
 import time
-import xmlrpc.client
 from collections import OrderedDict, defaultdict
+from collections.abc import Callable
 from concurrent.futures import ThreadPoolExecutor
 from decimal import Decimal
+from types import TracebackType
+from typing import Any, Protocol, TypedDict, TypeVar
 
 from ..analyser import Rapport
-from ..journal import nombre_texte, ou_muet
+from ..journal import Journal, nombre_texte, ou_muet
 from ..xlsx_ecrire import euros_texte
-from .lot import cle_ecriture
+from ..xml_sur import FauteXmlRpc as FauteXmlRpc
+from ..xml_sur import ProxyXmlRpc
+from .lot import (
+    CleEcriture,
+    CleTotaux,
+    LigneLot,
+    Lot,
+    TotauxLot,
+    annoncer_constats,
+    cle_ecriture,
+    cle_texte,
+    lignes_par_tiers,
+)
+
+# Erreur renvoyée par Odoo via XML-RPC ; nom public pour les doublures des
+# tests.
 
 TAILLE_PAQUET = 100
 
-# Vitesse (mesurée le 06/11/2026) : comme l'import natif d'Odoo, on coupe le suivi « chatter »
-# pendant l'envoi (pas de message « écriture créée / validée » par écriture) : -15 %.
-# Parallélisme : DÉSACTIVÉ par défaut. Mesuré : plus lent et source d'erreurs de validation
-# (Odoo sérialise la numérotation et le recalcul des soldes). Réglable pour essai :
-# CONCORDE_INJECTION_PARALLELES.
+# Vitesse (mesurée le 06/11/2026) : comme l'import natif d'Odoo, on coupe le
+# suivi « chatter » pendant l'envoi (pas de message « écriture créée /
+# validée » par écriture) : -15 %.
+# Parallélisme : DÉSACTIVÉ par défaut. Mesuré : plus lent et source
+# d'erreurs de validation (Odoo sérialise la numérotation et le recalcul des
+# soldes). Réglable pour essai : CONCORDE_INJECTION_PARALLELES.
 CONTEXTE_IMPORT = {
     "tracking_disable": True,
     "mail_create_nolog": True,
@@ -45,8 +68,12 @@ CONTEXTE_IMPORT = {
     "mail_notrack": True,
 }
 
+ElementTraite = TypeVar("ElementTraite")
+ResultatTraitement = TypeVar("ResultatTraitement")
 
-def _paralleles():
+
+def _paralleles() -> int:
+    """Requêtes simultanées (CONCORDE_INJECTION_PARALLELES, 1 par défaut)."""
     try:
         return max(
             1, int(os.environ.get("CONCORDE_INJECTION_PARALLELES", "1"))
@@ -67,7 +94,130 @@ METHODES_AUTORISEES = (
 
 
 class ErreurInjection(RuntimeError):
-    pass
+    """Envoi impossible ou interdit vers la base de test."""
+
+
+class ErreurOdoo(TypedDict):
+    """Erreur d'Odoo gardée avec l'écriture (ou la lettre) en cause."""
+
+    ecriture: str
+    etape: str
+    erreur: str
+
+
+class Preparation(TypedDict):
+    """Comptes, journaux et tiers créés par la préparation."""
+
+    comptes_crees: list[str | None]
+    journaux_crees: list[str]
+    tiers_crees: int
+
+
+class ResultatLettrageCommun(TypedDict):
+    """Partie toujours présente du bilan du lettrage."""
+
+    lettres: int
+    faites: int
+    ignorees: int | dict[str, int]
+
+
+class ResultatLettrage(ResultatLettrageCommun, total=False):
+    """Bilan du lettrage : lettres demandées, faites, écartées (détail)."""
+
+    ignorees_detail: dict[str, list[str]]
+
+
+class ResultatEnvoi(TypedDict):
+    """Résultat de la porte 6 : lot, base, préparation, erreurs, durée."""
+
+    lot: str
+    base: str
+    preparation: Preparation
+    deja_presentes: int
+    creees: int
+    erreurs: list[ErreurOdoo]
+    lettrage: ResultatLettrage
+    duree_s: float
+
+
+class ValeursLigneOdoo(TypedDict):
+    """Valeurs d'une ligne account.move.line à créer."""
+
+    account_id: int
+    partner_id: int | bool
+    name: str
+    debit: float
+    credit: float
+
+
+class ValeursEcritureOdoo(TypedDict):
+    """Valeurs d'une écriture account.move à créer (lignes comprises)."""
+
+    move_type: str
+    journal_id: int
+    date: str
+    ref: str
+    line_ids: list[tuple[int, int, ValeursLigneOdoo]]
+
+
+class ProxyCommun(Protocol):
+    """Service XML-RPC « common » d'Odoo (version, authentification)."""
+
+    def version(self) -> Any:
+        """Version du serveur (réponse XML-RPC : dict)."""
+
+    def authenticate(
+        self,
+        base: str,
+        utilisateur: str,
+        mot_de_passe: str,
+        options: dict[str, Any],
+    ) -> Any:
+        """Identifiant de l'utilisateur, ou False (réponse XML-RPC)."""
+
+
+class ProxyObjet(Protocol):
+    """Service XML-RPC « object » d'Odoo (appel des modèles)."""
+
+    def execute_kw(
+        self,
+        base: str,
+        uid: int,
+        mot_de_passe: str,
+        modele: str,
+        methode: str,
+        args: list[Any],
+        kwargs: dict[str, Any],
+    ) -> Any:
+        """Appelle `methode` du modèle (réponse XML-RPC dynamique)."""
+
+
+class CurseurLecture(Protocol):
+    """Curseur SQL en lecture seule, utilisable avec `with`."""
+
+    def __enter__(self) -> object:
+        """Ouvre le bloc `with`."""
+
+    def __exit__(
+        self,
+        type_exception: type[BaseException] | None,
+        exception: BaseException | None,
+        trace: TracebackType | None,
+    ) -> bool | None:
+        """Ferme le bloc `with`."""
+
+    def execute(self, requete: str, parametres: tuple[str, ...]) -> object:
+        """Exécute la requête paramétrée."""
+
+    def fetchall(self) -> list[tuple[Any, ...]]:
+        """Rangs lus (valeurs SQL de types variés)."""
+
+
+class ConnexionLecture(Protocol):
+    """Connexion SQL à la base de test (ouvre des curseurs)."""
+
+    def cursor(self) -> CurseurLecture:
+        """Ouvre un curseur."""
 
 
 # ---------------------------------------------------------------------------
@@ -75,10 +225,11 @@ class ErreurInjection(RuntimeError):
 # ---------------------------------------------------------------------------
 
 
-def type_compte_pcg(code):
-    """Type account.account Odoo 17 d'après le PCG (règles explicites, documentées).
+def type_compte_pcg(code: str | None) -> str:
+    """Type account.account Odoo 17 d'après le PCG (règles documentées).
 
-    Jamais « equity_unaffected » : Odoo n'en admet qu'un (résultat de l'exercice).
+    Jamais « equity_unaffected » : Odoo n'en admet qu'un (résultat de
+    l'exercice).
     """
     c = (code or "").strip()
     regles = (
@@ -106,8 +257,33 @@ def type_compte_pcg(code):
     return "asset_current"
 
 
-def euros(c):
-    return float(Decimal(int(c)) / 100)
+def euros(centimes: int) -> float:
+    """Centimes -> euros (float exact à 2 décimales) pour l'API Odoo."""
+    return float(Decimal(int(centimes)) / 100)
+
+
+def _centimes_base(montant: object) -> int:
+    """Montant SQL en euros (numeric) -> centimes, sans arrondi flottant."""
+    return int((Decimal(str(montant)) * 100).to_integral_value())
+
+
+def decouper(
+    elements: list[ElementTraite], taille: int
+) -> list[list[ElementTraite]]:
+    """Découpe une liste en paquets.
+
+    Rôle : envoyer ou lire par paquets (limite des requêtes XML-RPC).
+    Paramètres : elements — liste à découper ; taille — taille maximale
+    d'un paquet.
+    Retour : paquets successifs, dans l'ordre (dernier paquet plus court).
+    Erreurs : ValueError si `taille` vaut 0.
+    Usages : preparer, envoyer, lettrer.
+    """
+    paquets: list[list[ElementTraite]] = []
+    for debut in range(0, len(elements), taille):
+        fin = debut + taille
+        paquets.append(elements[debut:fin])
+    return paquets
 
 
 # ---------------------------------------------------------------------------
@@ -115,18 +291,28 @@ def euros(c):
 # ---------------------------------------------------------------------------
 
 
+def _serveur_xmlrpc(adresse: str) -> ProxyXmlRpc:
+    """Client XML-RPC vers `adresse` (None autorisé dans les échanges)."""
+    return ProxyXmlRpc(adresse, allow_none=True)
+
+
 class CibleTest:
-    """Client XML-RPC vers la base de test locale. Méthodes limitées (liste blanche)."""
+    """Client XML-RPC vers la base de test locale (méthodes limitées)."""
 
     def __init__(
         self,
-        url,
-        base,
-        utilisateur,
-        mot_de_passe,
-        proxy_commun=None,
-        proxy_objet=None,
-    ):
+        url: str,
+        base: str,
+        utilisateur: str,
+        mot_de_passe: str,
+        proxy_commun: ProxyCommun | None = None,
+        proxy_objet: ProxyObjet | None = None,
+    ) -> None:
+        """Vérifie la cible (base de test, adresse locale) et s'identifie.
+
+        Lève ErreurInjection si la base ou l'adresse ne sont pas autorisées
+        ou si l'identification est refusée.
+        """
         attendu = os.environ.get("CONCORDE_TEST_BASE")
         if not attendu or base != attendu:
             raise ErreurInjection(
@@ -142,29 +328,42 @@ class CibleTest:
             )
         self.base, self._mdp, self._url = base, mot_de_passe, url
         self._objet_fixe = proxy_objet  # tests : un faux Odoo partagé
-        self._local = (
-            threading.local()
-        )  # un client XML-RPC par fil (non partageable)
-        commun = proxy_commun or xmlrpc.client.ServerProxy(
-            url + "/xmlrpc/2/common", allow_none=True
+        # Un client XML-RPC par fil (non partageable).
+        self._local = threading.local()
+        commun: ProxyCommun = proxy_commun or _serveur_xmlrpc(
+            url + "/xmlrpc/2/common"
         )
-        self.version = commun.version().get("server_version", "?")
-        self.uid = commun.authenticate(base, utilisateur, mot_de_passe, {})
+        self.version: str = commun.version().get("server_version", "?")
+        self.uid: int = commun.authenticate(
+            base, utilisateur, mot_de_passe, {}
+        )
         if not self.uid:
             raise ErreurInjection(
                 "Authentification refusée sur la base de test %s." % base
             )
 
-    def _objet(self):
+    def _objet(self) -> ProxyObjet:
+        """Service « object » : le faux Odoo des tests, ou celui du fil."""
         if self._objet_fixe is not None:
             return self._objet_fixe
-        if not hasattr(self._local, "objet"):
-            self._local.objet = xmlrpc.client.ServerProxy(
-                self._url + "/xmlrpc/2/object", allow_none=True
-            )
-        return self._local.objet
+        objet_fil: ProxyObjet | None = getattr(self._local, "objet", None)
+        if objet_fil is None:
+            objet_fil = _serveur_xmlrpc(self._url + "/xmlrpc/2/object")
+            self._local.objet = objet_fil
+        return objet_fil
 
-    def appel(self, modele, methode, args, kwargs=None):
+    def appel(
+        self,
+        modele: str,
+        methode: str,
+        args: list[Any],
+        kwargs: dict[str, Any] | None = None,
+    ) -> Any:
+        """Appelle une méthode autorisée d'un modèle Odoo.
+
+        Retourne la réponse XML-RPC (type dynamique). Lève PermissionError
+        si la méthode n'est pas dans METHODES_AUTORISEES.
+        """
         if methode not in METHODES_AUTORISEES:
             raise PermissionError(
                 "Méthode %r interdite à la porte 6." % methode
@@ -176,8 +375,21 @@ class CibleTest:
         )
 
 
-def en_parallele(fonction, elements, paralleles=None):
-    """Applique `fonction` à chaque élément, `paralleles` requêtes à la fois. Ordre conservé."""
+def en_parallele(
+    fonction: Callable[[ElementTraite], ResultatTraitement],
+    elements: list[ElementTraite],
+    paralleles: int | None = None,
+) -> list[ResultatTraitement]:
+    """Applique `fonction` à chaque élément, `paralleles` à la fois.
+
+    Rôle : répartir des appels Odoo sur plusieurs fils, ordre conservé.
+    Paramètres : fonction — appliquée à chaque élément ; elements — liste ;
+    paralleles — requêtes simultanées (défaut : CONCORDE_INJECTION_
+    PARALLELES).
+    Retour : résultats, dans l'ordre des éléments.
+    Erreurs : celles de `fonction`, propagées.
+    Usages : envoyer (création, validation), lettrer.
+    """
     n = paralleles or _paralleles()
     if n <= 1 or len(elements) <= 1:
         return [fonction(e) for e in elements]
@@ -185,7 +397,8 @@ def en_parallele(fonction, elements, paralleles=None):
         return list(pool.map(fonction, elements))
 
 
-def cible_depuis_env():
+def cible_depuis_env() -> CibleTest:
+    """Cible de test décrite par les variables CONCORDE_TEST_*."""
     return CibleTest(
         os.environ.get("CONCORDE_TEST_URL", "http://127.0.0.1:8017"),
         os.environ.get("CONCORDE_TEST_BASE", ""),
@@ -199,29 +412,41 @@ def cible_depuis_env():
 # ---------------------------------------------------------------------------
 
 
-def lot_id(lot):
+def lot_id(lot: Lot) -> str:
+    """Identifiant court du lot : début de l'empreinte de la source."""
     return lot.source["empreinte"][:10]
 
 
-def _ref(lid, cle):
+def _ref(lid: str, cle: CleEcriture) -> str:
+    """Référence Odoo unique d'une écriture du lot."""
     return "CONCORDE/%s/%s/%s" % (lid, cle[0], cle[1])
 
 
-def _erreur_odoo(exc):
+def _erreur_odoo(exc: Exception) -> str:
+    """Dernière ligne utile du message d'erreur d'Odoo (300 caractères)."""
     texte = getattr(exc, "faultString", None) or str(exc)
-    lignes = [l for l in texte.strip().splitlines() if l.strip()]
+    lignes = [ligne for ligne in texte.strip().splitlines() if ligne.strip()]
     return lignes[-1][:300] if lignes else type(exc).__name__
 
 
-def preparer(cible, lot, j):
-    """Crée comptes, journaux et tiers manquants. Retourne les tables {code: id}."""
+def preparer(cible: CibleTest, lot: Lot, j: Journal) -> tuple[
+    dict[str | None, tuple[int, bool]],
+    dict[str, int],
+    dict[str, int],
+    Preparation,
+]:
+    """Crée comptes, journaux et tiers manquants.
+
+    Retourne ({code: (id, lettrable)}, {journal: id}, {tiers: id}, bilan).
+    Lève ErreurInjection si un code journal dépasse 5 caractères.
+    """
     with j.etape(
         "Préparation : comptes, journaux et tiers de la base de test"
     ) as e:
-        codes = OrderedDict()
-        for l in lot.lignes:
-            codes.setdefault(l["compte_cible"], l["compte_lib"])
-        comptes = {
+        codes: OrderedDict[str | None, str] = OrderedDict()
+        for ligne in lot.lignes:
+            codes.setdefault(ligne["compte_cible"], ligne["compte_lib"])
+        comptes: dict[str | None, tuple[int, bool]] = {
             c["code"]: (c["id"], c["reconcile"])
             for c in cible.appel(
                 "account.account",
@@ -253,10 +478,12 @@ def preparer(cible, lot, j):
                 ident,
                 t in ("asset_receivable", "liability_payable"),
             )
-        journaux_lot = OrderedDict()
-        for l in lot.lignes:
-            journaux_lot.setdefault(l["journal_code"], l["journal_lib"])
-        journaux = {
+        journaux_lot: OrderedDict[str, str] = OrderedDict()
+        for ligne in lot.lignes:
+            journaux_lot.setdefault(
+                ligne["journal_code"], ligne["journal_lib"]
+            )
+        journaux: dict[str, int] = {
             jr["code"]: jr["id"]
             for jr in cible.appel(
                 "account.journal",
@@ -265,7 +492,7 @@ def preparer(cible, lot, j):
                 {"fields": ["code"], "context": {"active_test": False}},
             )
         }
-        jr_crees = []
+        jr_crees: list[str] = []
         for code, lib in journaux_lot.items():
             if code not in journaux:
                 if len(code) > 5:
@@ -285,23 +512,22 @@ def preparer(cible, lot, j):
                     ],
                 )
                 jr_crees.append(code)
-        tiers_lot = OrderedDict()
-        for l in lot.lignes:
-            if l["tiers_ref"]:
-                tiers_lot.setdefault(l["tiers_ref"], l["tiers_nom"])
-        tiers = {}
+        tiers_lot: OrderedDict[str, str] = OrderedDict()
+        for ligne in lot.lignes:
+            if ligne["tiers_ref"]:
+                tiers_lot.setdefault(ligne["tiers_ref"], ligne["tiers_nom"])
+        tiers: dict[str, int] = {}
         refs = list(tiers_lot)
-        for i in range(0, len(refs), 500):
+        for paquet_refs in decouper(refs, 500):
             for p in cible.appel(
                 "res.partner",
                 "search_read",
-                [[["ref", "in", refs[i : i + 500]]]],
+                [[["ref", "in", paquet_refs]]],
                 {"fields": ["ref"], "context": {"active_test": False}},
             ):
                 tiers.setdefault(p["ref"], p["id"])
         t_crees = [r for r in refs if r not in tiers]
-        for i in range(0, len(t_crees), 200):
-            lot_t = t_crees[i : i + 200]
+        for lot_t in decouper(t_crees, 200):
             ids = cible.appel(
                 "res.partner",
                 "create",
@@ -342,8 +568,13 @@ def preparer(cible, lot, j):
     )
 
 
-def envoyer(cible, lot, j=None):
-    """Porte 6 complète. Retourne un dict de résultat (statut, erreurs, relecture...)."""
+def envoyer(
+    cible: CibleTest, lot: Lot, j: Journal | None = None
+) -> ResultatEnvoi:
+    """Porte 6 complète. Retourne le résultat (erreurs, lettrage, durée…).
+
+    Lève ErreurInjection si le lot contient des lignes en devise.
+    """
     j = ou_muet(j)
     debut = time.monotonic()
     lid = lot_id(lot)
@@ -353,7 +584,9 @@ def envoyer(cible, lot, j=None):
         "info",
     )
     devises = {
-        l["devise"] for l in lot.lignes if l["devise"] and l["devise"] != "EUR"
+        ligne["devise"]
+        for ligne in lot.lignes
+        if ligne["devise"] and ligne["devise"] != "EUR"
     }
     if devises:
         raise ErreurInjection(
@@ -364,26 +597,28 @@ def envoyer(cible, lot, j=None):
 
     ecritures = lot.ecritures()
     refs = {cle: _ref(lid, cle) for cle in ecritures}
-    deja = set()
-    toutes = list(refs.values())
-    for i in range(0, len(toutes), 1000):
+    deja: set[str] = set()
+    for paquet_refs in decouper(list(refs.values()), 1000):
         deja |= {
             m["ref"]
             for m in cible.appel(
                 "account.move",
                 "search_read",
-                [[["ref", "in", toutes[i : i + 1000]]]],
+                [[["ref", "in", paquet_refs]]],
                 {"fields": ["ref"]},
             )
         }
     if deja:
         j.dire(
-            "%s écriture(s) déjà présentes (envoi précédent) : elles ne sont pas renvoyées"
-            % nombre_texte(len(deja)),
+            "%s écriture(s) déjà présentes (envoi précédent) : elles ne "
+            "sont pas renvoyées" % nombre_texte(len(deja)),
             "info",
         )
 
-    def payload(cle, lignes):
+    def valeurs_ecriture(
+        cle: CleEcriture, lignes: list[LigneLot]
+    ) -> ValeursEcritureOdoo:
+        """Valeurs Odoo de l'écriture `cle` (montants en euros)."""
         return {
             "move_type": "entry",
             "journal_id": journaux[cle[0]],
@@ -394,54 +629,62 @@ def envoyer(cible, lot, j=None):
                     0,
                     0,
                     {
-                        "account_id": comptes[l["compte_cible"]][0],
-                        "partner_id": tiers.get(l["tiers_ref"]) or False,
-                        "name": l["libelle"] or l["piece"] or "/",
-                        "debit": euros(l["debit"]),
-                        "credit": euros(l["credit"]),
+                        "account_id": comptes[ligne["compte_cible"]][0],
+                        "partner_id": tiers.get(ligne["tiers_ref"]) or False,
+                        "name": ligne["libelle"] or ligne["piece"] or "/",
+                        "debit": euros(ligne["debit"]),
+                        "credit": euros(ligne["credit"]),
                     },
                 )
-                for l in lignes
+                for ligne in lignes
             ],
         }
 
     a_envoyer = [
         (cle, ls) for cle, ls in ecritures.items() if refs[cle] not in deja
     ]
-    crees, erreurs = {}, []
+    crees: dict[CleEcriture, int] = {}
+    erreurs: list[ErreurOdoo] = []
     n = _paralleles()
-    paquets = [
-        a_envoyer[i : i + TAILLE_PAQUET]
-        for i in range(0, len(a_envoyer), TAILLE_PAQUET)
-    ]
+    paquets = decouper(a_envoyer, TAILLE_PAQUET)
     avance = {"fait": 0}
     verrou = threading.Lock()
 
-    def creer(paquet):
-        """Un paquet -> ([(clé, id)], [erreurs]). Écriture refusée = isolée, une par une."""
+    def creer(
+        paquet: list[tuple[CleEcriture, list[LigneLot]]],
+    ) -> tuple[list[tuple[CleEcriture, int]], list[ErreurOdoo]]:
+        """Un paquet -> ([(clé, id)], [erreurs]).
+
+        Écriture refusée = isolée, renvoyée une par une.
+        """
+        errs: list[ErreurOdoo] = []
         try:
             ids = cible.appel(
                 "account.move",
                 "create",
-                [[payload(c, ls) for c, ls in paquet]],
+                [[valeurs_ecriture(c, ls) for c, ls in paquet]],
             )
-            res, errs = list(zip([c for c, _ in paquet], ids)), []
-        except xmlrpc.client.Fault:
-            res, errs = [], []
+            res: list[tuple[CleEcriture, int]] = list(
+                zip([c for c, _ in paquet], ids)
+            )
+        except FauteXmlRpc:
+            res = []
             for c, ls in paquet:
                 try:
                     res.append(
                         (
                             c,
                             cible.appel(
-                                "account.move", "create", [payload(c, ls)]
+                                "account.move",
+                                "create",
+                                [valeurs_ecriture(c, ls)],
                             ),
                         )
                     )
-                except xmlrpc.client.Fault as exc:
+                except FauteXmlRpc as exc:
                     errs.append(
                         {
-                            "ecriture": "%s/%s" % c,
+                            "ecriture": cle_texte(c),
                             "etape": "création",
                             "erreur": _erreur_odoo(exc),
                         }
@@ -463,8 +706,8 @@ def envoyer(cible, lot, j=None):
         return res, errs
 
     with j.etape(
-        "Envoi en brouillon : %s écritures, paquets de %d, %d requête(s) à la fois"
-        % (nombre_texte(len(a_envoyer)), TAILLE_PAQUET, n)
+        "Envoi en brouillon : %s écritures, paquets de %d, %d requête(s) "
+        "à la fois" % (nombre_texte(len(a_envoyer)), TAILLE_PAQUET, n)
     ) as e:
         for res, errs in en_parallele(creer, paquets, n):
             crees.update(res)
@@ -474,30 +717,35 @@ def envoyer(cible, lot, j=None):
             % (nombre_texte(len(crees)), nombre_texte(len(erreurs)))
         )
 
-    # Validation : en parallèle PAR JOURNAL (deux validations dans un même journal se
-    # disputeraient la numérotation des pièces).
-    par_journal = defaultdict(list)
+    # Validation : en parallèle PAR JOURNAL (deux validations dans un même
+    # journal se disputeraient la numérotation des pièces).
+    par_journal: defaultdict[str, list[tuple[CleEcriture, int]]] = defaultdict(
+        list
+    )
     for c, m in crees.items():
         par_journal[c[0]].append((c, m))
 
-    def valider(liste):
-        ok, errs = 0, []
-        for i in range(0, len(liste), 200):
-            paquet = liste[i : i + 200]
+    def valider(
+        liste: list[tuple[CleEcriture, int]],
+    ) -> tuple[int, list[ErreurOdoo]]:
+        """Valide les écritures d'un journal : (nombre validé, erreurs)."""
+        ok = 0
+        errs: list[ErreurOdoo] = []
+        for paquet in decouper(liste, 200):
             try:
                 cible.appel(
                     "account.move", "action_post", [[m for _, m in paquet]]
                 )
                 ok += len(paquet)
-            except xmlrpc.client.Fault:
+            except FauteXmlRpc:
                 for c, m in paquet:
                     try:
                         cible.appel("account.move", "action_post", [[m]])
                         ok += 1
-                    except xmlrpc.client.Fault as exc:
+                    except FauteXmlRpc as exc:
                         errs.append(
                             {
-                                "ecriture": "%s/%s" % c,
+                                "ecriture": cle_texte(c),
                                 "etape": "validation",
                                 "erreur": _erreur_odoo(exc),
                             }
@@ -541,31 +789,43 @@ def envoyer(cible, lot, j=None):
     }
 
 
-def lettrer(cible, lot, crees, comptes, j, erreurs):
-    """Refait le lettrage du FEC : une lettre = les lignes (compte, tiers, lettre) du lot."""
-    groupes = defaultdict(list)
-    for l in lot.lignes:
-        if l["lettrage"] and cle_ecriture(l) in crees:
-            groupes[(l["compte_cible"], l["tiers_ref"], l["lettrage"])].append(
-                l
-            )
+def lettrer(
+    cible: CibleTest,
+    lot: Lot,
+    crees: dict[CleEcriture, int],
+    comptes: dict[str | None, tuple[int, bool]],
+    j: Journal,
+    erreurs: list[ErreurOdoo],
+) -> ResultatLettrage:
+    """Refait le lettrage du FEC.
+
+    Une lettre = les lignes (compte, tiers, lettre) du lot. Les erreurs sont
+    ajoutées à `erreurs`.
+    """
+    groupes: defaultdict[tuple[str | None, str, str], list[LigneLot]] = (
+        defaultdict(list)
+    )
+    for ligne in lot.lignes:
+        if ligne["lettrage"] and cle_ecriture(ligne) in crees:
+            groupes[
+                (ligne["compte_cible"], ligne["tiers_ref"], ligne["lettrage"])
+            ].append(ligne)
     if not groupes:
         return {"lettres": 0, "faites": 0, "ignorees": 0}
     with j.etape(
         "Lettrage : %s lettre(s) à refaire" % nombre_texte(len(groupes))
     ) as e:
         # Lignes Odoo créées, dans l'ordre d'envoi de chaque écriture.
-        ids_moves = list(crees.values())
-        lignes_odoo = defaultdict(list)
-        for i in range(0, len(ids_moves), 500):
+        lignes_odoo: defaultdict[int, list[dict[str, Any]]] = defaultdict(list)
+        for paquet_ids in decouper(list(crees.values()), 500):
             for ml in cible.appel(
                 "account.move.line",
                 "search_read",
-                [[["move_id", "in", ids_moves[i : i + 500]]]],
+                [[["move_id", "in", paquet_ids]]],
                 {"fields": ["move_id", "debit", "credit"], "order": "id"},
             ):
                 lignes_odoo[ml["move_id"][0]].append(ml)
-        ident = {}
+        ident: dict[int, int] = {}
         for cle, lignes in lot.ecritures().items():
             mid = crees.get(cle)
             if mid is None:
@@ -573,17 +833,21 @@ def lettrer(cible, lot, crees, comptes, j, erreurs):
             odoo = lignes_odoo.get(mid, [])
             if len(odoo) != len(lignes):
                 continue
-            for l, ml in zip(lignes, odoo):
+            for ligne, ml in zip(lignes, odoo):
                 montants = (
                     round(ml["debit"] * 100),
                     round(ml["credit"] * 100),
                 )
-                if montants == (l["debit"], l["credit"]):
-                    ident[id(l)] = ml["id"]
-        tentees = {}
-        ignorees = {"ligne_seule": [], "compte_non_lettrable": []}
+                if montants == (ligne["debit"], ligne["credit"]):
+                    ident[id(ligne)] = ml["id"]
+        tentees: dict[str, list[int]] = {}
+        ignorees: dict[str, list[str]] = {
+            "ligne_seule": [],
+            "compte_non_lettrable": [],
+        }
         for (compte, tiers_ref, lettre), lignes in groupes.items():
-            ids = [ident.get(id(l)) for l in lignes]
+            ids_odoo = [ident.get(id(ligne)) for ligne in lignes]
+            ids_trouves = [i for i in ids_odoo if i is not None]
             nom = "lettre %s sur %s%s" % (
                 lettre,
                 compte,
@@ -595,24 +859,29 @@ def lettrer(cible, lot, crees, comptes, j, erreurs):
             if not comptes[compte][1]:
                 ignorees["compte_non_lettrable"].append(nom)
                 continue
-            if None in ids:
+            if len(ids_trouves) != len(ids_odoo):
                 erreurs.append(
                     {
                         "ecriture": nom,
                         "etape": "lettrage",
-                        "erreur": "lignes non retrouvées dans Odoo après l'envoi",
+                        "erreur": "lignes non retrouvées dans Odoo après "
+                        "l'envoi",
                     }
                 )
                 continue
-            tentees[nom] = ids
+            tentees[nom] = ids_trouves
 
-        def lettrer_un(element):
+        def lettrer_un(
+            element: tuple[str, list[int]],
+        ) -> tuple[str, str | None]:
+            """Lettre une lettre : (nom, erreur Odoo ou None)."""
             nom, ids = element
             try:
                 cible.appel("account.move.line", "reconcile", [ids])
-            except xmlrpc.client.Fault as exc:
-                # reconcile() ne renvoie rien : XML-RPC ne sait pas transmettre ce « rien »
-                # (allow_none). Le lettrage est fait ; on le VÉRIFIE ci-dessous de toute façon.
+            except FauteXmlRpc as exc:
+                # reconcile() ne renvoie rien : XML-RPC ne sait pas
+                # transmettre ce « rien » (allow_none). Le lettrage est fait ;
+                # on le VÉRIFIE ci-dessous de toute façon.
                 if "cannot marshal None" not in str(exc.faultString):
                     return nom, _erreur_odoo(exc)
             return nom, None
@@ -623,16 +892,17 @@ def lettrer(cible, lot, crees, comptes, j, erreurs):
                     {"ecriture": nom, "etape": "lettrage", "erreur": err}
                 )
                 del tentees[nom]
-        # Vérification dans la base : chaque lettre tentée a-t-elle bien un rapprochement ?
+        # Vérification dans la base : chaque lettre tentée a-t-elle bien un
+        # rapprochement ?
         tous = [i for ids in tentees.values() for i in ids]
-        lettrees = set()
-        for i in range(0, len(tous), 1000):
+        lettrees: set[int] = set()
+        for paquet_ids in decouper(tous, 1000):
             lettrees |= {
                 ml["id"]
                 for ml in cible.appel(
                     "account.move.line",
                     "read",
-                    [tous[i : i + 1000]],
+                    [paquet_ids],
                     {"fields": ["matching_number"]},
                 )
                 if ml["matching_number"]
@@ -650,8 +920,8 @@ def lettrer(cible, lot, crees, comptes, j, erreurs):
                     }
                 )
         e.conclure(
-            "%s faites et vérifiées ; écartées : %s ligne(s) seule(s) (contrepartie "
-            "hors du lot), %s sur compte non lettrable"
+            "%s faites et vérifiées ; écartées : %s ligne(s) seule(s) "
+            "(contrepartie hors du lot), %s sur compte non lettrable"
             % (
                 nombre_texte(faites),
                 nombre_texte(len(ignorees["ligne_seule"])),
@@ -671,55 +941,75 @@ def lettrer(cible, lot, crees, comptes, j, erreurs):
 # ---------------------------------------------------------------------------
 
 
-def relire(lot, connexion=None, base=None, j=None):
-    """Relit en SQL (lecture seule) les écritures du lot dans la base de test et compare."""
+def _lire_rangs(
+    connexion: ConnexionLecture, lid: str
+) -> list[tuple[Any, ...]]:
+    """Lignes du lot `lid` dans la base de test (une requête SQL).
+
+    Rang : (réf. écriture, état, compte, réf. tiers, débit, crédit, lettre).
+    """
+    curseur = connexion.cursor()
+    with curseur:
+        curseur.execute(
+            "SELECT am.ref, am.state, aa.code, rp.ref, aml.debit, "
+            "aml.credit, aml.matching_number FROM account_move_line aml "
+            "JOIN account_move am ON am.id = aml.move_id "
+            "JOIN account_account aa ON aa.id = aml.account_id "
+            "LEFT JOIN res_partner rp ON rp.id = aml.partner_id "
+            "WHERE am.ref LIKE %s",
+            ("CONCORDE/%s/%%" % lid,),
+        )
+        return curseur.fetchall()
+
+
+def relire(
+    lot: Lot,
+    connexion: ConnexionLecture | None = None,
+    base: str | None = None,
+    j: Journal | None = None,
+) -> Rapport:
+    """Relit en SQL (lecture seule) les écritures du lot et compare.
+
+    Sans `connexion`, ouvre (puis ferme) une connexion PostgreSQL en lecture
+    seule à `base` (défaut : CONCORDE_TEST_BASE).
+    """
     j = ou_muet(j)
     lid = lot_id(lot)
     if connexion is None:
         import psycopg2
 
-        connexion = psycopg2.connect(
-            dbname=base or os.environ.get("CONCORDE_TEST_BASE")
+        nom_base = base or os.environ.get("CONCORDE_TEST_BASE")
+        # Sans nom, libpq choisit la base par défaut (comme dbname=None).
+        connexion_base = (
+            psycopg2.connect(dbname=nom_base)
+            if nom_base
+            else psycopg2.connect()
         )
-        connexion.set_session(readonly=True, autocommit=True)
-        fermer = True
+        connexion_base.set_session(readonly=True, autocommit=True)
+        try:
+            rangs = _lire_rangs(connexion_base, lid)
+        finally:
+            connexion_base.close()
     else:
-        fermer = False
-    try:
-        with connexion.cursor() as cur:
-            cur.execute(
-                "SELECT am.ref, am.state, aa.code, rp.ref, aml.debit, aml.credit, "
-                "aml.matching_number FROM account_move_line aml "
-                "JOIN account_move am ON am.id = aml.move_id "
-                "JOIN account_account aa ON aa.id = aml.account_id "
-                "LEFT JOIN res_partner rp ON rp.id = aml.partner_id "
-                "WHERE am.ref LIKE %s",
-                ("CONCORDE/%s/%%" % lid,),
-            )
-            rangs = cur.fetchall()
-    finally:
-        if fermer:
-            connexion.close()
+        rangs = _lire_rangs(connexion, lid)
     r = Rapport()
 
-    def c(v):
-        return int((Decimal(str(v)) * 100).to_integral_value())
-
-    sortie = {
+    sortie: TotauxLot = {
         "lignes": len(rangs),
         "ecritures": len({x[0] for x in rangs}),
-        "debit": sum(c(x[4]) for x in rangs),
-        "credit": sum(c(x[5]) for x in rangs),
+        "debit": sum(_centimes_base(x[4]) for x in rangs),
+        "credit": sum(_centimes_base(x[5]) for x in rangs),
     }
     entree = lot.totaux()
     r.info("entree", entree)
     r.info("sortie", sortie)
-    for k, nom in (
+    libelles_totaux: tuple[tuple[CleTotaux, str], ...] = (
         ("ecritures", "écritures"),
         ("lignes", "lignes"),
         ("debit", "débit"),
         ("credit", "crédit"),
-    ):
+    )
+    for k, nom in libelles_totaux:
         if entree[k] != sortie[k]:
             r.constat(
                 "BLOQUANT",
@@ -734,9 +1024,9 @@ def relire(lot, connexion=None, base=None, j=None):
         sorted({x[0] for x in rangs if x[1] != "posted"}),
     )
     sa = lot.balance_par_compte(cible=True)
-    sb = defaultdict(int)
+    sb: defaultdict[str | None, int] = defaultdict(int)
     for x in rangs:
-        sb[x[2]] += c(x[4]) - c(x[5])
+        sb[x[2]] += _centimes_base(x[4]) - _centimes_base(x[5])
     r.constat(
         "BLOQUANT",
         "TEST_ECART_COMPTE",
@@ -748,14 +1038,12 @@ def relire(lot, connexion=None, base=None, j=None):
                 euros_texte(sa.get(k, 0), ","),
                 euros_texte(sb.get(k, 0), ","),
             )
-            for k in sorted(set(sa) | set(sb))
+            for k in sorted(set(sa) | set(sb), key=str)
             if sa.get(k, 0) != sb.get(k, 0)
         ],
     )
-    ta, tb = defaultdict(int), defaultdict(int)
-    for l in lot.lignes:
-        if l["tiers_ref"]:
-            ta[l["tiers_ref"]] += 1
+    ta = lignes_par_tiers(lot.lignes)
+    tb: defaultdict[str, int] = defaultdict(int)
     for x in rangs:
         if x[3]:
             tb[x[3]] += 1
@@ -764,18 +1052,17 @@ def relire(lot, connexion=None, base=None, j=None):
         "TEST_ECART_TIERS",
         "Lignes de tiers différentes",
         [
-            "%s : lot %d, base %d" % (k, ta[k], tb[k])
+            "%s : lot %d, base %d" % (k, ta.get(k, 0), tb.get(k, 0))
             for k in sorted(set(ta) | set(tb))
-            if ta[k] != tb[k]
+            if ta.get(k, 0) != tb.get(k, 0)
         ],
     )
     r.info("lignes_lettrees", sum(1 for x in rangs if x[6]))
-    for k in r.constats:
-        j.dire("%s : %s" % (k["message"], nombre_texte(k["nombre"])), "erreur")
+    annoncer_constats(r, j)
     if not r.constats:
         j.dire(
-            "Relecture conforme : %s écritures, %s lignes, D = C = %s €, soldes et tiers "
-            "identiques au centime"
+            "Relecture conforme : %s écritures, %s lignes, D = C = %s €, "
+            "soldes et tiers identiques au centime"
             % (
                 nombre_texte(sortie["ecritures"]),
                 nombre_texte(sortie["lignes"]),

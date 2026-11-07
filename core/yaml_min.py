@@ -7,8 +7,14 @@ Supporte le sous-ensemble YAML de CONCORDE :
 - scalaires : chaînes (guillemets optionnels), entiers, booléens
 """
 
+from typing import Union
 
-def _valeur(brut: str):
+ScalaireYaml = Union[str, int, bool]
+ValeurYaml = Union[ScalaireYaml, list["ValeurYaml"], dict[str, "ValeurYaml"]]
+
+
+def _valeur(brut: str) -> ScalaireYaml:
+    """Scalaire YAML : chaîne, entier ou booléen ('' pour ~ ou null)."""
     s = brut.strip()
     if not s or s == "~" or s.lower() == "null":
         return ""
@@ -26,23 +32,24 @@ def _valeur(brut: str):
 
 
 def _indente(ligne: str) -> int:
+    """Nombre d'espaces en tête de ligne."""
     return len(ligne) - len(ligne.lstrip(" "))
 
 
-def parse_yaml(texte: str):
+def parse_yaml(texte: str) -> ValeurYaml:
     """Parse une chaîne YAML en structure Python (dict/listes imbriquées)."""
     lignes = [
-        l
-        for l in texte.splitlines()
-        if l.strip() and not l.strip().startswith("#")
+        ligne
+        for ligne in texte.splitlines()
+        if ligne.strip() and not ligne.strip().startswith("#")
     ]
     if not lignes:
         return {}
 
-    def _bloc(i, ind):
-        """Construit le sous-arbre démarrant à la ligne i, indentation minimale ind."""
+    def _bloc(i: int, ind: int) -> tuple[ValeurYaml, int]:
+        """Sous-arbre démarrant à la ligne i, indentation minimale ind."""
         if lignes[i].lstrip().startswith("- "):
-            resultat = []
+            elements_liste: list[ValeurYaml] = []
             while (
                 i < len(lignes)
                 and _indente(lignes[i]) == ind
@@ -53,7 +60,7 @@ def parse_yaml(texte: str):
                     ("'", '"')
                 ):
                     # élément de liste-objet : "- cle: val"
-                    obj = {}
+                    obj: dict[str, ValeurYaml] = {}
                     cle, _, val = contenu.partition(":")
                     obj[cle.strip()] = _valeur(val) if val.strip() else ""
                     i += 1
@@ -67,17 +74,16 @@ def parse_yaml(texte: str):
                         c, _, v = lignes[i].strip().partition(":")
                         obj[c.strip()] = _valeur(v) if v.strip() else ""
                         i += 1
-                    resultat.append(obj)
+                    elements_liste.append(obj)
                 else:
-                    resultat.append(_valeur(contenu))
+                    elements_liste.append(_valeur(contenu))
                     i += 1
-            return resultat, i
-        resultat = {}
+            return elements_liste, i
+        resultat: dict[str, ValeurYaml] = {}
         while i < len(lignes) and _indente(lignes[i]) == ind:
             ligne = lignes[i].strip()
             if ligne.startswith("- "):
-                sous, i = _bloc(i, ind)
-                return sous, i
+                return _bloc(i, ind)
             cle, _, val = ligne.partition(":")
             cle = cle.strip().strip('"').strip("'")
             if val.strip():
@@ -86,15 +92,13 @@ def parse_yaml(texte: str):
             else:
                 i += 1
                 if i < len(lignes) and _indente(lignes[i]) > ind:
-                    sous, i = _bloc(i, _indente(lignes[i]))
-                    resultat[cle] = sous
+                    resultat[cle], i = _bloc(i, _indente(lignes[i]))
                 elif (
                     i < len(lignes)
                     and _indente(lignes[i]) == ind
                     and lignes[i].lstrip().startswith("- ")
                 ):
-                    sous, i = _bloc(i, ind)
-                    resultat[cle] = sous
+                    resultat[cle], i = _bloc(i, ind)
                 else:
                     resultat[cle] = {}
         return resultat, i
@@ -103,6 +107,7 @@ def parse_yaml(texte: str):
     return arbre
 
 
-def charger_yaml(chemin: str):
+def charger_yaml(chemin: str) -> ValeurYaml:
+    """Lit un fichier YAML (UTF-8) et le parse avec parse_yaml."""
     with open(chemin, "r", encoding="utf-8") as f:
         return parse_yaml(f.read())

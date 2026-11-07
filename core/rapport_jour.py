@@ -1,22 +1,27 @@
 # CONCORDE v1.0 — (c) MASITH / Stéphane Moreau. Tous droits réservés.
-"""Rapport du jour : ce que CONCORDE a vu et fait dans la journée, et ce qu'il en conclut.
+"""Rapport du jour : ce que CONCORDE a vu et fait, et ce qu'il en conclut.
 
-  construire(jour, alertes, taches, securite)   -> rapport automatique (dict)
-  fusionner(auto, enregistre)                  -> rapport avec les choix de l'utilisateur
-  rendu_html(rapport)                          -> page imprimable (seulement le visible)
+  construire(jour, alertes, taches, securite) -> rapport automatique (dict)
+  fusionner(auto, enregistre)    -> rapport avec les choix de l'utilisateur
+  rendu_html(rapport)            -> page imprimable (seulement le visible)
 
-Chaque ligne (conclusion, ajout, détail) porte sa date et son heure (« quand ») et le
-rapport est rangé dans l'ordre chronologique (demande du 07/11/2026).
+Chaque ligne (conclusion, ajout, détail) porte sa date et son heure
+(« quand ») et le rapport est rangé dans l'ordre chronologique (demande du
+07/11/2026).
 
-Chaque conclusion a un identifiant STABLE (ex. « alerte|balance|testalbhade|CLIENT_CREDITEUR »).
-Les choix de l'utilisateur (masquée, texte corrigé, commentaire) sont rattachés à cet
-identifiant : régénérer le rapport ajoute les nouvelles conclusions sans écraser ses
-corrections. Déterministe : aucun texte ne passe par une IA.
+Chaque conclusion a un identifiant STABLE
+(ex. « alerte|balance|testalbhade|CLIENT_CREDITEUR »).
+Les choix de l'utilisateur (masquée, texte corrigé, commentaire) sont
+rattachés à cet identifiant : régénérer le rapport ajoute les nouvelles
+conclusions sans écraser ses corrections. Déterministe : aucun texte ne
+passe par une IA.
 """
 
 import html
 from collections import Counter
+from collections.abc import Iterable, Mapping, Sequence
 from datetime import date, datetime
+from typing import Any
 
 NIVEAUX = {"BLOQUANT": 0, "ALERTE": 1, "INFO": 2, "OK": 3}
 ACTIONS = {
@@ -34,6 +39,9 @@ PLURIELS = {
     "réinitialisation": "réinitialisations",
 }
 SECTIONS = ("securite", "alertes", "changements", "taches")
+# Données JSON (alertes, tâches, résultats de sécurité, rapports, saisie de
+# l'écran) : dictionnaires aux valeurs hétérogènes.
+DonneesJson = Mapping[str, Any]
 TITRES = {
     "securite": "Sécurité du serveur",
     "alertes": "Alertes",
@@ -42,30 +50,76 @@ TITRES = {
 }
 
 
-def _jour(iso):
+def _jour(iso: str | None) -> str:
+    """Rend la date AAAA-MM-JJ d'un horodatage ISO ('' si absent)."""
     return (iso or "")[:10]
 
 
-def _date_fr(jour):
+def _date_fr(jour: str) -> str:
+    """Rend une date AAAA-MM-JJ en JJ/MM/AAAA."""
     return date.fromisoformat(jour).strftime("%d/%m/%Y")
 
 
-def _conclusion(ident, niveau, texte, section, quand=""):
+def _quand_borne(quand: str | None) -> str:
+    """Borne un horodatage ISO à la seconde.
+
+    Rôle : uniformiser le champ « quand » des conclusions et des détails.
+    Paramètres : quand, horodatage ISO (None ou '' accepté).
+    Retour : les 19 premiers caractères ('' si absent).
+    Erreurs : aucune.
+    Usages : _conclusion, _item.
+    """
+    return (quand or "")[:19]
+
+
+def _conclusion(
+    ident: str,
+    niveau: str,
+    texte: str,
+    section: str,
+    quand: str | None = "",
+) -> dict[str, Any]:
+    """Crée une conclusion automatique (texte non modifié par l'utilisateur).
+
+    Rôle : forme commune de toutes les conclusions du rapport.
+    Paramètres : ident, identifiant stable ; niveau, BLOQUANT / ALERTE /
+    INFO / OK ; texte, texte automatique ; section, section d'origine ;
+    quand, horodatage ISO.
+    Retour : {id, niveau, texte_auto, section, quand}.
+    Erreurs : aucune.
+    Usages : construire (toutes les sections).
+    """
     return {
         "id": ident,
         "niveau": niveau,
         "texte_auto": texte,
         "section": section,
-        "quand": (quand or "")[:19],
+        "quand": _quand_borne(quand),
     }
 
 
-def _item(texte, ident, quand):
-    return {"texte": texte, "id": ident, "quand": (quand or "")[:19]}
+def _item(texte: str, ident: str, quand: str | None) -> dict[str, str]:
+    """Crée une ligne de détail d'une section.
+
+    Rôle : forme commune des détails du rapport.
+    Paramètres : texte, ligne affichée ; ident, identifiant de la
+    conclusion liée ; quand, horodatage ISO.
+    Retour : {texte, id, quand}.
+    Erreurs : aucune.
+    Usages : construire (toutes les sections).
+    """
+    return {"texte": texte, "id": ident, "quand": _quand_borne(quand)}
 
 
-def horodatage(iso):
-    """'2026-11-07T10:30:12' -> '07/11/2026 10:30' ('' si absent)."""
+def horodatage(iso: str | None) -> str:
+    """Rend un horodatage ISO lisible.
+
+    Rôle : afficher « quand » dans la page et l'écran.
+    Paramètres : iso, ex. '2026-11-07T10:30:12'.
+    Retour : '07/11/2026 10:30' ('' si absent ou trop court).
+    Erreurs : aucune.
+    Usages : rendu_html (conclusions, ajouts, sections), tests.
+    """
     if not iso or len(iso) < 10:
         return ""
     return "%s/%s/%s%s" % (
@@ -76,14 +130,32 @@ def horodatage(iso):
     )
 
 
-def construire(jour, alertes=(), taches=(), securite=None, maintenant=None):
-    """Rapport automatique du jour `jour` (AAAA-MM-JJ)."""
+def construire(
+    jour: str,
+    alertes: Sequence[DonneesJson] = (),
+    taches: Iterable[DonneesJson] = (),
+    securite: DonneesJson | None = None,
+    maintenant: datetime | None = None,
+) -> dict[str, Any]:
+    """Construit le rapport automatique d'un jour.
+
+    Rôle : tirer les conclusions du jour (sécurité, alertes, changements
+    dans Odoo, tâches), dans l'ordre chronologique.
+    Paramètres : jour, AAAA-MM-JJ ; alertes, alertes du centre ; taches,
+    tâches lancées ; securite, {controle, antivirus} (derniers résultats) ;
+    maintenant, heure de référence (heure locale par défaut).
+    Retour : {jour, genere_le, conclusions, sections}.
+    Erreurs : KeyError si une alerte ou une tâche est incomplète ;
+    ValueError si `jour` n'est pas une date ISO à l'affichage.
+    Usages : interface/serveur (rapport du jour), tests.
+    """
     maintenant = maintenant or datetime.now()
     aujourd_hui = jour == maintenant.date().isoformat()
     genere = maintenant.isoformat(timespec="seconds")
-    conclusions, sections = [], {s: [] for s in SECTIONS}
+    conclusions: list[dict[str, Any]] = []
+    sections: dict[str, list[dict[str, str]]] = {s: [] for s in SECTIONS}
 
-    # --- Sécurité ------------------------------------------------------------------------
+    # --- Sécurité ------------------------------------------------------------
     sec = securite or {}
     for nom, libelle in (
         ("controle", "Contrôle mineur / rançongiciel"),
@@ -144,7 +216,7 @@ def construire(jour, alertes=(), taches=(), securite=None, maintenant=None):
                     )
                 )
 
-    # --- Alertes -------------------------------------------------------------------------
+    # --- Alertes -------------------------------------------------------------
     etat = [a for a in alertes if a.get("statut") in ("active", "resolue")]
     nouvelles = [a for a in etat if _jour(a.get("premiere_fois")) == jour]
     resolues = [
@@ -152,14 +224,15 @@ def construire(jour, alertes=(), taches=(), securite=None, maintenant=None):
         for a in etat
         if a.get("statut") == "resolue" and _jour(a.get("resolue_le")) == jour
     ]
-    # Une base supprimée ferme ses alertes : ce n'est pas une correction, on le dit.
+    # Une base supprimée ferme ses alertes : ce n'est pas une correction, on
+    # le dit.
     supprimees = {
         a.get("base"): a.get("premiere_fois")
         for a in alertes
         if a.get("code") == "BASE_SUPPRIMEE"
         and _jour(a.get("premiere_fois")) == jour
     }
-    closes = {}
+    closes: dict[str, list[str]] = {}
     for a in [a for a in resolues if a.get("base") in supprimees]:
         closes.setdefault(a["base"], []).append(a["message"])
     resolues = [a for a in resolues if a.get("base") not in supprimees]
@@ -248,7 +321,7 @@ def construire(jour, alertes=(), taches=(), securite=None, maintenant=None):
             )
         )
 
-    # --- Changements dans Odoo (événements du jour) ---------------------------------------
+    # --- Changements dans Odoo (événements du jour) --------------------------
     evts = [
         a
         for a in alertes
@@ -257,7 +330,8 @@ def construire(jour, alertes=(), taches=(), securite=None, maintenant=None):
         and a.get("code")
         not in ("INSTANTANE_INITIAL", "BASE_SUPPRIMEE", "BASE_REINITIALISEE")
     ]
-    par_base, premier = {}, {}
+    par_base: dict[str, Counter[tuple[str, str]]] = {}
+    premier: dict[str, str] = {}
     for a in evts:
         b = a.get("base", "?")
         par_base.setdefault(b, Counter())[
@@ -292,12 +366,10 @@ def construire(jour, alertes=(), taches=(), securite=None, maintenant=None):
             )
         )
 
-    # --- Tâches de la journée -------------------------------------------------------------
+    # --- Tâches de la journée -----------------------------------------------
     du_jour = [t for t in taches if _jour(t.get("cree_le")) == jour]
     if du_jour:
-        compte = Counter(
-            ACTIONS.get(t["action"], t["action"]) for t in du_jour
-        )
+        compte = Counter(_libelle_action(t["action"]) for t in du_jour)
         conclusions.append(
             _conclusion(
                 "taches|resume",
@@ -313,7 +385,7 @@ def construire(jour, alertes=(), taches=(), securite=None, maintenant=None):
         )
     for t in sorted(du_jour, key=lambda t: t.get("cree_le", "")):
         heure = (t.get("cree_le") or "")[11:16]
-        quoi = ACTIONS.get(t["action"], t["action"])
+        quoi = _libelle_action(t["action"])
         base = t.get("base", "")
         if t.get("base_b"):
             base += " ↔ " + t["base_b"]
@@ -392,7 +464,8 @@ def construire(jour, alertes=(), taches=(), securite=None, maintenant=None):
     for c in conclusions:
         c.pop("_cle", None)
         c.pop("_heures", None)
-    # Ordre chronologique : date, puis heure ; à égalité, le plus grave d'abord.
+    # Ordre chronologique : date, puis heure ; à égalité, le plus grave
+    # d'abord.
     conclusions.sort(
         key=lambda c: (c["quand"] or genere, NIVEAUX.get(c["niveau"], 9))
     )
@@ -406,7 +479,20 @@ def construire(jour, alertes=(), taches=(), securite=None, maintenant=None):
     }
 
 
-def _base(a):
+def _libelle_action(action: str) -> str:
+    """Rend le libellé d'une action de tâche.
+
+    Rôle : nommer une tâche en français dans le rapport.
+    Paramètres : action, code d'action (ex. 'analyser').
+    Retour : libellé de ACTIONS, ou le code lui-même s'il est inconnu.
+    Erreurs : aucune.
+    Usages : construire (résumé des travaux, détail de chaque tâche).
+    """
+    return ACTIONS.get(action, action)
+
+
+def _base(a: DonneesJson) -> str:
+    """Rend 'serveur' ou 'base <nom>' pour une alerte."""
     return (
         "serveur"
         if a.get("base") == "serveur"
@@ -414,7 +500,8 @@ def _base(a):
     )
 
 
-def _resume_tache(t):
+def _resume_tache(t: DonneesJson) -> str:
+    """Résume le résultat d'une tâche terminée ('' si rien à dire)."""
     r = t.get("resultat") or {}
     if t["action"] == "analyser" and r.get("synthese"):
         s = r["synthese"]
@@ -442,8 +529,21 @@ def _resume_tache(t):
     return ""
 
 
-def fusionner(auto, enregistre=None):
-    """Applique les choix enregistrés (masquer, corriger, commenter, ajouter) au rapport auto."""
+def fusionner(
+    auto: DonneesJson, enregistre: DonneesJson | None = None
+) -> dict[str, Any]:
+    """Applique les choix enregistrés au rapport automatique.
+
+    Rôle : garder les choix de l'utilisateur (masquer, corriger, commenter,
+    ajouter) d'une génération à l'autre.
+    Paramètres : auto, rapport de construire() ; enregistre, choix
+    enregistrés (nettoyer_saisie), ou None.
+    Retour : rapport fusionné (conclusions enrichies de visible, texte,
+    modifie, commentaire, nouvelle ; ajouts, commentaire,
+    sections_masquees, enregistre_le).
+    Erreurs : KeyError si `auto` est incomplet.
+    Usages : interface/serveur (écran et export), tests.
+    """
     e = enregistre or {}
     choix = {c["id"]: c for c in e.get("conclusions", [])}
     res = dict(auto)
@@ -465,7 +565,8 @@ def fusionner(auto, enregistre=None):
                 nouvelle=c["id"] not in choix and bool(choix),
             )
         )
-    # Conclusions qui ne sont plus produites mais que l'utilisateur avait gardées / corrigées.
+    # Conclusions qui ne sont plus produites mais que l'utilisateur avait
+    # gardées / corrigées.
     vus = {c["id"] for c in auto["conclusions"]}
     for ident, u in choix.items():
         if (
@@ -506,10 +607,19 @@ def fusionner(auto, enregistre=None):
     return res
 
 
-def nettoyer_saisie(corps):
-    """Valide et borne ce que l'écran envoie à l'enregistrement."""
+def nettoyer_saisie(corps: DonneesJson) -> dict[str, Any]:
+    """Valide et borne ce que l'écran envoie à l'enregistrement.
 
-    def txt(v, n):
+    Rôle : ne garder que les champs attendus, de longueur bornée.
+    Paramètres : corps, JSON reçu de l'écran.
+    Retour : {conclusions, ajouts, commentaire, sections_masquees,
+    enregistre_le}.
+    Erreurs : AttributeError si un élément n'est pas un dictionnaire.
+    Usages : interface/serveur (enregistrement du rapport), tests.
+    """
+
+    def txt(v: object, n: int) -> str:
+        """Rend `v` en texte sans espaces de bord, borné à `n` caractères."""
         return str(v or "").strip()[:n]
 
     return {
@@ -542,8 +652,16 @@ def nettoyer_saisie(corps):
     }
 
 
-def rendu_html(r, societe="MASITH"):
-    """Page HTML autonome et imprimable : seulement ce qui est visible."""
+def rendu_html(r: DonneesJson, societe: str = "MASITH") -> str:
+    """Rend la page HTML autonome et imprimable du rapport.
+
+    Rôle : export du rapport ; seul ce qui est visible est rendu.
+    Paramètres : r, rapport fusionné (fusionner) ; societe, nom affiché en
+    pied de page.
+    Retour : page HTML complète (textes échappés).
+    Erreurs : KeyError si le rapport est incomplet.
+    Usages : interface/serveur (export), tests.
+    """
     e = html.escape
     couleurs = {
         "BLOQUANT": "#b42318",
@@ -551,7 +669,7 @@ def rendu_html(r, societe="MASITH"):
         "INFO": "#1f5fa8",
         "OK": "#18794e",
     }
-    lignes = []
+    lignes: list[str] = []
     for c in r["conclusions"]:
         if not c.get("visible", True):
             continue
@@ -561,7 +679,8 @@ def rendu_html(r, societe="MASITH"):
             else ""
         )
         lignes.append(
-            '<li><span class="q">%s</span> <span class="n" style="color:%s">%s</span>'
+            '<li><span class="q">%s</span> '
+            '<span class="n" style="color:%s">%s</span>'
             " %s%s</li>"
             % (
                 e(horodatage(c.get("quand"))),
@@ -580,7 +699,7 @@ def rendu_html(r, societe="MASITH"):
     masquees = {
         c["id"] for c in r["conclusions"] if not c.get("visible", True)
     }
-    sections = []
+    sections: list[str] = []
     for s in SECTIONS:
         if s in r.get("sections_masquees", []):
             continue
@@ -602,7 +721,8 @@ def rendu_html(r, societe="MASITH"):
     return """<!doctype html><html lang="fr"><head><meta charset="utf-8">
 <title>CONCORDE — Rapport du %(jour)s</title>
 <style>
-body{font:15px/1.5 system-ui,sans-serif;color:#1c2733;max-width:860px;margin:2rem auto;
+body{font:15px/1.5 system-ui,sans-serif;color:#1c2733;max-width:860px;\
+margin:2rem auto;
 padding:0 16px}
 h1{font-size:1.5rem;margin:0}
 h2{font-size:1.1rem;margin:1.6rem 0 .4rem;border-bottom:1px solid #dde3ea}
@@ -611,13 +731,15 @@ h2{font-size:1.1rem;margin:1.6rem 0 .4rem;border-bottom:1px solid #dde3ea}
 .q{color:#5b6b7c;font-variant-numeric:tabular-nums;white-space:nowrap}
 .com{color:#5b6b7c;font-style:italic;margin-left:1rem}
 .general{background:#f4f6f9;border-left:4px solid #1f4e79;padding:.6rem .9rem}
-footer{margin-top:2.5rem;color:#5b6b7c;font-size:.8rem;border-top:1px solid #dde3ea;
+footer{margin-top:2.5rem;color:#5b6b7c;font-size:.8rem;\
+border-top:1px solid #dde3ea;
 padding-top:.6rem}
 @media print{body{margin:0}}</style></head><body>
 <h1>CONCORDE — Rapport du %(jour)s</h1>
 <p class="meta">Généré le %(genere)s%(enregistre)s</p>
 %(general)s<h2>Conclusions</h2><ul>%(lignes)s</ul>%(sections)s
-<footer>%(societe)s — SIRET 928 983 055 00015 · Valensole | contact@masith.fr · masith.fr</footer>
+<footer>%(societe)s — SIRET 928 983 055 00015 · Valensole | \
+contact@masith.fr · masith.fr</footer>
 </body></html>""" % {
         "jour": e(_date_fr(r["jour"])),
         "genere": e(r["genere_le"].replace("T", " ")[:16]),

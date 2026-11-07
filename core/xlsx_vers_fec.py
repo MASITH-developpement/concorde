@@ -5,7 +5,8 @@ Construit pour les exports Excel Quadra / peripheriques qui ne sont pas
 des FEC texte : CONCORDE les convertit en FEC standard avant le pipeline.
 
 Regles CONCORDE :
-- Tolerance 0 : aucun arrondi silencieux (montant a plus de 2 decimales = refus)
+- Tolerance 0 : aucun arrondi silencieux (montant a plus de 2 decimales
+  = refus)
 - Aucun compte devine, aucune colonne devine : colonnes obligatoires
   explicites, messages d'erreur explicites (Marceau : jamais muet)
 - Montants convertis en centimes via core.canonical.vers_centimes
@@ -17,22 +18,50 @@ import logging
 import re
 import unicodedata
 import zipfile
+from collections.abc import Callable, Iterable, Mapping, Sequence
 from datetime import date, datetime, timedelta
-from xml.etree import ElementTree as ET
+from typing import TypedDict
+from .xml_sur import lire_xml
 
 from .canonical import vers_centimes
 
 try:
-    from openpyxl import load_workbook
+    import openpyxl
 except ImportError:  # pragma: no cover
-    load_workbook = None
+    _OPENPYXL_DISPONIBLE = False
+else:
+    _OPENPYXL_DISPONIBLE = True
 
 
 _LOGGER = logging.getLogger(__name__)
 
+# Valeur d'une cellule lue : texte, nombre (bool compris), date (datetime
+# comprise) ou vide.
+CelluleXlsx = str | int | float | date | None
+# Une ligne du classeur ; None est toléré (ligne absente).
+LigneXlsx = Sequence[CelluleXlsx] | None
+
 
 class ErreurFEC(ValueError):
-    pass
+    """Classeur impossible à convertir en FEC : message explicite."""
+
+
+class LigneQuadra(TypedDict):
+    """Ligne validée d'un export Cegid Quadra, avant regroupement.
+
+    niveau_cascade : 0 tant que la ligne n'est rattachée à aucune écriture,
+    sinon numéro de la cascade qui l'a rattachée.
+    """
+
+    numuniq: str
+    ordre: int
+    journal: str
+    date: str
+    libelle: str
+    debit: int
+    credit: int
+    fec: dict[str, str]
+    niveau_cascade: int
 
 
 # Colonnes FEC produites (ordre FEC standard, separateur tabulation)
@@ -132,7 +161,7 @@ JOURNAL_DEFAUT = "CONCORDE"
 MAX_RECHERCHE_ENTETE = 30  # lignes scannees avant abandon
 
 
-def _norm(texte) -> str:
+def _norm(texte: object) -> str:
     """Normalise un en-tete : minuscules, sans accent, sans separators."""
     s = str(texte or "").strip().lower()
     s = unicodedata.normalize("NFKD", s)
@@ -142,7 +171,7 @@ def _norm(texte) -> str:
     return s
 
 
-def _nettoyer_texte(v) -> str:
+def _nettoyer_texte(v: object) -> str:
     """Texte FEC sur : tabulations/retours interdits (separateur tab)."""
     if v is None:
         return ""
@@ -152,7 +181,7 @@ def _nettoyer_texte(v) -> str:
     return s
 
 
-def _date_fec(v, contexte: str) -> str:
+def _date_fec(v: object, contexte: str) -> str:
     """Convertit une cellule date en AAAAMMJJ. Jamais de date devinee."""
     if isinstance(v, datetime):
         return v.strftime("%Y%m%d")
@@ -210,7 +239,7 @@ def _date_fec(v, contexte: str) -> str:
     return "%04d%02d%02d" % (annee, mois, jour)
 
 
-def _centimes(v, contexte: str) -> int:
+def _centimes(v: object, contexte: str) -> int:
     """Cellule montant -> centimes int. Aucun arrondi silencieux."""
     if v is None or (isinstance(v, str) and not v.strip()):
         return 0
@@ -226,7 +255,7 @@ def _centimes(v, contexte: str) -> int:
     return vers_centimes(_nettoyer_texte(v))
 
 
-def _nombre_texte(v) -> str:
+def _nombre_texte(v: object) -> str:
     """Normalise un identifiant (EcritureNum, CompteNum) depuis une cellule.
 
     Excel stocke souvent les numeros en float (5535.0, 10130000.0) :
@@ -241,41 +270,144 @@ def _nombre_texte(v) -> str:
     return _nettoyer_texte(v)
 
 
-def _trouver_entete(rows):
-    """Cherche la ligne d'en-tete dans les MAX_RECHERCHE_ENTETE premieres
-    lignes. Retourne (index_ligne, {champ_fec: index_colonne}).
+def _colonnes_reconnues(ligne: Sequence[CelluleXlsx]) -> dict[str, int]:
+    """Reconnaît les colonnes d'une ligne candidate à l'en-tête.
+
+    Rôle : associer chaque champ de SYNONYMES à la première colonne dont
+    l'intitulé normalisé est l'un de ses synonymes.
+    Paramètres : ligne, cellules de la ligne.
+    Retour : {champ: index de colonne}.
+    Erreurs : aucune.
+    Usages : _trouver_entete (en-tête FEC standard et Cegid Quadra).
+    """
+    trouve: dict[str, int] = {}
+    for j, cellule in enumerate(ligne):
+        nom = _norm(cellule)
+        if not nom:
+            continue
+        for champ, synos in SYNONYMES.items():
+            if champ in trouve:
+                continue
+            if nom in synos:
+                trouve[champ] = j
+    return trouve
+
+
+def _trouver_entete(
+    rows: Sequence[LigneXlsx], obligatoires: Sequence[str]
+) -> tuple[int, dict[str, int]] | None:
+    """Cherche la ligne d'en-tête dans les premières lignes du classeur.
+
+    Rôle : repérer l'en-tête sans jamais deviner une colonne.
+    Paramètres : rows, lignes du classeur (MAX_RECHERCHE_ENTETE premières
+    examinées) ; obligatoires, champs qui doivent tous être reconnus
+    (OBLIGATOIRES pour un FEC standard, QUADRA_OBLIGATOIRES pour un export
+    Cegid Quadra).
+    Retour : (index de ligne, {champ: index de colonne}) ou None.
+    Erreurs : aucune.
+    Usages : xlsx_vers_fec (FEC standard, puis repli Cegid Quadra).
     """
     for i, ligne in enumerate(rows):
         if i >= MAX_RECHERCHE_ENTETE:
             break
         if ligne is None:
             continue
-        trouve = {}
-        for j, cellule in enumerate(ligne):
-            nom = _norm(cellule)
-            if not nom:
-                continue
-            for champ, synos in SYNONYMES.items():
-                if champ in trouve:
-                    continue
-                if nom in synos:
-                    trouve[champ] = j
-        manquants = [c for c in OBLIGATOIRES if c not in trouve]
-        # Entete valide si Debit+Credit+une date+un numero d'ecriture/compte
-        noyau = {"Debit", "Credit"} & set(trouve)
-        if not manquants and len(noyau) == 2:
+        trouve = _colonnes_reconnues(ligne)
+        if all(c in trouve for c in obligatoires):
             return i, trouve
-    return None, None
+    return None
 
 
-def _lire_avec_openpyxl(brut):
+def _valeur_colonne(
+    row: Sequence[CelluleXlsx], colonnes: Mapping[str, int], champ: str
+) -> CelluleXlsx:
+    """Lit la cellule d'un champ dans une ligne.
+
+    Rôle : accès tolérant aux lignes plus courtes que l'en-tête.
+    Paramètres : row, cellules de la ligne ; colonnes, {champ: index de
+    colonne} ; champ, nom du champ.
+    Retour : la valeur, ou None si le champ est absent ou hors ligne.
+    Erreurs : aucune.
+    Usages : _convertir_quadra, xlsx_vers_fec.
+    """
+    j = colonnes.get(champ)
+    if j is None or j >= len(row):
+        return None
+    return row[j]
+
+
+def _construire_ligne_fec(
+    *,
+    journal: str,
+    journal_lib: str,
+    ecriture_num: str,
+    date_ecr: str,
+    compte: str,
+    compte_lib: str,
+    piece: str,
+    libelle: str,
+    debit_c: int,
+    credit_c: int,
+) -> dict[str, str]:
+    """Construit une ligne FEC (tous les champs de CHAMPS_FEC).
+
+    Rôle : forme unique des lignes produites ; les dates de pièce et de
+    validation reprennent la date d'écriture, les champs auxiliaires,
+    lettrage et devise restent vides.
+    Paramètres : journal, journal_lib, ecriture_num, date_ecr (AAAAMMJJ),
+    compte, compte_lib, piece, libelle ; debit_c, credit_c en centimes.
+    Retour : {champ FEC: texte}.
+    Erreurs : aucune.
+    Usages : _convertir_quadra, xlsx_vers_fec.
+    """
+    return {
+        "JournalCode": journal,
+        "JournalLib": journal_lib,
+        "EcritureNum": ecriture_num,
+        "EcritureDate": date_ecr,
+        "CompteNum": compte,
+        "CompteLib": compte_lib,
+        "CompAuxNum": "",
+        "CompAuxLib": "",
+        "PieceRef": piece,
+        "PieceDate": date_ecr,
+        "EcritureLib": libelle,
+        "Debit": _fmt_centimes(debit_c),
+        "Credit": _fmt_centimes(credit_c),
+        "EcritureLet": "",
+        "DateLet": "",
+        "ValidDate": date_ecr,
+        "Montantdevise": "",
+        "Idevise": "",
+    }
+
+
+def _encoder_fec(lignes: Iterable[Mapping[str, str]]) -> bytes:
+    """Rend le texte FEC complet (en-tête + lignes) en UTF-8.
+
+    Rôle : sérialisation unique du FEC (séparateur tabulation, fin de
+    ligne LF, retour final).
+    Paramètres : lignes, lignes FEC (_construire_ligne_fec).
+    Retour : octets UTF-8.
+    Erreurs : KeyError si un champ de CHAMPS_FEC manque.
+    Usages : _convertir_quadra, xlsx_vers_fec.
+    """
+    out = ["\t".join(CHAMPS_FEC)]
+    for ligne in lignes:
+        out.append("\t".join(ligne[c] for c in CHAMPS_FEC))
+    return ("\n".join(out) + "\n").encode("utf-8")
+
+
+def _lire_avec_openpyxl(brut: bytes) -> list[LigneXlsx]:
     """Lecture via openpyxl (si installe). Retourne une liste de lignes."""
-    if load_workbook is None:
+    if not _OPENPYXL_DISPONIBLE:
         raise ImportError("openpyxl absent")
-    wb = load_workbook(io.BytesIO(brut), read_only=True, data_only=True)
+    wb = openpyxl.load_workbook(
+        io.BytesIO(brut), read_only=True, data_only=True
+    )
     try:
         feuille = wb.worksheets[0]
-        rows = []
+        rows: list[LigneXlsx] = []
         for row in feuille.iter_rows(values_only=True):
             rows.append(row)
             if len(rows) > 200000:
@@ -295,7 +427,7 @@ FORMATS_DATE_BUILTIN = {14, 15, 16, 17, 18, 19, 20, 21, 22, 45, 46, 47}
 _RE_DATE = re.compile(r"[dmyhs]", re.IGNORECASE)
 
 
-def _colonne_xlsx(ref):
+def _colonne_xlsx(ref: str) -> int:
     """'B12' -> 1 (index 0)."""
     lettres = re.match(r"([A-Z]+)", ref or "")
     if not lettres:
@@ -306,16 +438,16 @@ def _colonne_xlsx(ref):
     return n - 1
 
 
-def _est_format_date(code):
+def _est_format_date(code: str) -> bool:
     """Format de nombre date ? (guillemets et echappements ignores)."""
     code = re.sub(r'"[^"]*"', "", code).replace("\\", "")
     return bool(_RE_DATE.search(code))
 
 
-def _styles_date(zf):
+def _styles_date(zf: zipfile.ZipFile) -> set[int]:
     """Indices de style (cellXfs) correspondant a des formats date."""
     try:
-        racine = ET.fromstring(zf.read("xl/styles.xml"))
+        racine = lire_xml(zf.read("xl/styles.xml"))
     except KeyError:
         return set()
     formats_date = set(FORMATS_DATE_BUILTIN)
@@ -323,7 +455,7 @@ def _styles_date(zf):
         fid = fmt.get("numFmtId")
         if fid and _est_format_date(fmt.get("formatCode") or ""):
             formats_date.add(int(fid))
-    indices = set()
+    indices: set[int] = set()
     for i, xf in enumerate(racine.iter(NS_MAIN + "xf")):
         fid = xf.get("numFmtId")
         if fid and int(fid) in formats_date:
@@ -331,12 +463,12 @@ def _styles_date(zf):
     return indices
 
 
-def _valeur_date(serie):
+def _valeur_date(serie: float) -> date:
     """Numero de serie Excel -> date. Jamais de date devinee."""
     return EPOQUE_EXCEL + timedelta(days=int(serie))
 
 
-def _lire_xlsx_stdlib(brut, nom_fichier=""):
+def _lire_xlsx_stdlib(brut: bytes, nom_fichier: str = "") -> list[LigneXlsx]:
     """Lecture d'un classeur .xlsx sans openpyxl (zipfile + ElementTree).
 
     Gere : sharedStrings, inlineStr, chaines de formule, references de
@@ -346,9 +478,9 @@ def _lire_xlsx_stdlib(brut, nom_fichier=""):
     zf = zipfile.ZipFile(io.BytesIO(brut))
 
     # 1. Chaines partagees
-    sst = []
+    sst: list[str] = []
     if "xl/sharedStrings.xml" in zf.namelist():
-        racine = ET.fromstring(zf.read("xl/sharedStrings.xml"))
+        racine = lire_xml(zf.read("xl/sharedStrings.xml"))
         for si in racine.iter(NS_MAIN + "si"):
             sst.append("".join(t.text or "" for t in si.iter(NS_MAIN + "t")))
 
@@ -357,11 +489,11 @@ def _lire_xlsx_stdlib(brut, nom_fichier=""):
 
     # 3. Premiere feuille declaree (via les relations du classeur)
     feuille_xml = None
-    try:
-        wb = ET.fromstring(zf.read("xl/workbook.xml"))
-        sheet = next(iter(wb.iter(NS_MAIN + "sheet")))
+    wb = lire_xml(zf.read("xl/workbook.xml"))
+    sheet = next(iter(wb.iter(NS_MAIN + "sheet")), None)
+    if sheet is not None:
         rid = sheet.get(NS_REL_OFFICE + "id")
-        rels = ET.fromstring(zf.read("xl/_rels/workbook.xml.rels"))
+        rels = lire_xml(zf.read("xl/_rels/workbook.xml.rels"))
         for rel in rels.iter():
             if rel.get("Id") == rid:
                 cible = rel.get("Target")
@@ -373,8 +505,6 @@ def _lire_xlsx_stdlib(brut, nom_fichier=""):
                 feuille_xml = cible.lstrip("/")
             else:
                 feuille_xml = "xl/" + cible.lstrip("./")
-    except StopIteration:
-        pass
     if not feuille_xml or feuille_xml not in zf.namelist():
         # repli : premiere feuille triee si relations absentes
         cands = sorted(
@@ -389,22 +519,23 @@ def _lire_xlsx_stdlib(brut, nom_fichier=""):
         feuille_xml = cands[0]
 
     # 4. Lecture des lignes
-    racine = ET.fromstring(zf.read(feuille_xml))
-    lignes = []
+    racine = lire_xml(zf.read(feuille_xml))
+    lignes: list[LigneXlsx] = []
     largeur = 0
     for row in racine.iter(NS_MAIN + "row"):
         if len(lignes) > 200000:
             break
-        vals = {}
+        vals: dict[int, CelluleXlsx] = {}
         for c in row.iter(NS_MAIN + "c"):
             ref = c.get("r") or ""
             j = _colonne_xlsx(ref)
             t = c.get("t")
             v = c.find(NS_MAIN + "v")
             is_elem = c.find(NS_MAIN + "is")
+            val: CelluleXlsx
             if t == "s" and v is not None:
                 try:
-                    val = sst[int(v.text)]
+                    val = sst[int(v.text or "")]
                 except (ValueError, IndexError):
                     raise ErreurFEC(
                         "Indice de chaine partagee invalide en %s de %r."
@@ -418,7 +549,8 @@ def _lire_xlsx_stdlib(brut, nom_fichier=""):
                 val = v.text
             elif v is not None and v.text is not None:
                 texte = v.text.strip()
-                if c.get("s") and int(c.get("s")) in styles_date:
+                style_cellule = c.get("s")
+                if style_cellule and int(style_cellule) in styles_date:
                     val = _valeur_date(float(texte))  # serie -> date
                 elif t == "b":
                     val = bool(int(texte))
@@ -458,33 +590,12 @@ QUADRA_OBLIGATOIRES = [
 ]
 
 
-def _trouver_entete_quadra(rows):
-    """Detecte l'en-tete d'un export Cegid Quadra. Retourne
-    (index_ligne, {champ: index_colonne}) ou (None, None)."""
-    for i, ligne in enumerate(rows):
-        if i >= MAX_RECHERCHE_ENTETE:
-            break
-        if ligne is None:
-            continue
-        trouve = {}
-        for j, cellule in enumerate(ligne):
-            nom = _norm(cellule)
-            if not nom:
-                continue
-            for champ, synos in SYNONYMES.items():
-                if champ in trouve:
-                    continue
-                if nom in synos:
-                    trouve[champ] = j
-        manquants = [c for c in QUADRA_OBLIGATOIRES if c not in trouve]
-        if not manquants:
-            return i, trouve
-    return None, None
+def _date_quadra(periode: object, jour: object, contexte: str) -> str:
+    """Periode (JJ/MM/AAAA) + Jour -> date AAAAMMJJ.
 
-
-def _date_quadra(periode, jour, contexte):
-    """Periode (JJ/MM/AAAA) + Jour -> date AAAAMMJJ. Le jour vient de la
-    colonne Jour, le mois et l'annee de la Periode. Jamais devine."""
+    Le jour vient de la colonne Jour, le mois et l'annee de la Periode.
+    Jamais devine.
+    """
     p = _date_fec(periode, contexte + "/Periode")  # valide JJ/MM/AAAA
     mois, annee = int(p[4:6]), int(p[:4])
     j_txt = str(jour or "").strip()
@@ -503,7 +614,12 @@ def _date_quadra(periode, jour, contexte):
     return "%04d%02d%02d" % (annee, mois, int(j_txt))
 
 
-def _convertir_quadra(rows, idx, colonnes, nom_fichier):
+def _convertir_quadra(
+    rows: Sequence[LigneXlsx],
+    idx: int,
+    colonnes: Mapping[str, int],
+    nom_fichier: str,
+) -> bytes:
     """Convertit un export Cegid Quadra en FEC standard.
 
     Regroupement en ecritures equilibrees par CASCADES EXPLICITES
@@ -521,15 +637,14 @@ def _convertir_quadra(rows, idx, colonnes, nom_fichier):
     tracé (logging) et un residu non solde est une erreur explicite.
     """
 
-    def val(row, champ):
-        j = colonnes.get(champ)
-        if j is None or j >= len(row):
-            return None
-        return row[j]
+    def val(row: Sequence[CelluleXlsx], champ: str) -> CelluleXlsx:
+        """Lit la cellule du champ `champ` dans la ligne `row`."""
+        return _valeur_colonne(row, colonnes, champ)
 
     # ---- passe 0 : lecture et validation de toutes les lignes ----
-    lignes = []
-    for row in rows[idx + 1 :]:
+    lignes: list[LigneQuadra] = []
+    debut_donnees = idx + 1
+    for row in rows[debut_donnees:]:
         if row is None:
             continue
         debit_c = _centimes(val(row, "Debit"), "Debit")
@@ -574,26 +689,19 @@ def _convertir_quadra(rows, idx, colonnes, nom_fichier):
                 "libelle": libelle or ("Ecriture %s" % numuniq),
                 "debit": debit_c,
                 "credit": credit_c,
-                "fec": {
-                    "JournalCode": journal,
-                    "JournalLib": journal,
-                    "EcritureNum": "",  # remplace a la cloture du groupe
-                    "EcritureDate": date_ecr,
-                    "CompteNum": compte,
-                    "CompteLib": "",
-                    "CompAuxNum": "",
-                    "CompAuxLib": "",
-                    "PieceRef": _nettoyer_texte(val(row, "PieceRef")),
-                    "PieceDate": date_ecr,
-                    "EcritureLib": libelle or ("Ecriture %s" % numuniq),
-                    "Debit": _fmt_centimes(debit_c),
-                    "Credit": _fmt_centimes(credit_c),
-                    "EcritureLet": "",
-                    "DateLet": "",
-                    "ValidDate": date_ecr,
-                    "Montantdevise": "",
-                    "Idevise": "",
-                },
+                "fec": _construire_ligne_fec(
+                    journal=journal,
+                    journal_lib=journal,
+                    ecriture_num="",  # remplace a la cloture du groupe
+                    date_ecr=date_ecr,
+                    compte=compte,
+                    compte_lib="",
+                    piece=_nettoyer_texte(val(row, "PieceRef")),
+                    libelle=libelle or ("Ecriture %s" % numuniq),
+                    debit_c=debit_c,
+                    credit_c=credit_c,
+                ),
+                "niveau_cascade": 0,
             }
         )
 
@@ -603,35 +711,41 @@ def _convertir_quadra(rows, idx, colonnes, nom_fichier):
             "(ligne %d)." % (nom_fichier, idx + 1)
         )
 
-    # ---- cascades : regroupements explicites, du plus fin au plus large ----
+    # ---- cascades : regroupements explicites, du plus fin au plus large --
     # Un groupe = liste de lignes + cumuls. Soldé = debit == credit.
-    def consolider(cles):
-        """Regroupe les lignes restantes par cles(row)->tuple.
-        Retourne {tuple_cle: [lignes]}, l'ordre d'apparition preserve."""
-        groupes = {}
-        for l in lignes:
-            if l.get("_groupe") is not None:
+    # [(premiere ligne du groupe, [lignes])]
+    ecritures: list[tuple[LigneQuadra, list[LigneQuadra]]] = []
+
+    def appliquer_cascade(
+        niveau: int, cles: Callable[[LigneQuadra], tuple[str, ...]]
+    ) -> list[LigneQuadra]:
+        """Regroupe les lignes non encore rattachées par `cles`.
+
+        Chaque groupe soldé devient une écriture (lignes marquées du
+        `niveau` de cascade), dans l'ordre d'apparition. Retourne les
+        lignes des groupes non soldés.
+        """
+        groupes: dict[tuple[str, ...], list[LigneQuadra]] = {}
+        for ligne in lignes:
+            if ligne["niveau_cascade"]:
                 continue  # deja prise par une cascade precedente
-            k = tuple(cles(l))
-            groupes.setdefault(k, []).append(l)
-        return groupes
-
-    def cumul(g):
-        return sum(l["debit"] for l in g), sum(l["credit"] for l in g)
-
-    ecritures = []  # [(premiere ligne du groupe, [lignes])]
+            groupes.setdefault(cles(ligne), []).append(ligne)
+        restantes: list[LigneQuadra] = []
+        for groupe in groupes.values():
+            debit = sum(ligne["debit"] for ligne in groupe)
+            credit = sum(ligne["credit"] for ligne in groupe)
+            if debit == credit:
+                ecritures.append((groupe[0], groupe))
+                for ligne in groupe:
+                    ligne["niveau_cascade"] = niveau
+            else:
+                restantes.extend(groupe)
+        return restantes
 
     # Cascade 1 : (journal, date, libelle)
-    g1 = consolider(lambda l: (l["journal"], l["date"], l["libelle"]))
-    restantes = []
-    for k, g in g1.items():
-        d, c = cumul(g)
-        if d == c:
-            ecritures.append((g[0], g))
-            for l in g:
-                l["_groupe"] = 1
-        else:
-            restantes.extend(g)
+    restantes = appliquer_cascade(
+        1, lambda ligne: (ligne["journal"], ligne["date"], ligne["libelle"])
+    )
 
     # Cascade 2 : (journal, date) — seulement sur ce qui reste
     if restantes:
@@ -641,16 +755,9 @@ def _convertir_quadra(rows, idx, colonnes, nom_fichier):
             nom_fichier,
             len(restantes),
         )
-        g2 = consolider(lambda l: (l["journal"], l["date"]))
-        restantes = []
-        for k, g in g2.items():
-            d, c = cumul(g)
-            if d == c:
-                ecritures.append((g[0], g))
-                for l in g:
-                    l["_groupe"] = 2
-            else:
-                restantes.extend(g)
+        restantes = appliquer_cascade(
+            2, lambda ligne: (ligne["journal"], ligne["date"])
+        )
 
     # Cascade 3 : journal seul — une ecriture consolidee par journal
     if restantes:
@@ -662,25 +769,16 @@ def _convertir_quadra(rows, idx, colonnes, nom_fichier):
             nom_fichier,
             len(restantes),
         )
-        g3 = consolider(lambda l: (l["journal"],))
-        restantes = []
-        for k, g in g3.items():
-            d, c = cumul(g)
-            if d == c:
-                ecritures.append((g[0], g))
-                for l in g:
-                    l["_groupe"] = 3
-            else:
-                restantes.extend(g)
+        restantes = appliquer_cascade(3, lambda ligne: (ligne["journal"],))
 
     # Cascade 4 : residu = erreur explicite (tolerance 0)
     if restantes:
-        par_journal = {}
-        for l in restantes:
-            par_journal.setdefault(l["journal"], [0, 0, 0])
-            par_journal[l["journal"]][0] += l["debit"]
-            par_journal[l["journal"]][1] += l["credit"]
-            par_journal[l["journal"]][2] += 1
+        par_journal: dict[str, list[int]] = {}
+        for ligne in restantes:
+            par_journal.setdefault(ligne["journal"], [0, 0, 0])
+            par_journal[ligne["journal"]][0] += ligne["debit"]
+            par_journal[ligne["journal"]][1] += ligne["credit"]
+            par_journal[ligne["journal"]][2] += 1
         detail = ", ".join(
             "%s : %d ligne(s), debit %d != credit %d centimes (ecart %d)"
             % (j, v[2], v[0], v[1], v[0] - v[1])
@@ -694,31 +792,30 @@ def _convertir_quadra(rows, idx, colonnes, nom_fichier):
             % (nom_fichier, detail)
         )
 
-    # ---- emission : ordre d'apparition dans le fichier, doublons distincts ----
+    # ---- emission : ordre d'apparition dans le fichier, doublons distincts
     ecritures.sort(key=lambda e: e[0]["ordre"])
-    out = ["\t".join(CHAMPS_FEC)]
-    nb_lignes = 0
+    lignes_fec: list[dict[str, str]] = []
     for premiere, groupe in ecritures:
         ecriture_num = premiere["numuniq"]
         # Lignes strictement identiques (compte/montants/libelle) dans la
         # meme ecriture : l'idempotence canonique les fusionnerait et
         # desequilibrerait l'ecriture. On distingue les occurrences par
         # leur NumUniq, appose au libelle (jamais silencieusement).
-        vus = set()
-        for l in groupe:
-            f = l["fec"]
+        vus: set[tuple[str, str, str, str]] = set()
+        for ligne in groupe:
+            f = ligne["fec"]
             cle = (f["CompteNum"], f["Debit"], f["Credit"], f["EcritureLib"])
             if cle in vus:
-                f["EcritureLib"] = "%s [%s]" % (f["EcritureLib"], l["numuniq"])
+                f["EcritureLib"] = "%s [%s]" % (
+                    f["EcritureLib"],
+                    ligne["numuniq"],
+                )
             else:
                 vus.add(cle)
-        for l in groupe:
-            ligne = dict(l["fec"])
-            ligne["EcritureNum"] = ecriture_num
-            out.append("\t".join(ligne[c] for c in CHAMPS_FEC))
-            nb_lignes += 1
+        for ligne in groupe:
+            lignes_fec.append(dict(ligne["fec"], EcritureNum=ecriture_num))
 
-    return ("\n".join(out) + "\n").encode("utf-8")
+    return _encoder_fec(lignes_fec)
 
 
 def xlsx_vers_fec(brut: bytes, nom_fichier: str = "") -> bytes:
@@ -767,7 +864,7 @@ def xlsx_vers_fec(brut: bytes, nom_fichier: str = "") -> bytes:
     except ErreurFEC:
         raise
     except Exception as exc:
-        if load_workbook is None:
+        if not _OPENPYXL_DISPONIBLE:
             try:
                 rows = _lire_xlsx_stdlib(brut, nom_fichier)
             except ErreurFEC:
@@ -781,12 +878,13 @@ def xlsx_vers_fec(brut: bytes, nom_fichier: str = "") -> bytes:
                 "Classeur Excel illisible (%s) : %s" % (nom_fichier, exc)
             )
 
-    idx, colonnes = _trouver_entete(rows)
-    if colonnes is None:
+    entete = _trouver_entete(rows, OBLIGATOIRES)
+    if entete is None:
         # Export "Liste des ecritures" Cegid Quadra (Periode + Jour +
         # NumUniq, sans numero d'ecriture) : conversion dediee.
-        idx_q, col_q = _trouver_entete_quadra(rows)
-        if col_q is not None:
+        entete_quadra = _trouver_entete(rows, QUADRA_OBLIGATOIRES)
+        if entete_quadra is not None:
+            idx_q, col_q = entete_quadra
             return _convertir_quadra(rows, idx_q, col_q, nom_fichier)
         raise ErreurFEC(
             "Ligne d'en-tete introuvable dans %r : CONCORDE attend au "
@@ -797,15 +895,15 @@ def xlsx_vers_fec(brut: bytes, nom_fichier: str = "") -> bytes:
             "Aucune colonne n'est devinee." % (nom_fichier,)
         )
 
-    def val(row, champ):
-        j = colonnes.get(champ)
-        if j is None or j >= len(row):
-            return None
-        return row[j]
+    idx, colonnes = entete
 
-    out = ["\t".join(CHAMPS_FEC)]
-    nb_lignes = 0
-    for row in rows[idx + 1 :]:
+    def val(row: Sequence[CelluleXlsx], champ: str) -> CelluleXlsx:
+        """Lit la cellule du champ `champ` dans la ligne `row`."""
+        return _valeur_colonne(row, colonnes, champ)
+
+    lignes_fec: list[dict[str, str]] = []
+    debut_donnees = idx + 1
+    for row in rows[debut_donnees:]:
         if row is None:
             continue
         compte = _nombre_texte(val(row, "CompteNum"))
@@ -831,35 +929,27 @@ def xlsx_vers_fec(brut: bytes, nom_fichier: str = "") -> bytes:
         piece = _nettoyer_texte(val(row, "PieceRef"))
         compte_lib = _nettoyer_texte(val(row, "CompteLib"))
 
-        ligne = {
-            "JournalCode": journal,
-            "JournalLib": journal_lib,
-            "EcritureNum": ecriture_num,
-            "EcritureDate": date_ecr,
-            "CompteNum": compte,
-            "CompteLib": compte_lib,
-            "CompAuxNum": "",
-            "CompAuxLib": "",
-            "PieceRef": piece,
-            "PieceDate": date_ecr,
-            "EcritureLib": libelle or piece or "Ecriture %s" % ecriture_num,
-            "Debit": _fmt_centimes(debit_c),
-            "Credit": _fmt_centimes(credit_c),
-            "EcritureLet": "",
-            "DateLet": "",
-            "ValidDate": date_ecr,
-            "Montantdevise": "",
-            "Idevise": "",
-        }
-        out.append("\t".join(ligne[c] for c in CHAMPS_FEC))
-        nb_lignes += 1
+        lignes_fec.append(
+            _construire_ligne_fec(
+                journal=journal,
+                journal_lib=journal_lib,
+                ecriture_num=ecriture_num,
+                date_ecr=date_ecr,
+                compte=compte,
+                compte_lib=compte_lib,
+                piece=piece,
+                libelle=libelle or piece or "Ecriture %s" % ecriture_num,
+                debit_c=debit_c,
+                credit_c=credit_c,
+            )
+        )
 
-    if nb_lignes == 0:
+    if not lignes_fec:
         raise ErreurFEC(
             "Aucune ligne d'ecriture exploitable dans %r apres l'en-tete "
             "(colonne %s)." % (nom_fichier, "ligne %d" % (idx + 1))
         )
-    return ("\n".join(out) + "\n").encode("utf-8")
+    return _encoder_fec(lignes_fec)
 
 
 def _fmt_centimes(centimes: int) -> str:

@@ -1,77 +1,155 @@
 # CONCORDE v1.0 — (c) MASITH / Stéphane Moreau. Tous droits réservés.
-"""Vérifier, analyser et comparer deux bases Odoo 17 sur une période — LECTURE SEULE.
+"""Vérifier, analyser et comparer deux bases Odoo 17 sur une période.
 
-Pour chaque base (A et B) : vérification (équilibre, analytique orpheline) et analyse
-complète (core/passerelle.analyser_source). Puis comparaison :
+LECTURE SEULE. Pour chaque base (A et B) : vérification (équilibre,
+analytique orpheline) et analyse complète (core/passerelle.analyser_source).
+Puis comparaison :
 
   1. totaux (lignes, écritures, débit, crédit) ;
   2. soldes par compte, par journal, par tiers (client / fournisseur) ;
-  3. écriture par écriture. Rapprochement : d'abord par (journal, numéro de pièce) ;
-     pour les brouillons « / » et le reste, par contenu (journal, date, référence, total).
-     Classes : identique, différente (détail : date, référence, comptes, montants, tiers,
-     libellés, lettrage), « analytique seule », seulement dans A, seulement dans B ;
-  4. analytique : répartitions différentes, comptes analytiques disparus (« #id »).
+  3. écriture par écriture. Rapprochement : d'abord par (journal, numéro
+     de pièce) ; pour les brouillons « / » et le reste, par contenu
+     (journal, date, référence, total).
+     Classes : identique, différente (détail : date, référence, comptes,
+     montants, tiers, libellés, lettrage), « analytique seule »,
+     seulement dans A, seulement dans B ;
+  4. analytique : répartitions différentes, comptes analytiques disparus
+     (« #id »).
 
-Option `date_copie` (B est une copie de A faite à cette date, ou l'inverse) : chaque
-écriture différente est marquée selon le côté modifié après la copie — c'est la base de
-l'alignement prod / test (ADR-0006) : modifiée d'un seul côté = application possible,
-modifiée des deux côtés = CONFLIT.
+Option `date_copie` (B est une copie de A faite à cette date, ou
+l'inverse) : chaque écriture différente est marquée selon le côté modifié
+après la copie — c'est la base de l'alignement prod / test (ADR-0006) :
+modifiée d'un seul côté = application possible, modifiée des deux côtés =
+CONFLIT.
 
 Rien n'est écrit dans aucune base. Montants en centimes.
 """
 
 from collections import Counter, OrderedDict, defaultdict
-from datetime import datetime
+from collections.abc import Callable, Collection, Iterable, Mapping, Sequence
+from datetime import date, datetime
+from typing import Any, TypedDict
 
 from .analyser import Rapport
 from .comptes import solde_texte
-from .journal import nombre_texte, ou_muet
-from .xlsx_ecrire import Centimes, ecrire_xlsx, euros_texte
+from .journal import Journal, nombre_texte, ou_muet
+from .odoo_source import SourceOdoo
+from .xlsx_ecrire import Centimes, Feuille, ecrire_xlsx, euros_texte
 
 EXEMPLES = 30
 
+# Ligne lue (format commun de core/odoo_source.py) : valeurs hétérogènes.
+LigneLue = Mapping[str, Any]
 
-def _regrouper(lignes):
-    """{ecriture_id: {entete, lignes}} dans l'ordre de lecture."""
-    ecr = OrderedDict()
-    for l in lignes:
-        e = ecr.get(l["ecriture_id"])
+# Clé d'agrégation des soldes : compte, journal ou (compte, tiers).
+CleSolde = str | tuple[str, str]
+
+# Signature d'une ligne : compte, tiers, débit, crédit, libellé, lettrée,
+# puis la répartition analytique si elle est demandée.
+SignatureComparaison = (
+    tuple[str, str, int, int, str, bool]
+    | tuple[str, str, int, int, str, bool, str]
+)
+
+# Détails de la comparaison par catégorie (écarts de soldes, écritures
+# différentes, orphelines) : lignes destinées au classeur xlsx.
+DetailsComparaison = dict[str, Sequence[Mapping[str, Any]]]
+
+
+class EcritureGroupee(TypedDict):
+    """Écriture reconstituée à partir de ses lignes."""
+
+    id: int
+    journal: str
+    numero: str
+    date: date | None
+    reference: str
+    etat: str
+    modifie_le: str
+    lignes: list[LigneLue]
+    total: int
+
+
+class EcartSolde(TypedDict):
+    """Écart de solde entre A et B pour une clé (compte, journal, tiers)."""
+
+    cle: str
+    solde_a: int
+    solde_b: int
+    ecart: int
+    lignes_a: int
+    lignes_b: int
+
+
+class EcritureDifferente(TypedDict):
+    """Couple d'écritures rapprochées qui diffèrent."""
+
+    journal: str
+    numero_a: str
+    numero_b: str
+    date: date | None
+    total_a: int
+    total_b: int
+    differences: list[str]
+    cote: str
+
+
+def _regrouper(
+    lignes: Iterable[LigneLue],
+) -> "OrderedDict[int, EcritureGroupee]":
+    """{ecriture_id: écriture et ses lignes} dans l'ordre de lecture."""
+    ecr: OrderedDict[int, EcritureGroupee] = OrderedDict()
+    for ligne in lignes:
+        e = ecr.get(ligne["ecriture_id"])
         if e is None:
-            e = ecr[l["ecriture_id"]] = {
-                "id": l["ecriture_id"],
-                "journal": l["journal_code"],
-                "numero": l["ecriture"],
-                "date": l["date"],
-                "reference": l["reference"],
-                "etat": l["etat"],
-                "modifie_le": str(l.get("modifie_le") or ""),
+            e = ecr[ligne["ecriture_id"]] = {
+                "id": ligne["ecriture_id"],
+                "journal": ligne["journal_code"],
+                "numero": ligne["ecriture"],
+                "date": ligne["date"],
+                "reference": ligne["reference"],
+                "etat": ligne["etat"],
+                "modifie_le": str(ligne.get("modifie_le") or ""),
                 "lignes": [],
+                "total": 0,
             }
-        e["lignes"].append(l)
-        if str(l.get("modifie_le") or "") > e["modifie_le"]:
-            e["modifie_le"] = str(l.get("modifie_le") or "")
+        e["lignes"].append(ligne)
+        if str(ligne.get("modifie_le") or "") > e["modifie_le"]:
+            e["modifie_le"] = str(ligne.get("modifie_le") or "")
     for e in ecr.values():
-        e["total"] = sum(l["debit"] for l in e["lignes"])
+        e["total"] = sum(ligne["debit"] for ligne in e["lignes"])
     return ecr
 
 
-def _tiers(l):
-    return l["tiers_ref"] or (l["tiers_nom"] or "").strip().upper()
+def _tiers(ligne: LigneLue) -> str:
+    """Identifiant comparable du tiers : référence, sinon nom normalisé.
 
-
-def _sig_ligne(l, analytique=True):
-    s = (
-        l["compte"],
-        _tiers(l),
-        l["debit"],
-        l["credit"],
-        (l["libelle"] or "").strip(),
-        bool(l["lettrage"]),
+    Usages : `_sig_ligne`, agrégation des soldes par tiers (`comparer`).
+    """
+    return str(
+        ligne["tiers_ref"] or (ligne["tiers_nom"] or "").strip().upper()
     )
-    return s + ((l.get("analytique") or "",) if analytique else ())
 
 
-def _cle_contenu(e):
+def _sig_ligne(
+    ligne: LigneLue, analytique: bool = True
+) -> SignatureComparaison:
+    """Signature comparable d'une ligne (avec ou sans analytique)."""
+    s: tuple[str, str, int, int, str, bool] = (
+        ligne["compte"],
+        _tiers(ligne),
+        ligne["debit"],
+        ligne["credit"],
+        (ligne["libelle"] or "").strip(),
+        bool(ligne["lettrage"]),
+    )
+    if analytique:
+        return s + (ligne.get("analytique") or "",)
+    return s
+
+
+def _cle_contenu(e: EcritureGroupee) -> tuple[str, date | None, str, int]:
+    """Clé de rapprochement par contenu : journal, date, référence, total."""
     return (
         e["journal"],
         e["date"],
@@ -80,13 +158,23 @@ def _cle_contenu(e):
     )
 
 
-def rapprocher(ea, eb):
+def rapprocher(
+    ea: Mapping[int, EcritureGroupee], eb: Mapping[int, EcritureGroupee]
+) -> tuple[
+    list[tuple[EcritureGroupee, EcritureGroupee]],
+    list[EcritureGroupee],
+    list[EcritureGroupee],
+]:
     """Couples (a, b) d'écritures, et listes des orphelines de chaque côté."""
-    par_num_b = defaultdict(list)
+    par_num_b: defaultdict[tuple[str, str], list[EcritureGroupee]] = (
+        defaultdict(list)
+    )
     for e in eb.values():
         if e["numero"] not in ("", "/"):
             par_num_b[(e["journal"], e["numero"])].append(e)
-    couples, reste_a, pris_b = [], [], set()
+    couples: list[tuple[EcritureGroupee, EcritureGroupee]] = []
+    reste_a: list[EcritureGroupee] = []
+    pris_b: set[int] = set()
     for e in ea.values():
         cands = [
             x
@@ -98,15 +186,17 @@ def rapprocher(ea, eb):
             pris_b.add(cands[0]["id"])
         else:
             reste_a.append(e)
-    par_contenu_b = defaultdict(list)
+    par_contenu_b: defaultdict[
+        tuple[str, date | None, str, int], list[EcritureGroupee]
+    ] = defaultdict(list)
     for e in eb.values():
         if e["id"] not in pris_b:
             par_contenu_b[_cle_contenu(e)].append(e)
-    seul_a = []
+    seul_a: list[EcritureGroupee] = []
     for e in reste_a:
-        cands = par_contenu_b.get(_cle_contenu(e))
-        if cands:
-            b = cands.pop(0)
+        candidats = par_contenu_b.get(_cle_contenu(e))
+        if candidats:
+            b = candidats.pop(0)
             couples.append((e, b))
             pris_b.add(b["id"])
         else:
@@ -115,8 +205,29 @@ def rapprocher(ea, eb):
     return couples, seul_a, seul_b
 
 
-def differences(a, b):
-    """Liste lisible des différences entre deux écritures rapprochées ('' = identiques)."""
+def _lignes_seulement(
+    cote: str, signatures: Iterable[SignatureComparaison]
+) -> list[str]:
+    """Décrit au plus 3 lignes présentes d'un seul côté (`cote` : A ou B).
+
+    Usages : `differences` (lignes de A seulement, lignes de B seulement).
+    """
+    return [
+        "ligne %s seulement : %s %s %s/%s « %s »"
+        % (
+            cote,
+            s[0],
+            s[1],
+            euros_texte(s[2], ","),
+            euros_texte(s[3], ","),
+            s[4][:40],
+        )
+        for s in list(signatures)[:3]
+    ]
+
+
+def differences(a: EcritureGroupee, b: EcritureGroupee) -> list[str]:
+    """Différences lisibles entre deux écritures rapprochées ([] = égales)."""
     diffs = []
     if a["date"] != b["date"]:
         diffs.append("date %s → %s" % (a["date"], b["date"]))
@@ -126,62 +237,58 @@ def differences(a, b):
         )
     if a["etat"] != b["etat"]:
         diffs.append("état %s → %s" % (a["etat"], b["etat"]))
-    sa = Counter(_sig_ligne(l) for l in a["lignes"])
-    sb = Counter(_sig_ligne(l) for l in b["lignes"])
+    sa = Counter(_sig_ligne(ligne) for ligne in a["lignes"])
+    sb = Counter(_sig_ligne(ligne) for ligne in b["lignes"])
     if sa != sb:
-        sans_an_a = Counter(_sig_ligne(l, False) for l in a["lignes"])
-        sans_an_b = Counter(_sig_ligne(l, False) for l in b["lignes"])
+        sans_an_a = Counter(_sig_ligne(ligne, False) for ligne in a["lignes"])
+        sans_an_b = Counter(_sig_ligne(ligne, False) for ligne in b["lignes"])
         if sans_an_a == sans_an_b:
             diffs.append("analytique seule")
         else:
             moins, plus = sans_an_a - sans_an_b, sans_an_b - sans_an_a
-            for s in list(moins)[:3]:
-                diffs.append(
-                    "ligne A seulement : %s %s %s/%s « %s »"
-                    % (
-                        s[0],
-                        s[1],
-                        euros_texte(s[2], ","),
-                        euros_texte(s[3], ","),
-                        s[4][:40],
-                    )
-                )
-            for s in list(plus)[:3]:
-                diffs.append(
-                    "ligne B seulement : %s %s %s/%s « %s »"
-                    % (
-                        s[0],
-                        s[1],
-                        euros_texte(s[2], ","),
-                        euros_texte(s[3], ","),
-                        s[4][:40],
-                    )
-                )
+            diffs += _lignes_seulement("A", moins)
+            diffs += _lignes_seulement("B", plus)
     return diffs
 
 
-def _agreger(lignes, cle):
-    d = defaultdict(lambda: [0, 0, 0])
-    for l in lignes:
-        k = cle(l)
+def _agreger(
+    lignes: Iterable[LigneLue], cle: Callable[[LigneLue], CleSolde | None]
+) -> defaultdict[CleSolde, list[int]]:
+    """Totalise [débit, crédit, nombre de lignes] par clé (None = ignorée)."""
+    d: defaultdict[CleSolde, list[int]] = defaultdict(lambda: [0, 0, 0])
+    for ligne in lignes:
+        k = cle(ligne)
         if k is None:
             continue
-        d[k][0] += l["debit"]
-        d[k][1] += l["credit"]
+        d[k][0] += ligne["debit"]
+        d[k][1] += ligne["credit"]
         d[k][2] += 1
     return d
 
 
 def comparer(
-    lignes_a, lignes_b, nom_a="A", nom_b="B", date_copie=None, journal=None
-):
-    """Compare deux listes de lignes (format des sources). Retourne (Rapport, détails)."""
+    lignes_a: Sequence[LigneLue],
+    lignes_b: Sequence[LigneLue],
+    nom_a: str = "A",
+    nom_b: str = "B",
+    date_copie: str | date | None = None,
+    journal: Journal | None = None,
+) -> tuple[Rapport, DetailsComparaison]:
+    """Compare deux listes de lignes (format des sources).
+
+    Rôle : étapes 1 à 3 de la comparaison (voir l'en-tête du module).
+    Paramètres : lignes_a, lignes_b ; nom_a, nom_b (libellés des bases) ;
+    date_copie (date de la copie entre les bases, optionnelle) ; journal.
+    Retour : (Rapport, détails par catégorie pour le classeur).
+    Erreurs : KeyError si une ligne n'a pas le format commun.
+    Usages : comparer_bases, tests.
+    """
     j = ou_muet(journal)
     r = Rapport()
-    if (
-        date_copie
-    ):  # même forme que write_date d'Odoo : « AAAA-MM-JJ HH:MM:SS » (UTC)
-        date_copie = str(date_copie).replace("T", " ")[:19]
+    # Même forme que write_date d'Odoo : « AAAA-MM-JJ HH:MM:SS » (UTC).
+    copie_texte = (
+        str(date_copie).replace("T", " ")[:19] if date_copie else None
+    )
     ea, eb = _regrouper(lignes_a), _regrouper(lignes_b)
 
     # 1. Totaux
@@ -191,8 +298,8 @@ def comparer(
             {
                 "lignes": len(lignes),
                 "ecritures": len(ecr),
-                "debit": sum(l["debit"] for l in lignes),
-                "credit": sum(l["credit"] for l in lignes),
+                "debit": sum(ligne["debit"] for ligne in lignes),
+                "credit": sum(ligne["credit"] for ligne in lignes),
             },
         )
     ta, tb = r.infos["totaux_" + nom_a], r.infos["totaux_" + nom_b]
@@ -210,23 +317,26 @@ def comparer(
     )
 
     # 2. Soldes par compte, journal, tiers
-    details = {}
-    for code, nom_dim, cle in (
-        ("CMP_ECART_COMPTE", "comptes", lambda l: l["compte"]),
-        ("CMP_ECART_JOURNAL", "journaux", lambda l: l["journal_code"]),
+    details: DetailsComparaison = {}
+    dimensions: tuple[
+        tuple[str, str, Callable[[LigneLue], CleSolde | None]], ...
+    ] = (
+        ("CMP_ECART_COMPTE", "comptes", lambda ligne: ligne["compte"]),
+        ("CMP_ECART_JOURNAL", "journaux", lambda ligne: ligne["journal_code"]),
         (
             "CMP_ECART_TIERS",
             "tiers",
-            lambda l: (
-                (l["compte"], _tiers(l))
-                if l["compte_type"]
+            lambda ligne: (
+                (ligne["compte"], _tiers(ligne))
+                if ligne["compte_type"]
                 in ("asset_receivable", "liability_payable")
                 else None
             ),
         ),
-    ):
+    )
+    for code, nom_dim, cle in dimensions:
         da, db = _agreger(lignes_a, cle), _agreger(lignes_b, cle)
-        ecarts = []
+        ecarts: list[EcartSolde] = []
         for k in sorted(set(da) | set(db), key=str):
             sa_ = da[k][0] - da[k][1] if k in da else 0
             sb_ = db[k][0] - db[k][1] if k in db else 0
@@ -280,15 +390,19 @@ def comparer(
 
     # 3. Écriture par écriture
     couples, seul_a, seul_b = rapprocher(ea, eb)
-    identiques, differentes, analytique_seule, conflits = 0, [], [], []
+    identiques = 0
+    differentes: list[EcritureDifferente] = []
+    analytique_seule: list[EcritureDifferente] = []
+    conflits: list[EcritureDifferente] = []
     for a, b in couples:
         diffs = differences(a, b)
         if not diffs:
             identiques += 1
             continue
         cote = ""
-        if date_copie:
-            ma, mb = a["modifie_le"] > date_copie, b["modifie_le"] > date_copie
+        if copie_texte:
+            ma = a["modifie_le"] > copie_texte
+            mb = b["modifie_le"] > copie_texte
             cote = {
                 (
                     True,
@@ -298,7 +412,7 @@ def comparer(
                 (False, True): "modifiée dans %s après la copie" % nom_b,
                 (False, False): "aucune modification datée après la copie",
             }[(ma, mb)]
-        ligne = {
+        ligne: EcritureDifferente = {
             "journal": a["journal"],
             "numero_a": a["numero"],
             "numero_b": b["numero"],
@@ -326,7 +440,8 @@ def comparer(
     r.info("ecritures_rapprochees", len(couples))
     r.info("ecritures_identiques", identiques)
 
-    def lib(x):
+    def lib(x: Mapping[str, Any]) -> str:
+        """Libellé d'une écriture : journal, numéro, date, total."""
         return "%s %s du %s (%s €)" % (
             x["journal"],
             x.get("numero_a") or x.get("numero"),
@@ -369,16 +484,17 @@ def comparer(
         "Écritures présentes seulement dans %s" % nom_b,
         [lib(dict(x, numero_a=x["numero"])) for x in seul_b],
     )
-    if date_copie:
+    if copie_texte:
         r.constat(
             "BLOQUANT",
             "CMP_CONFLIT",
-            "Conflits : écritures modifiées dans les deux bases après la copie",
+            "Conflits : écritures modifiées dans les deux bases après la "
+            "copie",
             [lib(x) for x in conflits],
         )
     j.dire(
-        "Écritures : %s rapprochées, %s identiques, %s différentes, %s analytique seule, "
-        "%s seulement dans %s, %s seulement dans %s"
+        "Écritures : %s rapprochées, %s identiques, %s différentes, "
+        "%s analytique seule, %s seulement dans %s, %s seulement dans %s"
         % (
             nombre_texte(len(couples)),
             nombre_texte(identiques),
@@ -394,11 +510,11 @@ def comparer(
     return r, details
 
 
-def verifier(lignes, nom):
+def verifier(lignes: Sequence[LigneLue], nom: str) -> Rapport:
     """Vérifications propres à une base : équilibre et analytique orpheline."""
     r = Rapport()
-    debit = sum(l["debit"] for l in lignes)
-    credit = sum(l["credit"] for l in lignes)
+    debit = sum(ligne["debit"] for ligne in lignes)
+    credit = sum(ligne["credit"] for ligne in lignes)
     if debit != credit:
         r.constat(
             "BLOQUANT",
@@ -410,7 +526,11 @@ def verifier(lignes, nom):
             ],
         )
     orphelins = sorted(
-        {l["analytique"] for l in lignes if "#" in (l.get("analytique") or "")}
+        {
+            ligne["analytique"]
+            for ligne in lignes
+            if "#" in (ligne.get("analytique") or "")
+        }
     )
     r.constat(
         "ALERTE",
@@ -421,14 +541,23 @@ def verifier(lignes, nom):
     return r
 
 
-def ecrire_classeur(chemin, nom_a, nom_b, rapport, details):
-    """Classeur xlsx : synthèse et une feuille par type d'écart."""
+def ecrire_classeur(
+    chemin: str,
+    nom_a: str,
+    nom_b: str,
+    rapport: Rapport,
+    details: DetailsComparaison,
+) -> dict[str, int]:
+    """Classeur xlsx : synthèse et une feuille par type d'écart.
+
+    Retour : {nom de feuille: nombre de lignes de données}.
+    """
     i = rapport.infos
-    synth = [["Constat", "Niveau", "Nombre"]]
+    synth: list[list[object]] = [["Constat", "Niveau", "Nombre"]]
     synth += [
         [c["message"], c["niveau"], c["nombre"]] for c in rapport.constats
     ]
-    feuilles = [
+    feuilles: list[Feuille] = [
         (
             "Synthese",
             ("Élément", nom_a, nom_b),
@@ -555,44 +684,58 @@ def ecrire_classeur(chemin, nom_a, nom_b, rapport, details):
     return ecrire_xlsx(chemin, feuilles)
 
 
-def filtrer_lignes(lignes, comptes=None, analytiques=None):
-    """Garde les lignes sur les comptes comptables choisis ET (si donnés) touchant au moins un
-    des comptes analytiques choisis. Sans filtre : toutes les lignes."""
-    comptes = set(comptes or ())
-    analytiques = set(analytiques or ())
+def filtrer_lignes(
+    lignes: Iterable[LigneLue],
+    comptes: Iterable[str] | None = None,
+    analytiques: Iterable[str] | None = None,
+) -> list[LigneLue]:
+    """Garde les lignes des comptes comptables choisis.
+
+    Si des comptes analytiques sont donnés, la ligne doit aussi toucher au
+    moins l'un d'eux. Sans filtre : toutes les lignes.
+    """
+    comptes_choisis = set(comptes or ())
+    analytiques_choisis = set(analytiques or ())
     return [
-        l
-        for l in lignes
-        if (not comptes or l["compte"] in comptes)
+        ligne
+        for ligne in lignes
+        if (not comptes_choisis or ligne["compte"] in comptes_choisis)
         and (
-            not analytiques
-            or analytiques & set(l.get("analytique_comptes") or ())
+            not analytiques_choisis
+            or analytiques_choisis & set(ligne.get("analytique_comptes") or ())
         )
     ]
 
 
 def comparer_bases(
-    source_a,
-    source_b,
-    du=None,
-    au=None,
-    etats=("posted",),
-    date_copie=None,
-    dossier=None,
-    journal=None,
-    comptes=None,
-    analytiques=None,
-):
-    """Vérifie, analyse et compare deux bases (sources SQL ou XML-RPC). Retourne un dict.
+    source_a: SourceOdoo,
+    source_b: SourceOdoo,
+    du: date | None = None,
+    au: date | None = None,
+    etats: Sequence[str] = ("posted",),
+    date_copie: str | date | None = None,
+    dossier: str | None = None,
+    journal: Journal | None = None,
+    comptes: Collection[str] | None = None,
+    analytiques: Collection[str] | None = None,
+) -> dict[str, Any]:
+    """Vérifie, analyse et compare deux bases (sources SQL ou XML-RPC).
 
-    comptes / analytiques : listes de comptes (codes) et de comptes analytiques (code ou nom)
-    à comparer ; la vérification et l'analyse de chaque base restent complètes.
+    Rôle : action « comparer » de la ligne de commande et de l'interface.
+    Paramètres : source_a, source_b ; période du / au ; etats lus ;
+    date_copie ; dossier du classeur xlsx (optionnel) ; journal ;
+    comptes / analytiques : comptes (codes) et comptes analytiques (code
+    ou nom) à comparer — la vérification et l'analyse de chaque base
+    restent complètes.
+    Retour : résultat JSON (analyses, comparaison, nombres, fichier).
+    Erreurs : celles des sources ; OSError en écriture du classeur.
+    Usages : scripts/concorde_comparer.py, interface/serveur.py.
     """
     from .passerelle import analyser_source
 
     j = ou_muet(journal)
     nom_a, nom_b = "A", "B"
-    res = {
+    res: dict[str, Any] = {
         "base_a": source_a.base,
         "base_b": source_b.base,
         "du": du,
@@ -602,7 +745,7 @@ def comparer_bases(
         "filtre_comptes": sorted(comptes or ()),
         "filtre_analytiques": sorted(analytiques or ()),
     }
-    lignes = {}
+    lignes: dict[str, Sequence[LigneLue]] = {}
     for nom, src in ((nom_a, source_a), (nom_b, source_b)):
         with j.etape(
             "Base %s (%s) : lecture des écritures de la période"

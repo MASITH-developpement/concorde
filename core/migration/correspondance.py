@@ -1,47 +1,66 @@
 # CONCORDE v1.0 — (c) MASITH / Stéphane Moreau. Tous droits réservés.
 """Porte 4 — correspondance des comptes source -> comptes Odoo.
 
-Règle MASITH : on traduit UNIQUEMENT avec la table arbitrée par le comptable.
-Un compte absent de la table n'est jamais deviné : il part dans un fichier
-« à arbitrer » (xlsx, colonne « Compte Odoo » à remplir) et la migration bloque.
+Règle MASITH : on traduit UNIQUEMENT avec la table arbitrée par le
+comptable. Un compte absent de la table n'est jamais deviné : il part dans
+un fichier « à arbitrer » (xlsx, colonne « Compte Odoo » à remplir) et la
+migration bloque.
 
-Exception explicite : `identique=True` (choix du comptable, tracé dans le journal et
-le rapport) garde les numéros de comptes tels quels.
+Exception explicite : `identique=True` (choix du comptable, tracé dans le
+journal et le rapport) garde les numéros de comptes tels quels.
 
-Table acceptée : xlsx (core/mapping.py, colonnes détectées), JSON {source: cible},
-CSV à deux colonnes « source;cible ».
+Table acceptée : xlsx (core/mapping.py, colonnes détectées), JSON
+{source: cible}, CSV à deux colonnes « source;cible ».
 """
 
 import csv
 import io
 import json
+from collections.abc import Mapping
+from typing import TypedDict
 
 from ..analyser import Rapport
-from ..journal import nombre_texte, ou_muet
+from ..journal import Journal, nombre_texte, ou_muet
 from ..mapping import charger_mapping_xlsx
 from ..xlsx_ecrire import Centimes, ecrire_xlsx
+from .lot import Lot
 
 
 class ErreurTable(ValueError):
-    pass
+    """Table de correspondance illisible (format ou contenu)."""
 
 
-def charger_table(brut, nom):
-    """Table de correspondance -> {compte source: compte Odoo}."""
-    n = nom.lower()
-    if n.endswith(".xlsx"):
+class CompteAArbitrer(TypedDict):
+    """Compte source absent de la table : libellé, lignes et montants."""
+
+    libelle: str
+    lignes: int
+    debit: int
+    credit: int
+
+
+def charger_table(brut: bytes, nom: str) -> dict[str, str]:
+    """Table de correspondance -> {compte source: compte Odoo}.
+
+    Lève ErreurTable si le format n'est pas reconnu ou le JSON n'est pas un
+    objet.
+    """
+    nom_minuscule = nom.lower()
+    if nom_minuscule.endswith(".xlsx"):
         return dict(charger_mapping_xlsx(brut, nom))
     texte = brut.decode("utf-8-sig")
-    if n.endswith(".json"):
-        d = json.loads(texte)
-        if not isinstance(d, dict):
+    if nom_minuscule.endswith(".json"):
+        contenu_json = json.loads(texte)
+        if not isinstance(contenu_json, dict):
             raise ErreurTable(
                 "Table JSON : objet {compte source: compte Odoo} attendu."
             )
-        return {str(k).strip(): str(v).strip() for k, v in d.items()}
-    if n.endswith(".csv") or n.endswith(".txt"):
+        return {
+            str(k).strip(): str(v).strip() for k, v in contenu_json.items()
+        }
+    if nom_minuscule.endswith(".csv") or nom_minuscule.endswith(".txt"):
         sep = ";" if texte.count(";") >= texte.count(",") else ","
-        table = {}
+        table: dict[str, str] = {}
         for i, row in enumerate(
             csv.reader(io.StringIO(texte), delimiter=sep), 1
         ):
@@ -56,40 +75,46 @@ def charger_table(brut, nom):
     )
 
 
-def appliquer(lot, table=None, identique=False, journal=None):
+def appliquer(
+    lot: Lot,
+    table: Mapping[str, str] | None = None,
+    identique: bool = False,
+    journal: Journal | None = None,
+) -> Rapport:
     """Renseigne `compte_cible` sur chaque ligne. Retourne un Rapport."""
     j = ou_muet(journal)
     r = Rapport()
     if identique:
         j.dire(
-            "Correspondance : comptes repris À L'IDENTIQUE (choix explicite du comptable)",
+            "Correspondance : comptes repris À L'IDENTIQUE "
+            "(choix explicite du comptable)",
             "alerte",
         )
-        for l in lot.lignes:
-            l["compte_cible"] = l["compte"]
+        for ligne in lot.lignes:
+            ligne["compte_cible"] = ligne["compte"]
         r.info("mode", "identique")
-        r.info("comptes", len({l["compte"] for l in lot.lignes}))
+        r.info("comptes", len({ligne["compte"] for ligne in lot.lignes}))
         return r
     table = table or {}
     vides = [k for k, v in table.items() if not v]
-    a_arbitrer = {}
-    for l in lot.lignes:
-        cible = table.get(l["compte"])
-        l["compte_cible"] = cible or None
+    a_arbitrer: dict[str, CompteAArbitrer] = {}
+    for ligne in lot.lignes:
+        cible = table.get(ligne["compte"])
+        ligne["compte_cible"] = cible or None
         if not cible:
-            a = a_arbitrer.setdefault(
-                l["compte"],
+            compte_a_arbitrer = a_arbitrer.setdefault(
+                ligne["compte"],
                 {
-                    "libelle": l["compte_lib"],
+                    "libelle": ligne["compte_lib"],
                     "lignes": 0,
                     "debit": 0,
                     "credit": 0,
                 },
             )
-            a["lignes"] += 1
-            a["debit"] += l["debit"]
-            a["credit"] += l["credit"]
-    sources = {l["compte"] for l in lot.lignes}
+            compte_a_arbitrer["lignes"] += 1
+            compte_a_arbitrer["debit"] += ligne["debit"]
+            compte_a_arbitrer["credit"] += ligne["credit"]
+    sources = {ligne["compte"] for ligne in lot.lignes}
     r.info("mode", "table")
     r.info("comptes_source", len(sources))
     r.info("comptes_traduits", len(sources) - len(a_arbitrer))
@@ -110,7 +135,7 @@ def appliquer(lot, table=None, identique=False, journal=None):
             "Lignes de la table sans compte Odoo",
             sorted(vides),
         )
-    fusions = {}
+    fusions: dict[str, list[str]] = {}
     for s, c in table.items():
         if s in sources and c:
             fusions.setdefault(c, []).append(s)
@@ -136,7 +161,9 @@ def appliquer(lot, table=None, identique=False, journal=None):
     return r
 
 
-def ecrire_a_arbitrer(chemin, a_arbitrer):
+def ecrire_a_arbitrer(
+    chemin: str, a_arbitrer: Mapping[str, CompteAArbitrer]
+) -> None:
     """Fichier xlsx pour le comptable : une ligne par compte à traduire."""
     ecrire_xlsx(
         chemin,

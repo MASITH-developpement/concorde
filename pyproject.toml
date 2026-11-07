@@ -12,3 +12,8 @@ exclude = ["deploy/addons/concorde/engine/", "deploy/addons1[89]/", "deploy/addo
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]
+
+[tool.pylint.main]
+# __manifest__.py n'est pas un module Python : Odoo le lit comme une donnée
+# (ast.literal_eval) et une docstring le rendrait illisible.
+ignore-patterns = ["__manifest__\\.py"]

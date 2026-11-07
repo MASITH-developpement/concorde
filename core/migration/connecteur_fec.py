@@ -2,8 +2,8 @@
 """Porte 1 — connecteur FEC strict (migration).
 
 Différences avec core/fec_parser.py (pipeline du module Odoo, inchangé) :
-  - rien n'est sauté en silence : une ligne illisible (colonnes, date, montant)
-    est gardée dans `lot.illisibles` avec son numéro et le motif ;
+  - rien n'est sauté en silence : une ligne illisible (colonnes, date,
+    montant) est gardée dans `lot.illisibles` avec son numéro et le motif ;
   - rien n'est dédoublonné : deux lignes identiques sont gardées (le contrôle
     des doublons les signale, c'est au comptable de trancher) ;
   - les 18 colonnes sont lues : tiers (CompAux), lettrage, devise.
@@ -16,8 +16,9 @@ import hashlib
 from datetime import date
 
 from ..canonical import ErreurMontant, vers_centimes
-from ..journal import nombre_texte, ou_muet
-from .lot import Lot
+from ..journal import Journal, nombre_texte, ou_muet
+from ..xlsx_ecrire import euros_texte
+from .lot import LigneIllisible, LigneLot, Lot
 
 CHAMPS_REQUIS = (
     "JournalCode",
@@ -31,10 +32,11 @@ PREAMBULE_MAX = 15
 
 
 class ErreurConnecteur(ValueError):
-    """Source illisible dans son ensemble (pas d'en-tête, encodage inconnu…)."""
+    """Source illisible dans son ensemble (pas d'en-tête, encodage…)."""
 
 
-def _decoder(brut):
+def _decoder(brut: bytes) -> tuple[str, str]:
+    """Décode le fichier : (texte, nom de l'encodage reconnu)."""
     if brut.startswith(b"\xef\xbb\xbf"):
         return brut[3:].decode("utf-8"), "utf-8 (BOM)"
     try:
@@ -43,19 +45,28 @@ def _decoder(brut):
         return brut.decode("iso-8859-15"), "iso-8859-15"
 
 
-def _date(v):
-    v = (v or "").strip()
-    if not v:
+def _date(texte: str | None) -> date | None:
+    """Date FEC (AAAAMMJJ, ou JJ/MM/AAAA toléré) ; None si vide.
+
+    Lève ValueError si la date est invalide.
+    """
+    texte = (texte or "").strip()
+    if not texte:
         return None
-    if len(v) == 8 and v.isdigit():
-        return date(int(v[:4]), int(v[4:6]), int(v[6:8]))
-    if len(v) == 10 and v[2] == "/" and v[5] == "/":  # JJ/MM/AAAA toléré
-        return date(int(v[6:]), int(v[3:5]), int(v[:2]))
-    raise ValueError("date invalide %r" % v)
+    if len(texte) == 8 and texte.isdigit():
+        return date(int(texte[:4]), int(texte[4:6]), int(texte[6:8]))
+    if len(texte) == 10 and texte[2] == "/" and texte[5] == "/":
+        return date(int(texte[6:]), int(texte[3:5]), int(texte[:2]))
+    raise ValueError("date invalide %r" % texte)
 
 
-def lire_fec(brut, nom="fichier.fec", journal=None):
-    """Lit un FEC (bytes). Retourne un Lot. Lève ErreurConnecteur si illisible."""
+def lire_fec(
+    brut: bytes, nom: str = "fichier.fec", journal: Journal | None = None
+) -> Lot:
+    """Lit un FEC (bytes). Retourne un Lot.
+
+    Lève ErreurConnecteur si le fichier est illisible dans son ensemble.
+    """
     j = ou_muet(journal)
     empreinte = hashlib.sha256(brut).hexdigest()
     texte, encodage = _decoder(brut)
@@ -65,11 +76,12 @@ def lire_fec(brut, nom="fichier.fec", journal=None):
         % (nom, nombre_texte(len(brut)), encodage, empreinte[:12])
     )
 
-    entete_i, sep = None, None
-    for i, l in enumerate(lignes_txt[:PREAMBULE_MAX]):
-        if "JournalCode" in l and "EcritureNum" in l:
+    entete_i: int | None = None
+    sep: str | None = None
+    for i, ligne_texte in enumerate(lignes_txt[:PREAMBULE_MAX]):
+        if "JournalCode" in ligne_texte and "EcritureNum" in ligne_texte:
             entete_i = i
-            sep = next((s for s in ("|", "\t", ";") if s in l), None)
+            sep = next((s for s in ("|", "\t", ";") if s in ligne_texte), None)
             break
     if entete_i is None or sep is None:
         raise ErreurConnecteur(
@@ -85,7 +97,7 @@ def lire_fec(brut, nom="fichier.fec", journal=None):
         raise ErreurConnecteur(
             "Colonnes FEC obligatoires absentes : %s" % ", ".join(manquants)
         )
-    idx = {c: i for i, c in enumerate(champs)}
+    index_champs = {c: i for i, c in enumerate(champs)}
     j.dire(
         "En-tête trouvée ligne %d : %d colonnes, séparateur %s"
         % (
@@ -107,7 +119,7 @@ def lire_fec(brut, nom="fichier.fec", journal=None):
             "CompteLib",
             "JournalLib",
         )
-        if c not in idx
+        if c not in index_champs
     ]
     if absentes:
         j.dire(
@@ -116,67 +128,79 @@ def lire_fec(brut, nom="fichier.fec", journal=None):
             "alerte",
         )
 
-    def val(vals, nom_champ):
-        i = idx.get(nom_champ)
+    def valeur_champ(valeurs: list[str], nom_champ: str) -> str:
+        """Valeur nettoyée d'une colonne de la ligne ; vide si absente."""
+        i = index_champs.get(nom_champ)
         return (
-            vals[i].strip().strip('"')
-            if i is not None and i < len(vals)
+            valeurs[i].strip().strip('"')
+            if i is not None and i < len(valeurs)
             else ""
         )
 
-    lignes, illisibles = [], []
-    for n, brute in enumerate(lignes_txt[entete_i + 1 :], start=entete_i + 2):
+    lignes: list[LigneLot] = []
+    illisibles: list[LigneIllisible] = []
+    debut_donnees = entete_i + 1
+    for n, brute in enumerate(
+        lignes_txt[debut_donnees:], start=debut_donnees + 1
+    ):
         if not brute.strip():
             continue
-        vals = brute.split(sep)
-        if len(vals) != len(champs):
+        valeurs = brute.split(sep)
+        if len(valeurs) != len(champs):
             illisibles.append(
                 (
                     n,
                     brute[:200],
-                    "%d colonnes au lieu de %d" % (len(vals), len(champs)),
+                    "%d colonnes au lieu de %d" % (len(valeurs), len(champs)),
                 )
             )
             continue
         try:
-            d = val(vals, "EcritureDate")
-            l = {
-                "n": n,
-                "journal_code": val(vals, "JournalCode"),
-                "journal_lib": val(vals, "JournalLib"),
-                "ecriture": val(vals, "EcritureNum"),
-                "date": _date(d),
-                "compte": val(vals, "CompteNum"),
-                "compte_lib": val(vals, "CompteLib"),
-                "tiers_ref": val(vals, "CompAuxNum"),
-                "tiers_nom": val(vals, "CompAuxLib"),
-                "piece": val(vals, "PieceRef"),
-                "piece_date": _date(val(vals, "PieceDate")),
-                "libelle": val(vals, "EcritureLib"),
-                "debit": vers_centimes(val(vals, "Debit") or "0"),
-                "credit": vers_centimes(val(vals, "Credit") or "0"),
-                "lettrage": val(vals, "EcritureLet"),
-                "date_lettrage": _date(val(vals, "DateLet")),
-                "valid_date": _date(val(vals, "ValidDate")),
-                "montant_devise": (
-                    vers_centimes(val(vals, "Montantdevise"))
-                    if val(vals, "Montantdevise")
-                    else None
-                ),
-                "devise": val(vals, "Idevise"),
-                "analytique": "",  # absent de la norme FEC
-                "compte_cible": None,
-            }
-            if l["date"] is None:
+            date_ecriture = _date(valeur_champ(valeurs, "EcritureDate"))
+            date_piece = _date(valeur_champ(valeurs, "PieceDate"))
+            debit = vers_centimes(valeur_champ(valeurs, "Debit") or "0")
+            credit = vers_centimes(valeur_champ(valeurs, "Credit") or "0")
+            date_lettrage = _date(valeur_champ(valeurs, "DateLet"))
+            date_validation = _date(valeur_champ(valeurs, "ValidDate"))
+            montant_devise = (
+                vers_centimes(valeur_champ(valeurs, "Montantdevise"))
+                if valeur_champ(valeurs, "Montantdevise")
+                else None
+            )
+            if date_ecriture is None:
                 raise ValueError("EcritureDate vide")
-            if l["debit"] < 0 or l["credit"] < 0:
+            if debit < 0 or credit < 0:
                 raise ValueError(
                     "montant négatif (le FEC porte des montants positifs)"
                 )
         except (ValueError, ErreurMontant) as exc:
             illisibles.append((n, brute[:200], str(exc)))
             continue
-        lignes.append(l)
+        lignes.append(
+            {
+                "n": n,
+                "journal_code": valeur_champ(valeurs, "JournalCode"),
+                "journal_lib": valeur_champ(valeurs, "JournalLib"),
+                "ecriture": valeur_champ(valeurs, "EcritureNum"),
+                "date": date_ecriture,
+                "compte": valeur_champ(valeurs, "CompteNum"),
+                "compte_lib": valeur_champ(valeurs, "CompteLib"),
+                "tiers_ref": valeur_champ(valeurs, "CompAuxNum"),
+                "tiers_nom": valeur_champ(valeurs, "CompAuxLib"),
+                "piece": valeur_champ(valeurs, "PieceRef"),
+                "piece_date": date_piece,
+                "libelle": valeur_champ(valeurs, "EcritureLib"),
+                "debit": debit,
+                "credit": credit,
+                "lettrage": valeur_champ(valeurs, "EcritureLet"),
+                "date_lettrage": date_lettrage,
+                "valid_date": date_validation,
+                "montant_devise": montant_devise,
+                "devise": valeur_champ(valeurs, "Idevise"),
+                "analytique": "",  # absent de la norme FEC
+                "compte_cible": None,
+            }
+        )
 
     lot = Lot(
         {
@@ -190,27 +214,26 @@ def lire_fec(brut, nom="fichier.fec", journal=None):
         lignes,
     )
     lot.illisibles = illisibles
-    t = lot.totaux()
+    totaux = lot.totaux()
     j.dire(
         "%s lignes lues, %s écritures, débit %s / crédit %s"
         % (
-            nombre_texte(t["lignes"]),
-            nombre_texte(t["ecritures"]),
-            _euros(t["debit"]),
-            _euros(t["credit"]),
+            nombre_texte(totaux["lignes"]),
+            nombre_texte(totaux["ecritures"]),
+            _euros(totaux["debit"]),
+            _euros(totaux["credit"]),
         ),
         "ok",
     )
     if illisibles:
         j.dire(
-            "%d ligne(s) illisible(s) — elles bloquent la migration (détail dans les "
-            "problèmes)" % len(illisibles),
+            "%d ligne(s) illisible(s) — elles bloquent la migration "
+            "(détail dans les problèmes)" % len(illisibles),
             "erreur",
         )
     return lot
 
 
-def _euros(c):
-    from ..xlsx_ecrire import euros_texte
-
-    return euros_texte(c, ",") + " €"
+def _euros(centimes: int) -> str:
+    """Montant en centimes -> « 1234,56 € »."""
+    return euros_texte(centimes, ",") + " €"

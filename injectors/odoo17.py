@@ -13,6 +13,7 @@ Sécurités CONCORDE respectées :
 - Guardian : l'injecteur refuse de tourner sans self-check OK
 """
 from collections import defaultdict
+from decimal import Decimal
 
 from core.guardian import Guardian
 
@@ -89,28 +90,53 @@ class InjecteurOdoo17:
         return ecritures
 
     @staticmethod
-    def vers_payload_odoo(ecriture):
+    def euros(centimes):
+        """Centimes int -> euros pour Odoo. Calcul exact en Decimal ; le float n'apparaît
+        qu'à la frontière XML-RPC (2 décimales : valeur restituée exactement par Odoo)."""
+        return float(Decimal(int(centimes)) / 100)
+
+    @classmethod
+    def vers_payload_odoo(cls, ecriture, comptes=None, journaux=None):
         """Transforme une écriture canonique en payload account.move Odoo 17.
 
-        Les montants restent des centimes int jusqu'ici ; conversion exacte
-        en euros uniquement à la frontière Odoo (division par 100 sur int,
-        résultat aligné sur 2 décimales — jamais de float intermédiaire).
+        CORRIGÉ le 06/11/2026 : avant, les montants partaient en centimes (100 fois trop)
+        et le compte / le journal par leur CODE au lieu de leur identifiant Odoo.
+        comptes / journaux : {code: id Odoo}. Sans eux (dry-run), les codes restent,
+        pour l'affichage seulement.
         """
+        comptes, journaux = comptes or {}, journaux or {}
         lignes = []
         for l in ecriture["lignes"]:
-            lignes.append({
+            lignes.append((0, 0, {
                 "name": l.libelle,
-                "account_id": l.compte,   # mappé par le connecteur Odoo
-                "debit": l.debit,         # centimes, convertis côté Odoo
-                "credit": l.credit,
-            })
+                "account_id": comptes.get(l.compte, l.compte),
+                "debit": cls.euros(l.debit),
+                "credit": cls.euros(l.credit),
+            }))
         return {
             "ref": ecriture["ref_ext"],
-            "journal_id": ecriture["journal"],
+            "journal_id": journaux.get(ecriture["journal"], ecriture["journal"]),
             "date": ecriture["date"].strftime("%Y-%m-%d"),
             "move_type": "entry",
             "line_ids": lignes,
         }
+
+    def _resoudre(self, ecritures):
+        """{code: id} des comptes et journaux cibles. Code inconnu = refus (rien de deviné)."""
+        codes_c = sorted({l.compte for e in ecritures for l in e["lignes"]})
+        codes_j = sorted({e["journal"] for e in ecritures})
+        comptes = {c["code"]: c["id"] for c in self._models.execute_kw(
+            self.db, self._uid, self.mot_de_passe, "account.account", "search_read",
+            [[["code", "in", codes_c]]], {"fields": ["code"]})}
+        journaux = {j["code"]: j["id"] for j in self._models.execute_kw(
+            self.db, self._uid, self.mot_de_passe, "account.journal", "search_read",
+            [[["code", "in", codes_j]]], {"fields": ["code"]})}
+        manquants = ["compte " + c for c in codes_c if c not in comptes] + \
+                    ["journal " + j for j in codes_j if j not in journaux]
+        if manquants:
+            raise ErreurInjecteur("Absents de la base Odoo cible (rien n'est créé ni deviné) : "
+                                  + ", ".join(manquants[:20]))
+        return comptes, journaux
 
     # --- injection ------------------------------------------------------------
     def _deja_importees(self, refs):
@@ -134,6 +160,7 @@ class InjecteurOdoo17:
         self.connecter()
         refs = [e["ref_ext"] for e in ecritures]
         deja = self._deja_importees(refs)
+        comptes, journaux = ({}, {}) if self.dry_run else self._resoudre(ecritures)
 
         rapport = {"mode": "dry-run" if self.dry_run else "production",
                    "cible": "odoo-%s" % self.VERSION_CIBLE,
@@ -144,7 +171,7 @@ class InjecteurOdoo17:
             if e["ref_ext"] in deja:
                 rapport["refusees"].append({"ref": e["ref_ext"], "motif": "idempotence"})
                 continue
-            payload = self.vers_payload_odoo(e)
+            payload = self.vers_payload_odoo(e, comptes, journaux)
             if self.dry_run:
                 rapport["injectees"].append(
                     {"ref": e["ref_ext"], "simule": True,

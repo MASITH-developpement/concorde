@@ -1,0 +1,13 @@
+# CONCORDE — contrôle ciblé mineur / rançongiciel (ADR-0007). Lancé par concorde-securite.timer.
+[Unit]
+Description=CONCORDE - controle securite (mineur, rancongiciel)
+After=docker.service
+
+[Service]
+Type=oneshot
+User=root
+ExecStart=/usr/bin/python3 /opt/concorde/securite/concorde_securite.py controle
+# Code retour 2 = constat bloquant : ce n'est pas un échec du service.
+SuccessExitStatus=2
+Nice=10
+TimeoutStartSec=300

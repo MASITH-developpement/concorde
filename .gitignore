@@ -1,0 +1,18 @@
+# Secrets locaux (mots de passe PostgreSQL / Odoo) : jamais dans git.
+.env
+*.env
+# Fichiers générés par Python et les outils de mesure.
+__pycache__/
+*.pyc
+.mypy_cache/
+# Moteur embarqué du module Odoo : copié depuis core/ par scripts/install_module.sh.
+deploy/addons/concorde/engine/
+# Modules Odoo 18/19/20 : générés par scripts/derive_addons_versions.sh.
+deploy/addons18/
+deploy/addons19/
+deploy/addons20/
+# Modules Odoo tiers (Odoo Mates) et données locales du serveur : hors dépôt.
+deploy/addons/om_*/
+deploy/addons/accounting_pdf_reports/
+deploy/clamav/
+deploy/*.backup-*

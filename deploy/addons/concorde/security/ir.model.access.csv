@@ -1,3 +1,4 @@
 id,name,model_id:id,group_id:id,perm_read,perm_write,perm_create,perm_unlink
 access_concorde_import_user,concorde.import.user,model_concorde_import,account.group_account_manager,1,1,1,1
 access_concorde_import_wizard_user,concorde.import.wizard.user,model_concorde_import_wizard,account.group_account_manager,1,1,1,1
+access_concorde_demat_controle_user,concorde.demat.controle.user,model_concorde_demat_controle,account.group_account_manager,1,1,1,1

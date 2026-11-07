@@ -24,11 +24,17 @@ for ver in ('18', '19', '20'):
         for old in ('17.0.1.0', '17.0.1.0.0'):
             txt = txt.replace(q + old + q, q + ver + '.0.1.0' + q)
     # --- vues : Odoo 18+ : <tree> devient <list> ; sous-liste move_ids -> vue par defaut
-    vp = os.path.join(dst, 'views', 'concorde_views.xml')
-    if os.path.isfile(vp):
+    # (toutes les vues du module : import FEC + controle dematerialisation)
+    vdir = os.path.join(dst, 'views')
+    for vf in sorted(os.listdir(vdir)) if os.path.isdir(vdir) else []:
+        if not vf.endswith('.xml'):
+            continue
+        vp = os.path.join(vdir, vf)
         v = open(vp, encoding='utf-8').read()
         v = re.sub(r'<field name="move_ids">.*?</field>', '<field name="move_ids"/>', v, flags=re.S)
-        v = v.replace('<tree>', '<list>').replace('</tree>', '</list>')
+        v = re.sub(r'<tree(?=[\s>])', '<list', v).replace('</tree>', '</list>')
+        v = v.replace('<field name="view_mode">tree,form</field>',
+                      '<field name="view_mode">list,form</field>')
         open(vp, 'w', encoding='utf-8').write(v)
     wp = os.path.join(dst, 'wizard', 'concorde_import_wizard.py')
     if os.path.isfile(wp):

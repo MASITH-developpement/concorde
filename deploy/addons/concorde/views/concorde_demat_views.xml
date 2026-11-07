@@ -1,0 +1,85 @@
+<?xml version="1.0" encoding="utf-8"?>
+<odoo>
+    <!-- Contrôle dématérialisation : fiche -->
+    <record id="view_concorde_demat_controle_form" model="ir.ui.view">
+        <field name="name">concorde.demat.controle.form</field>
+        <field name="model">concorde.demat.controle</field>
+        <field name="arch" type="xml">
+            <form string="Contrôle de la dématérialisation">
+                <header>
+                    <button string="Lancer le contrôle" name="action_lancer"
+                            type="object" class="btn-primary"/>
+                    <field name="state" widget="statusbar"/>
+                </header>
+                <sheet>
+                    <group>
+                        <group string="Paramètres">
+                            <field name="name"/>
+                            <field name="jours"/>
+                            <field name="inspecter_pdf"/>
+                            <field name="date_controle"/>
+                        </group>
+                        <group string="Synthèse">
+                            <field name="nb_bloquants"/>
+                            <field name="nb_alertes"/>
+                            <field name="nb_infos"/>
+                            <field name="emission_total"/>
+                            <field name="emission_avec_xml"/>
+                            <field name="reception_total"/>
+                            <field name="reception_avec_xml"/>
+                            <field name="taux_reception"/>
+                        </group>
+                    </group>
+                    <notebook>
+                        <page string="Rapport">
+                            <field name="rapport_html" nolabel="1"/>
+                        </page>
+                        <page string="Traçabilité">
+                            <group>
+                                <field name="empreinte"/>
+                            </group>
+                            <field name="rapport_json" nolabel="1"/>
+                        </page>
+                    </notebook>
+                </sheet>
+            </form>
+        </field>
+    </record>
+
+    <!-- Contrôle dématérialisation : liste -->
+    <record id="view_concorde_demat_controle_tree" model="ir.ui.view">
+        <field name="name">concorde.demat.controle.tree</field>
+        <field name="model">concorde.demat.controle</field>
+        <field name="arch" type="xml">
+            <tree decoration-success="state == 'conforme'"
+                  decoration-warning="state == 'a_verifier'"
+                  decoration-danger="state == 'non_conforme'">
+                <field name="name"/>
+                <field name="date_controle"/>
+                <field name="jours"/>
+                <field name="state" widget="badge"
+                       decoration-success="state == 'conforme'"
+                       decoration-warning="state == 'a_verifier'"
+                       decoration-danger="state == 'non_conforme'"/>
+                <field name="nb_bloquants"/>
+                <field name="nb_alertes"/>
+                <field name="taux_reception"/>
+            </tree>
+        </field>
+    </record>
+
+    <record id="action_concorde_demat_controle" model="ir.actions.act_window">
+        <field name="name">Contrôle dématérialisation</field>
+        <field name="res_model">concorde.demat.controle</field>
+        <field name="view_mode">tree,form</field>
+        <field name="help" type="html">
+            <p class="o_view_nocontent_smiling_face">Lancer un premier contrôle</p>
+            <p>Vérifie l'émission et la réception des factures électroniques
+               (Factur-X / UBL / CII, Peppol, SIREN, TVA) — lecture seule.</p>
+        </field>
+    </record>
+
+    <menuitem id="menu_concorde_demat" name="Contrôle dématérialisation"
+              parent="menu_concorde_root" action="action_concorde_demat_controle"
+              sequence="20"/>
+</odoo>

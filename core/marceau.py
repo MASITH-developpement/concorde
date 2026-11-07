@@ -81,6 +81,16 @@ class Marceau:
         self.dernier_mode = "regles"
         return self._demander_regles(question, contexte)
 
+    def expliquer_alerte(self, code: str, message: str = None) -> dict:
+        """Explication d'une alerte : {titre, pourquoi, que_faire}.
+
+        TOUJOURS par le catalogue à règles (core/explications.py), même si Mistral
+        est configuré : les alertes portent des données comptables, qui ne sortent
+        pas du serveur (arbitrage du 06/11/2026).
+        """
+        from .explications import expliquer
+        return expliquer(code, message)
+
     def expliquer_etape(self, nom_etape: str, donnees=None) -> str:
         """Chaque donnée du pipeline est liée à son explication Marceau."""
         contexte = {"etape": nom_etape, "detail": _resume(donnees)}

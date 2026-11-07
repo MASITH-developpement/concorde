@@ -1,0 +1,300 @@
+<!doctype html>
+<html lang="fr">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>CONCORDE</title>
+<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect width='32' height='32' rx='7' fill='%231f4e79'/%3E%3Cpath d='M9 16h14M16 9v14' stroke='white' stroke-width='3' stroke-linecap='round'/%3E%3C/svg%3E">
+<link rel="stylesheet" href="/style.css">
+<script src="/app.js" defer></script>
+</head>
+<body>
+
+<!-- Écran de connexion -->
+<main id="ecran-connexion" class="connexion" hidden>
+  <form id="form-connexion" class="carte connexion-carte" autocomplete="on">
+    <div class="marque marque-grande"><span class="logo">C</span><div><strong>CONCORDE</strong><small>Passerelle comptable</small></div></div>
+    <label>Mot de passe
+      <input type="password" id="mdp" autocomplete="current-password" required autofocus>
+    </label>
+    <p class="erreur" id="erreur-connexion" role="alert"></p>
+    <button class="bouton principal" type="submit">Se connecter</button>
+  </form>
+</main>
+
+<!-- Application -->
+<div id="ecran-app" class="app" hidden>
+  <aside class="menu">
+    <div class="marque"><span class="logo">C</span><div><strong>CONCORDE</strong><small>Odoo 17</small></div></div>
+    <nav>
+      <a href="#alertes" data-vue="alertes">Alertes <span class="compteur" id="compteur-alertes" hidden></span></a>
+      <a href="#rapport" data-vue="rapport">Rapport du jour</a>
+      <a href="#comptes" data-vue="comptes">Comptes</a>
+      <a href="#comparer" data-vue="comparer">Comparer</a>
+      <a href="#analyser" data-vue="analyser">Analyser</a>
+      <a href="#telecharger" data-vue="telecharger">Télécharger</a>
+      <a href="#envoyer" data-vue="envoyer" class="bientot">Envoyer <span class="pastille">phase 2</span></a>
+      <a href="#modifier" data-vue="modifier" class="bientot">Modifier <span class="pastille">phase 3</span></a>
+      <hr>
+      <a href="#journal" data-vue="journal">Journal</a>
+      <a href="#historique" data-vue="historique">Historique</a>
+      <a href="#bases" data-vue="bases">Bases</a>
+    </nav>
+    <button class="bouton discret" id="deconnexion" type="button">Se déconnecter</button>
+  </aside>
+
+  <div class="contenu">
+    <header class="barre">
+      <label class="choix-base">Base
+        <select id="base"></select>
+      </label>
+      <span id="base-info" class="base-info"></span>
+      <a href="#alertes" class="cloche" id="cloche" title="Alertes">Alertes <span class="compteur" id="cloche-compteur">0</span></a>
+    </header>
+
+    <!-- ALERTES -->
+    <section class="vue" id="vue-alertes" hidden>
+      <h1>Alertes</h1>
+      <p class="aide">Ce que CONCORDE a repéré : anomalies comptables, problèmes techniques, changements dans Odoo. Surveillance automatique toutes les 15 minutes ; une alerte qui ne se reproduit plus passe « résolue » toute seule.</p>
+      <div class="barre-outils">
+        <div class="filtres" id="filtres-alertes">
+          <button type="button" class="filtre actif" data-filtre="active">Actives</button>
+          <button type="button" class="filtre" data-filtre="evenement">Changements</button>
+          <button type="button" class="filtre" data-filtre="resolue">Résolues</button>
+        </div>
+        <span class="note" id="dernier-passage"></span>
+        <button type="button" class="bouton" id="tout-vu">Tout marquer comme vu</button>
+        <button type="button" class="bouton principal" id="surveiller">Surveiller maintenant</button>
+      </div>
+      <div id="liste-alertes" class="alertes"></div>
+    </section>
+
+    <!-- COMPTES -->
+    <section class="vue" id="vue-comptes" hidden>
+      <h1>Comptes</h1>
+      <p class="aide">Balance de la base choisie. Cliquez un compte pour ouvrir son grand livre, puis une écriture pour son détail. Lecture seule : les corrections arrivent avec la phase 3.</p>
+      <form id="form-comptes" class="carte formulaire compacte">
+        <div class="ligne-champs">
+          <label>Du <input type="date" name="du"></label>
+          <label>Au <input type="date" name="au"></label>
+          <label class="case"><input type="checkbox" name="brouillons"> Inclure les brouillons</label>
+          <label>Rechercher <input type="search" name="recherche" placeholder="411, banque…"></label>
+          <label class="case"><input type="checkbox" name="mouvementes" checked> Comptes mouvementés</label>
+          <label class="case"><input type="checkbox" name="en_alerte"> En alerte seulement</label>
+          <button class="bouton principal" type="submit">Calculer la balance</button>
+        </div>
+      </form>
+      <div id="constats-comptes"></div>
+      <div id="balance"></div>
+      <div id="grand-livre"></div>
+    </section>
+
+    <!-- RAPPORT DU JOUR -->
+    <section class="vue" id="vue-rapport" hidden>
+      <h1>Rapport du jour</h1>
+      <p class="aide">Ce que CONCORDE a vu et fait dans la journée, et ce qu'il en conclut. Décochez ce qui ne doit pas figurer au rapport, corrigez les textes, ajoutez vos commentaires et vos propres conclusions : vos choix sont gardés, même si vous régénérez le rapport.</p>
+      <div class="barre-outils">
+        <label>Jour <input type="date" id="rapport-jour"></label>
+        <button type="button" class="bouton" id="rapport-actualiser">Actualiser</button>
+        <span class="note" id="rapport-etat"></span>
+        <button type="button" class="bouton" id="rapport-enregistrer">Enregistrer</button>
+        <button type="button" class="bouton principal" id="rapport-telecharger">Télécharger le rapport</button>
+      </div>
+      <div id="rapport-contenu"></div>
+    </section>
+
+    <!-- COMPARER -->
+    <section class="vue" id="vue-comparer" hidden>
+      <h1>Comparer deux bases</h1>
+      <p class="aide">Vérifie et analyse chaque base, puis compare leurs écritures sur la période : totaux, soldes par compte, journal et tiers, puis écriture par écriture, analytique comprise. Lecture seule : rien n'est modifié.</p>
+      <form id="form-comparer" class="carte formulaire">
+        <div class="ligne-champs">
+          <label>Base A (référence) <select name="base_a" class="choix-bases"></select></label>
+          <label>Base B (comparée) <select name="base_b" class="choix-bases"></select></label>
+        </div>
+        <div class="ligne-champs">
+          <label>Du <input type="date" name="du"></label>
+          <label>Au <input type="date" name="au"></label>
+          <label class="case"><input type="checkbox" name="brouillons"> Inclure les brouillons</label>
+        </div>
+        <details class="options" id="filtres-comparer">
+          <summary>Limiter à certains comptes comptables ou analytiques <span class="note" id="resume-filtres">(tout)</span></summary>
+          <p class="note">Cochez un ou plusieurs comptes. Comptable et analytique se cumulent (ex. 706 <b>et</b> PHARMA). Seules les lignes concernées sont comparées ; l'analyse de chaque base reste complète.</p>
+          <div class="deux-listes">
+            <fieldset class="liste-cocher">
+              <legend>Comptes comptables <span class="note" id="nb-comptes"></span></legend>
+              <input type="search" placeholder="Rechercher (ex. 411, banque)" data-liste="liste-comptes">
+              <div class="actions"><button type="button" class="lien" data-tout="liste-comptes">Tout cocher (visibles)</button> · <button type="button" class="lien" data-rien="liste-comptes">Tout décocher</button></div>
+              <div class="cases" id="liste-comptes"><p class="note">Choisissez les deux bases pour charger la liste.</p></div>
+            </fieldset>
+            <fieldset class="liste-cocher">
+              <legend>Comptes analytiques <span class="note" id="nb-analytiques"></span></legend>
+              <input type="search" placeholder="Rechercher (ex. PHARMA)" data-liste="liste-analytiques">
+              <div class="actions"><button type="button" class="lien" data-tout="liste-analytiques">Tout cocher (visibles)</button> · <button type="button" class="lien" data-rien="liste-analytiques">Tout décocher</button></div>
+              <div class="cases" id="liste-analytiques"><p class="note">Choisissez les deux bases pour charger la liste.</p></div>
+            </fieldset>
+          </div>
+        </details>
+        <details class="options">
+          <summary>B est une copie de A (ou l'inverse)</summary>
+          <div class="ligne-champs">
+            <label>Date et heure de la copie (UTC) <input type="datetime-local" name="date_copie" step="1"></label>
+          </div>
+          <p class="note">Avec la date de copie, chaque écriture différente indique le côté modifié après la copie, et les conflits (modifiée des deux côtés) sont repérés.</p>
+        </details>
+        <p class="erreur" id="erreur-comparer" role="alert"></p>
+        <button class="bouton principal" type="submit">Vérifier, analyser et comparer</button>
+      </form>
+      <div id="resultat-comparer"></div>
+    </section>
+
+    <!-- JOURNAL -->
+    <section class="vue" id="vue-journal" hidden>
+      <h1>Journal</h1>
+      <p class="aide">Tout ce que CONCORDE fait et voit : surveillance, connexions, consultations. Les tâches ont leur propre journal, affiché pendant qu'elles tournent.</p>
+      <div class="carte"><ol class="journal" id="journal-systeme"></ol></div>
+    </section>
+
+    <!-- ANALYSER -->
+    <section class="vue" id="vue-analyser" hidden>
+      <h1>Analyser</h1>
+      <p class="aide">Contrôle les écritures et les tiers de la base : équilibre au centime, dates futures, doublons, tiers sans SIREN ni TVA… Lecture seule.</p>
+      <form id="form-analyser" class="carte formulaire">
+        <div class="ligne-champs">
+          <label>Du <input type="date" name="du"></label>
+          <label>Au <input type="date" name="au"></label>
+          <label class="case"><input type="checkbox" name="validees"> Écritures validées seulement</label>
+        </div>
+        <button class="bouton principal" type="submit">Lancer l'analyse</button>
+      </form>
+      <div id="resultat-analyser"></div>
+    </section>
+
+    <!-- TÉLÉCHARGER -->
+    <section class="vue" id="vue-telecharger" hidden>
+      <h1>Télécharger</h1>
+      <p class="aide">Sort les données de la base dans les formats choisis. Lecture seule.</p>
+      <form id="form-telecharger" class="carte formulaire">
+        <fieldset>
+          <legend>Formats</legend>
+          <div class="tuiles">
+            <label class="tuile"><input type="checkbox" name="formats" value="fec" checked><strong>FEC</strong><small>Format DGFiP, écritures validées</small></label>
+            <label class="tuile"><input type="checkbox" name="formats" value="xlsx" checked><strong>Excel</strong><small>Une feuille par type de données</small></label>
+            <label class="tuile"><input type="checkbox" name="formats" value="csv"><strong>CSV import Odoo</strong><small>Pour recharger dans un autre Odoo</small></label>
+          </div>
+        </fieldset>
+        <fieldset>
+          <legend>Données (Excel et CSV)</legend>
+          <div class="ligne-champs">
+            <label class="case"><input type="checkbox" name="objets" value="ecritures" checked> Écritures</label>
+            <label class="case"><input type="checkbox" name="objets" value="comptes" checked> Plan comptable</label>
+            <label class="case"><input type="checkbox" name="objets" value="journaux" checked> Journaux</label>
+            <label class="case"><input type="checkbox" name="objets" value="tiers" checked> Tiers</label>
+            <label class="case"><input type="checkbox" name="objets" value="factures" checked> Factures</label>
+          </div>
+        </fieldset>
+        <div class="ligne-champs">
+          <label>Du <input type="date" name="du"></label>
+          <label>Au <small>(clôture du FEC)</small> <input type="date" name="au"></label>
+          <label class="case"><input type="checkbox" name="brouillons"> Inclure les brouillons <small>(pas de FEC)</small></label>
+        </div>
+        <details class="options">
+          <summary>Options du FEC</summary>
+          <div class="ligne-champs">
+            <label>Séparateur
+              <select name="separateur"><option value="pipe">| (barre verticale)</option><option value="tab">Tabulation</option></select>
+            </label>
+            <label>Encodage
+              <select name="encodage"><option value="iso-8859-15">ISO-8859-15</option><option value="utf-8">UTF-8</option></select>
+            </label>
+          </div>
+        </details>
+        <p class="erreur" id="erreur-telecharger" role="alert"></p>
+        <button class="bouton principal" type="submit">Préparer les fichiers</button>
+      </form>
+      <div id="resultat-telecharger"></div>
+    </section>
+
+    <!-- ENVOYER / MODIFIER (à venir) -->
+    <section class="vue" id="vue-envoyer" hidden>
+      <h1>Envoyer <span class="pastille">phase 2</span></h1>
+      <div class="carte vide">
+        <p>Charger dans Odoo 17 des écritures, des comptes, des journaux, des tiers ou des factures, depuis un FEC, un fichier Excel ou un CSV.</p>
+        <p>Toujours par l'API d'Odoo, jamais en écrivant directement dans la base. Envoi par paquets, avec simulation préalable et reprise en cas de coupure.</p>
+        <p class="note">Disponible à la phase 2, après correction de l'injecteur Odoo 17.</p>
+      </div>
+    </section>
+    <section class="vue" id="vue-modifier" hidden>
+      <h1>Modifier <span class="pastille">phase 3</span></h1>
+      <div class="carte vide">
+        <p><strong>Corrections en masse</strong> : filtrer des écritures, puis changer le compte, le journal, le libellé ou le tiers, avec un aperçu avant/après.</p>
+        <p><strong>Aller-retour Excel</strong> : réimporter le fichier Excel téléchargé et modifié. Seules les lignes changées sont appliquées.</p>
+        <p class="note">Les écritures validées passent en brouillon, sont corrigées, puis revalidées. Une facture validée se corrige par un avoir.</p>
+      </div>
+    </section>
+
+    <!-- HISTORIQUE -->
+    <section class="vue" id="vue-historique" hidden>
+      <h1>Historique</h1>
+      <div class="carte"><table class="tableau" id="table-historique">
+        <thead><tr><th>Date</th><th>Action</th><th>Base</th><th>Statut</th><th>Durée</th><th></th></tr></thead>
+        <tbody></tbody>
+      </table></div>
+    </section>
+
+    <!-- BASES -->
+    <section class="vue" id="vue-bases" hidden>
+      <h1>Bases</h1>
+      <div class="carte"><table class="tableau" id="table-bases">
+        <thead><tr><th>Base</th><th>Société</th><th>Devise</th><th>SIREN</th><th>Lecture</th><th>Écriture</th><th>Actions</th></tr></thead>
+        <tbody></tbody>
+      </table>
+      <button class="bouton discret" id="rafraichir-bases" type="button">Rafraîchir la liste</button>
+      </div>
+      <p class="note"><b>Lecture</b> : en SQL direct, verrouillé en lecture seule (rapide, sans risque). <b>Écriture</b> (réinjecter, modifier, supprimer des écritures, créer comptes et tiers) : toujours par l'API d'Odoo, pour qu'Odoo recalcule soldes, TVA, numérotation et lettrage — jamais en SQL.</p>
+      <p class="note">Seules les bases de <b>ce serveur</b> peuvent être supprimées ou réinitialisées. Une copie de base client est sauvegardée avant (gardée 7 jours) ; une base de test, non. Une base client distante ne se supprime <b>jamais</b> depuis CONCORDE : « Retirer de CONCORDE » l'enlève seulement de cette liste.</p>
+      <h2>Clés API des bases du serveur</h2>
+      <p class="aide">Clés créées dans les bases Odoo de ce serveur. Révoquer une clé la rend inutilisable tout de suite, pour tous les outils qui s'en servent. La valeur secrète n'est jamais affichée.</p>
+      <div class="carte"><table class="tableau" id="table-cles">
+        <thead><tr><th>Base</th><th>Nom de la clé</th><th>Utilisateur</th><th>Portée</th><th>Créée le</th><th></th></tr></thead>
+        <tbody></tbody>
+      </table></div>
+      <h2>Sauvegardes</h2>
+      <p class="aide">Faites automatiquement avant de supprimer une copie de base client, gardées 7 jours puis effacées. Les bases de test ne sont pas sauvegardées.</p>
+      <div class="carte"><table class="tableau" id="table-sauvegardes">
+        <thead><tr><th>Date</th><th>Base</th><th>Fichier</th><th>Taille</th></tr></thead>
+        <tbody></tbody>
+      </table></div>
+      <h2>Ajouter un Odoo distant</h2>
+      <p class="aide">Par l'API d'Odoo (XML-RPC), pour un Odoo hébergé ailleurs, Odoo Online compris. La clé API reste en mémoire : il faut la ressaisir après un redémarrage du service.</p>
+      <form id="form-distant" class="carte formulaire" autocomplete="off">
+        <div class="ligne-champs">
+          <label>Nom (pour s'y retrouver) <input name="libelle" maxlength="60" placeholder="ex. Albhades — production" required></label>
+          <label>URL <input name="url" type="url" placeholder="https://client.odoo.com" required></label>
+          <label>Base <input name="base" required></label>
+          <label>Login <input name="utilisateur" required></label>
+          <label>Clé API <input name="cle" type="password" required autocomplete="new-password"></label>
+        </div>
+        <p class="erreur" id="erreur-distant" role="alert"></p>
+        <button class="bouton" type="submit">Tester et ajouter</button>
+      </form>
+    </section>
+  </div>
+</div>
+
+<template id="modele-progression">
+  <div class="carte">
+    <div class="progression"><span class="roue"></span><span class="texte">Préparation…</span></div>
+    <ol class="journal direct"></ol>
+  </div>
+</template>
+
+<div class="voile" id="voile" hidden>
+  <div class="tiroir carte" role="dialog" aria-modal="true" aria-labelledby="tiroir-titre">
+    <div class="entete-resultat"><h2 id="tiroir-titre">Écriture</h2>
+      <button type="button" class="bouton discret" id="fermer-tiroir" aria-label="Fermer">Fermer</button></div>
+    <div id="tiroir-contenu"></div>
+  </div>
+</div>
+</body>
+</html>

@@ -1,0 +1,45 @@
+# CONCORDE — interface web (ADR-0002). Écoute sur 127.0.0.1:18090, Caddy fait le HTTPS.
+# Installation :
+#   sudo cp deploy/concorde-interface.service /etc/systemd/system/
+#   sudo python3 scripts/concorde_interface_mdp.py        # mot de passe
+#   sudo systemctl daemon-reload && sudo systemctl enable --now concorde-interface
+[Unit]
+Description=CONCORDE - interface web
+After=network-online.target docker.service
+Wants=network-online.target
+
+[Service]
+Type=simple
+# ubuntu : c'est là qu'est installé psycopg2 (~/.local).
+User=ubuntu
+Group=ubuntu
+WorkingDirectory=/opt/concorde
+# Identifiants PostgreSQL du conteneur (POSTGRES_USER / POSTGRES_PASSWORD).
+EnvironmentFile=/opt/concorde/deploy/.env
+# Empreinte du mot de passe (CONCORDE_UI_MDP) et réglages locaux.
+EnvironmentFile=/etc/concorde/interface.env
+# Adresse du conteneur concorde-postgres (à surcharger dans interface.env si elle change).
+Environment=PGHOST=172.18.0.2
+Environment=CONCORDE_UI_PORT=18090
+Environment=CONCORDE_UI_DONNEES=/var/lib/concorde-interface
+Environment=PYTHONUNBUFFERED=1
+ExecStart=/usr/bin/python3 /opt/concorde/interface/serveur.py
+Restart=on-failure
+RestartSec=5
+StateDirectory=concorde-interface
+StateDirectoryMode=0700
+# Durcissement
+NoNewPrivileges=yes
+PrivateTmp=yes
+ProtectSystem=strict
+ProtectHome=read-only
+ReadWritePaths=/var/lib/concorde-interface
+ProtectKernelTunables=yes
+ProtectKernelModules=yes
+ProtectControlGroups=yes
+RestrictSUIDSGID=yes
+LockPersonality=yes
+UMask=0077
+
+[Install]
+WantedBy=multi-user.target

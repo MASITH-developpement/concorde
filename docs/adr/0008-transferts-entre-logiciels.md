@@ -52,8 +52,13 @@ Chaque connecteur déclare ce qu'il sait faire, et l'interface n'offre que ça :
 | Quadra / Cegid Loop | export FEC du client | **fichier d'import Quadra** produit par CONCORDE | aucun |
 | Tout autre logiciel français | export FEC | FEC | aucun |
 
-Pour un logiciel sans API, le transfert s'arrête à un fichier prêt à importer, contrôlé
-au centime. L'import dans le logiciel est fait par une personne chez le client.
+**Lecture directe** : pour un logiciel à API, CONCORDE se connecte au serveur du logiciel
+et lit les données en direct ; personne n'a rien à exporter ni à télécharger. La photo
+de ce qui a été lu (règle de l'ADR-0004) est une trace gardée sur le serveur CONCORDE,
+pas un fichier à manipuler.
+
+Pour un logiciel installé sans API, le transfert s'arrête à un fichier prêt à importer,
+contrôlé au centime. L'import dans le logiciel est fait par une personne chez le client.
 
 Le connecteur ne fait que traduire entre le logiciel et le `Lot`. Les contrôles,
 la correspondance des comptes, l'idempotence, les journaux et les rapports sont
@@ -79,16 +84,31 @@ un périmètre (période, journaux, données : écritures, plan, tiers, lettrage
 - La source est lue **une seule fois**. Sa photo (FEC + xlsx) est gardée dans le dossier
   du transfert, puis chaque destination suit son propre circuit, indépendant des autres :
   un refus pour Pennylane ne bloque pas Odoo, et chaque destination a son rapport.
-- Le circuit à huit portes de l'ADR-0004 s'applique à **toutes** les destinations.
-  Portes 6 et 7 selon la destination :
+- Chaque destination suit **la même procédure**, dans cet ordre (demande de Stéphane
+  du 08/11/2026). Chaque étape ne s'ouvre que si la précédente est bonne :
+  1. **vérifier les données** à transférer : lecture, conversion et batterie de
+     contrôles (portes 1 à 3 de l'ADR-0004) ;
+  2. **vérifier la concordance** : correspondance des comptes et des tiers, équilibre et
+     totaux identiques au centime entre la source et le lot (portes 4 et 5) ;
+  3. **simuler le résultat** : essai à blanc dans la destination, qui montre ce qui serait
+     créé, sans rien écrire ;
+  4. s'il n'y a **rien à signaler** : **test de transfert** dans l'environnement de test de
+     la destination, relu et comparé au centime ;
+  5. si le test est bon : **rapport** (données, contrôles, simulation, test), puis
+     **attente du feu vert** de Stéphane. Sans feu vert, rien ne part ;
+  6. au feu vert : **nouveau test de transfert**, car la source ou la destination ont pu
+     changer depuis le rapport ;
+  7. si ce nouveau test est bon : **transfert complet**, après sauvegarde déclarée de la
+     destination, puis relecture de la destination et comparaison au centime.
+- Tout écart, à n'importe quelle étape, arrête la destination concernée et figure dans
+  son rapport, avec la cause nommée.
+- Environnement de test, selon la destination :
   - Odoo : base vierge du serveur (inchangé) ;
   - logiciel à API : environnement ou société **de test** de l'éditeur. S'il n'y en a pas,
-    le transfert s'arrête à la porte 5 (essai à blanc et export), sauf accord écrit
-    de Stéphane pour ce client ;
+    le transfert s'arrête après la simulation (étape 3), sauf accord écrit de Stéphane
+    pour ce client ;
   - destination fichier : le fichier produit est relu par CONCORDE et comparé au `Lot`
     au centime.
-- Porte 8 : envoi complet seulement sur confirmation explicite de Stéphane, après
-  sauvegarde déclarée de la destination.
 
 ### 5. Correspondance des comptes et des tiers par couple source → destination
 La table arbitrée de l'ADR-0004 (porte 4) est rangée **par couple** connexion source →
@@ -116,8 +136,11 @@ présente n'est jamais renvoyée, et un envoi coupé reprend là où il s'était
   nouveau transfert, suivi en direct par destination.
 
 ### 9. Ce que l'ADR-0008 change dans l'ADR-0004
-L'ADR-0004 reste en vigueur pour le circuit. L'ADR-0008 la remplace sur deux points :
+L'ADR-0004 reste en vigueur pour les contrôles. L'ADR-0008 la remplace sur trois points :
 - **la destination n'est plus forcément Odoo** : tout connecteur qui sait écrire ;
+- **les étapes 6 à 8** (test sur base vierge, test d'une écriture, envoi complet) sont
+  remplacées par la procédure du point 4 (simulation, test, rapport, feu vert, nouveau
+  test, transfert) ;
 - **les secrets** : l'ADR-0004 les voulait en mémoire seulement. Des connexions
   enregistrées et des jetons OAuth2 renouvelés (le jeton de renouvellement change à
   chaque usage) ne peuvent pas rester en mémoire : ils vont dans
@@ -147,22 +170,35 @@ L'ADR-0004 reste en vigueur pour le circuit. L'ADR-0008 la remplace sur deux poi
 5. **Cegid** : fichiers d'import Quadra / Loop, puis API en ligne avec l'accès développeur.
 6. Écran **Transferts**.
 
-## Points à arbitrer avant acceptation
+## Arbitrages
+Tranchés par Stéphane le 08/11/2026 :
+- lecture directe par l'API, sans export ni téléchargement, pour les logiciels à API ;
+- destination à API sans environnement de test : arrêt après la simulation ;
+- plusieurs connexions en même temps ; une seule écriture à la fois par destination ;
+- procédure de transfert du point 4 ;
+- connexion directe au serveur de chaque logiciel par l'API de son éditeur.
+
+Encore ouverts :
 1. Secrets en fichier `/etc/concorde/connecteurs.env` (point 9) : d'accord ?
-2. Destination à API **sans environnement de test** : arrêt à la porte 5 par défaut
-   (point 4) : d'accord ?
-3. Plusieurs destinations : circuits indépendants (un refus n'arrête pas les autres)
-   ou tout-ou-rien ?
+2. Plusieurs destinations : indépendantes (un refus n'arrête pas les autres) ou
+   tout-ou-rien ?
+3. Le nouveau test de transfert après le feu vert (étape 6) se fait-il dans
+   l'environnement de test, ou par une écriture dans la vraie destination, aussitôt
+   relue puis supprimée (porte 7 de l'ADR-0004) ?
+4. Logiciels installés sans API (Sage 100, Sage 50, Quadra, Loop) : export FEC par le
+   client, ou petit programme CONCORDE installé chez le client qui lit et envoie ?
 
 ## Options écartées
 - **Une liaison par couple de logiciels** (Sage → Pennylane, Sage → Odoo…) : 20 liaisons
   pour 5 logiciels, 30 pour 6, chacune avec ses propres contrôles. Ingérable et contraire
   à la règle « une action répétée devient une routine commune ».
-- **Passer par une API unifiée d'un prestataire** (agrégateurs d'API comptables
-  européens ou américains) : un seul branchement, mais abonnement payant par connexion,
-  données des clients qui transitent chez un tiers (contraire au principe de
-  souveraineté de CONCORDE), contrôles au centime impossibles à garantir de bout en
-  bout, et dépendance à un tiers pour le cœur du produit.
+- **Passer par un intermédiaire payant** (agrégateurs d'API comptables européens ou
+  américains) au lieu de se connecter soi-même à chaque serveur : un seul branchement,
+  mais abonnement par connexion, données des clients qui transitent chez un tiers
+  (contraire au principe de souveraineté de CONCORDE), contrôles au centime impossibles
+  à garantir de bout en bout, et dépendance à un tiers pour le cœur du produit.
+  Retenu à la place : chaque connecteur se connecte **directement au serveur du
+  logiciel** (Odoo, Pennylane, AzalPlus, Sage, Cegid…) par l'API de son éditeur.
 - **FEC seulement, sans API** : marche partout pour lire, mais aucun envoi automatique,
   et pas de tiers ni de lettrage complets selon les logiciels. Gardé comme solution de
   repli pour tout logiciel sans connecteur.

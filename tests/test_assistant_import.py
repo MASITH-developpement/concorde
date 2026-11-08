@@ -7,15 +7,20 @@ et le moteur embarqué est chargé depuis core/ (sa source : install_module.sh
 le copie dans deploy/addons/concorde/engine).
 """
 
+import base64
 import html
 import importlib.util
+import io
 import os
 import sys
 import types
 import unittest
+import zipfile
 from collections.abc import Mapping
 from typing import Protocol
 
+from core.fec_parser import parse_fec
+from samples.generateur_fec_test import generer_fec
 from tests.outils import RACINE_DEPOT
 
 DOSSIER_MODULE = os.path.join(RACINE_DEPOT, "deploy", "addons", "concorde")
@@ -171,6 +176,61 @@ class TestLireBinaire(unittest.TestCase):
         """Un contenu encodé deux fois en base64 rend les octets réels."""
         contenu_lu = self.assistant._lire_binaire("VUVzREJBPT0=")
         self.assertEqual(contenu_lu, OCTETS_DEBUT_ZIP)
+
+
+class PieceJointeSimulee:
+    """ir.attachment simulé : garde les valeurs reçues à la création."""
+
+    id = 1
+
+    def __init__(self, valeurs_piece: dict[str, object]) -> None:
+        """Mémorise les valeurs passées à create()."""
+        self.valeurs_piece = valeurs_piece
+
+    def __getitem__(self, nom_champ: str) -> object:
+        """Lit un champ (KeyError s'il n'a pas été fourni, comme raw)."""
+        return self.valeurs_piece[nom_champ]
+
+
+class ModelePiecesJointes:
+    """Modèle ir.attachment simulé : retient la dernière pièce créée."""
+
+    derniere_piece: PieceJointeSimulee | None = None
+
+    def create(self, valeurs_piece: dict[str, object]) -> PieceJointeSimulee:
+        """Crée la pièce jointe simulée et la retient."""
+        self.derniere_piece = PieceJointeSimulee(valeurs_piece)
+        return self.derniere_piece
+
+
+class TestExporter(unittest.TestCase):
+    """action_exporter : le zip d'import Odoo porte les intitulés du FEC."""
+
+    def test_intitules_du_fec_dans_csv_comptes(self) -> None:
+        """Le CSV des comptes reprend l'intitulé lu dans le FEC."""
+        canon = parse_fec(generer_fec(1))
+        contexte_simule = {
+            "resultats": [{}, {}, {"resultat": {"canon": canon}}]
+        }
+        mapping_simule = {"libelles": {"41100000": "Clients test"}}
+        pieces_jointes = ModelePiecesJointes()
+        assistant = charger_assistant_import().ConcordeImportWizard()
+        assistant.fec_file = "UEsDBA=="
+        assistant.ensure_one = lambda: None
+        assistant.env = {"ir.attachment": pieces_jointes}
+        assistant._executer_pipeline = lambda _brut: (
+            contexte_simule,
+            mapping_simule,
+            None,
+        )
+        assistant.action_exporter()
+        piece_creee = pieces_jointes.derniere_piece
+        if piece_creee is None:
+            self.fail("Aucune pièce jointe créée par l'export.")
+        contenu_zip = base64.b64decode(str(piece_creee["datas"]))
+        with zipfile.ZipFile(io.BytesIO(contenu_zip)) as archive:
+            csv_comptes = archive.read("comptes_odoo17.csv").decode("utf-8")
+        self.assertIn("Clients test", csv_comptes)
 
 
 if __name__ == "__main__":

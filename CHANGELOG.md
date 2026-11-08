@@ -9,6 +9,15 @@ Le module Odoo porte la même version au format `17.0.X.Y.Z` (`deploy/addons/con
   dématérialisation) : Factur-X / UBL / CII, erreurs EDI et Peppol, SIREN / TVA,
   doublons — lecture seule.
 ### Corrigé
+- Export vers Odoo (`action_exporter`) : le CSV des comptes portait le numéro
+  de compte au lieu de son intitulé. Il reprend désormais l'intitulé lu dans le
+  FEC (colonne CompteLib), comme l'import.
+- Moteur : le dossier du journal Guardian était cherché sous `guardian` alors
+  que la configuration (`concorde.yaml`, assistant) le range sous
+  `noyau.guardian` ; le réglage était ignoré au profit du dossier par défaut.
+- Lecture .xlsx sans openpyxl : un classeur contenant des styles nommés
+  (`cellStyleXfs`) décalait les styles de cellules ; une date était alors lue
+  comme un nombre (« Date invalide : 45296 »).
 - Assistant d'import : un fichier de type inattendu affichait une erreur Python
   (`UnboundLocalError`) au lieu du message « Type de fichier inattendu ».
   Cause : la boucle anti-double-encodage utilisait `_` comme variable et masquait

@@ -231,6 +231,14 @@ class TestMarceauEtMoteur(unittest.TestCase):
         stats = resultat_etape(contexte, 2, tuple)[2]
         self.assertEqual(stats["nb_lignes"], 20)
 
+    def test_journal_guardian_lu_sous_noyau(self) -> None:
+        """Le journal Guardian est lu sous noyau.guardian (concorde.yaml)."""
+        with tempfile.TemporaryDirectory() as dossier_journal:
+            moteur = MoteurConcorde(
+                config={"noyau": {"guardian": {"journal": dossier_journal}}}
+            )
+            self.assertEqual(moteur.guardian.journal_dir, dossier_journal)
+
 
 class TestMapping(unittest.TestCase):
     """Correspondance des comptes Quadra vers Odoo."""

@@ -105,11 +105,13 @@ class MoteurConcorde:
     ) -> None:
         """Prépare le pipeline (config YAML) ; Guardian self-checké d'abord.
 
-        config : configuration YAML chargée (contenu dynamique, d'où Any).
+        config : configuration YAML chargée (contenu dynamique, d'où Any) ;
+        le Guardian est lu sous noyau.guardian, comme dans concorde.yaml.
         """
         self.config: dict[str, Any] = config or {}
+        config_guardian = self.config.get("noyau", {}).get("guardian", {})
         self.guardian = guardian or Guardian(
-            journal_dir=self.config.get("guardian", {}).get(
+            journal_dir=config_guardian.get(
                 "journal", "/var/concorde/guardian"
             )
         )

@@ -455,8 +455,13 @@ def _styles_date(zf: zipfile.ZipFile) -> set[int]:
         fid = fmt.get("numFmtId")
         if fid and _est_format_date(fmt.get("formatCode") or ""):
             formats_date.add(int(fid))
+    # L'attribut s d'une cellule indexe cellXfs seul : les <xf> de
+    # cellStyleXfs (styles nommés) ne doivent pas décaler les indices.
+    styles_cellules = racine.find(NS_MAIN + "cellXfs")
+    if styles_cellules is None:
+        return set()
     indices: set[int] = set()
-    for i, xf in enumerate(racine.iter(NS_MAIN + "xf")):
+    for i, xf in enumerate(styles_cellules):
         fid = xf.get("numFmtId")
         if fid and int(fid) in formats_date:
             indices.add(i)

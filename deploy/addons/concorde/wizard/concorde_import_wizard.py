@@ -764,13 +764,13 @@ class ConcordeImportWizard(models.TransientModel):
         version = str(_version_majeure_odoo())
         brut = self._lire_binaire(self.fec_file)
         try:
-            contexte = self._executer_pipeline(brut)[0]
+            contexte, mapping_cfg, _plan = self._executer_pipeline(brut)
         except EchecPipeline as echec_pipeline:
             return self._creer_fiche_erreur(echec_pipeline)
         canon: Canonique = _bilan_etape(contexte, 2)["canon"]
-        # Le bilan du moteur ne porte aucun intitulé de compte : l'export
-        # part sans intitulés lus dans le FEC.
-        libelles: dict[str, str] = {}
+        # Intitulés lus dans le FEC (colonne CompteLib) par
+        # _completer_mapping, indexés par compte Odoo cible.
+        libelles = mapping_cfg.get("libelles", {})
         csv_comptes = generer_csv_comptes(canon.lignes, libelles, version)
         csv_ecritures = generer_csv_ecritures(canon.lignes, version)
         csv_journaux = generer_csv_journaux(canon.lignes, version)

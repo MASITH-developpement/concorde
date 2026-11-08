@@ -3,6 +3,15 @@
 Format : [Keep a Changelog](https://keepachangelog.com/fr/1.1.0/), versions sémantiques.
 Le module Odoo porte la même version au format `17.0.X.Y.Z` (`deploy/addons/concorde/__manifest__.py`).
 
+## [1.5.1] — 2026-11-08
+### Corrigé
+- Assistant d'import (Odoo 17) : un FEC texte (.txt) échouait toujours
+  (« Ligne d'en-tête FEC introuvable ») et était conservé encodé deux fois.
+  Cause : Odoo 17 rend le champ fichier en octets base64, que `_lire_binaire`
+  prenait pour le fichier brut ; seuls les .xlsx passaient. Le base64 est
+  désormais décodé (str ou octets, caractères hors alphabet refusés) ; une
+  chaîne qui n'est pas du base64 donne un message clair.
+
 ## [1.5.0] — 2026-11-07
 ### Ajouté
 - Contrôle de la dématérialisation des factures (menu CONCORDE > Contrôle

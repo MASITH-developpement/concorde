@@ -244,6 +244,7 @@ Avant d'en créer une, vérifier (casse ignorée) qu'elle n'existe pas déjà.
 | `ElementTraite` | `core/migration/injection.py` | Variables de type de `en_parallele` / `decouper` |
 | `ElementXml` | `core/xml_sur.py` | Élément XML lu (protocole : find, iter, get, text) |
 | `empreinte_brute` | `interface/auth.py` | Empreinte scrypt (octets) |
+| `EN_TETE_FEC_TEXTE` | `tests/test_assistant_import.py` | En-tête de FEC texte (octets) pour les tests de `_lire_binaire` |
 | `Enregistrement` | `core/comptes.py`, `core/odoo_source.py`, `injectors/socle_odoo.py`, `tests/outils.py` | Alias `dict[str, Any]` : enregistrement rendu par une source (ligne, compte, journal, tiers, facture) |
 | `EnregistrementLu` | `core/telecharger.py` | Alias `Mapping[str, Any]` : enregistrement reçu d'une source |
 | `EnregistrementOdoo` | `core/demat.py` | Type : enregistrement Odoo lu (XML-RPC ou ORM) |

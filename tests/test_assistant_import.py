@@ -25,6 +25,7 @@ from tests.outils import RACINE_DEPOT
 
 DOSSIER_MODULE = os.path.join(RACINE_DEPOT, "deploy", "addons", "concorde")
 OCTETS_DEBUT_ZIP = b"PK\x03\x04"
+EN_TETE_FEC_TEXTE = b"JournalCode\tEcritureNum\tCompteNum\r\n"
 TYPES_CHAMPS_ODOO = (
     "Binary",
     "Boolean",
@@ -176,6 +177,24 @@ class TestLireBinaire(unittest.TestCase):
         """Un contenu encodé deux fois en base64 rend les octets réels."""
         contenu_lu = self.assistant._lire_binaire("VUVzREJBPT0=")
         self.assertEqual(contenu_lu, OCTETS_DEBUT_ZIP)
+
+    def test_octets_base64_odoo17_decodes(self) -> None:
+        """Odoo 17 rend des octets base64 : un FEC texte est décodé."""
+        contenu_lu = self.assistant._lire_binaire(
+            base64.b64encode(EN_TETE_FEC_TEXTE)
+        )
+        self.assertEqual(contenu_lu, EN_TETE_FEC_TEXTE)
+
+    def test_octets_bruts_rendus_tels_quels(self) -> None:
+        """Des octets qui ne sont pas du base64 sont déjà le fichier."""
+        contenu_lu = self.assistant._lire_binaire(EN_TETE_FEC_TEXTE)
+        self.assertEqual(contenu_lu, EN_TETE_FEC_TEXTE)
+
+    def test_chaine_non_base64_leve_erreur_utilisateur(self) -> None:
+        """Une chaîne qui n'est pas du base64 donne un message clair."""
+        with self.assertRaises(ErreurUtilisateurBouchon) as erreur_levee:
+            self.assistant._lire_binaire("pas du base64 !")
+        self.assertIn("base64 invalide", str(erreur_levee.exception))
 
 
 class PieceJointeSimulee:

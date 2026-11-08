@@ -17,6 +17,7 @@ n'est jamais reimportee. Compte Odoo absent = blocage (aucun compte devine).
 from __future__ import annotations
 
 import base64
+import binascii
 import io
 import os
 import re
@@ -367,7 +368,9 @@ class ConcordeImportWizard(models.TransientModel):
     def _lire_binaire(self, valeur: ValeurBinaire) -> bytes:
         """Rend le contenu brut (bytes) d'un champ Binary, tous Odoo.
 
-        Rôle : Odoo <= 19 : la lecture rend une chaîne base64 -> decoder.
+        Rôle : Odoo <= 19 : la lecture rend du base64, en str ou en bytes
+        (Odoo 17 rend des bytes base64, mesuré le 08/11/2026) -> décoder ;
+        des bytes qui ne sont pas du base64 sont déjà le fichier.
         Odoo 20 : la lecture rend un BinaryValue (BinaryBytes ou
         BinaryValueAttachment, cf. odoo/tools/binary.py et
         odoo/orm/fields_binary.py) — un proxy paresseux dont .content
@@ -378,17 +381,27 @@ class ConcordeImportWizard(models.TransientModel):
         le filestore contenait les fichiers intacts.)
         Paramètres : valeur (valeur lue dans un champ Binary).
         Retour : les octets du fichier (b"" si le champ est vide).
-        Erreurs : UserError, avec le type, si la valeur est inattendue
-        (jamais muet).
+        Erreurs : UserError, avec le type, si la valeur est inattendue, ou
+        si une str n'est pas du base64 valide (jamais muet).
         Usages : _config_mapping, _executer_pipeline, _b64_pour_stockage,
         action_exporter, action_importer.
         """
         if not valeur:
             return b""
-        if isinstance(valeur, str):
-            octets_fichier = base64.b64decode(valeur)
-        elif isinstance(valeur, bytes):
-            octets_fichier = valeur
+        if isinstance(valeur, (str, bytes)):
+            # validate=True : un caractère hors alphabet base64 (tabulation,
+            # fin de ligne d'un FEC brut) est refusé, jamais jeté en silence.
+            try:
+                octets_fichier = base64.b64decode(valeur, validate=True)
+            except binascii.Error:
+                if isinstance(valeur, str):
+                    raise UserError(
+                        _(
+                            "Fichier illisible : contenu base64 invalide — "
+                            "contactez le support CONCORDE."
+                        )
+                    )
+                octets_fichier = valeur
         else:
             # Odoo 20 : BinaryValue / BinaryValueAttachment (Buffer)
             contenu = getattr(valeur, "content", None)
@@ -405,14 +418,10 @@ class ConcordeImportWizard(models.TransientModel):
                         )
                         % (type(valeur).__name__, sorted(dir(valeur))[:20])
                     )
-        # Anti-double-encodage : certains montages rendent le fichier
-        # encode en base64 UNE FOIS DE TROP (observe sur Odoo 17 : le
-        # parser recevait '55 45 73 44 42 42 51 41' = ASCII 'UEsDBBQA',
-        # qui est la base64 de 'PK\x03\x04\x14\x00' — le debut du vrai
-        # .xlsx). Si le contenu commence par la base64 de l'en-tete zip,
-        # on deballe les couches superflues (max 3) pour rendre les
-        # octets reels du fichier. Un vrai fichier ne commence jamais
-        # par 'UEsDB' : ce prefixe est un marqueur de double encodage.
+        # Anti-double-encodage : un .xlsx encodé une fois de trop commence
+        # par 'UEsDB' (base64 de l'en-tête zip 'PK\x03\x04'). Un vrai
+        # fichier ne commence jamais ainsi : on déballe les couches
+        # superflues (max 3) pour rendre les octets réels du fichier.
         for _couche_superflue in range(3):
             if octets_fichier[:5] != b"UEsDB":
                 break

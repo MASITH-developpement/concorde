@@ -1,6 +1,6 @@
 # ADR-0008 — Transferts entre logiciels comptables : un pivot, un connecteur par logiciel, plusieurs connexions à la fois
 
-- **Statut** : Proposée — à valider par Stéphane Moreau
+- **Statut** : Acceptée — validée par Stéphane Moreau le 08/11/2026
 - **Date** : 08/11/2026
 - **Décideur** : Stéphane Moreau
 
@@ -34,7 +34,7 @@ et non N × (N − 1) liaisons. Un nouveau logiciel = un connecteur, aussitôt u
 avec tous les autres, comme source et comme destination.
 
 ### 2. Un connecteur = lire, écrire, tester
-Chaque connecteur (dossier `connecteurs/`, un fichier par logiciel) offre trois fonctions :
+Chaque connecteur (paquet `core/connecteurs/`, un fichier par logiciel) offre trois fonctions :
 - **tester** la connexion : authentification, société lue (nom, SIREN, devise), droits ;
 - **lire** une période vers un `Lot` (porte 1 de l'ADR-0004) ;
 - **écrire** un `Lot` dans le logiciel, **en essai à blanc par défaut**.
@@ -48,8 +48,8 @@ Chaque connecteur déclare ce qu'il sait faire, et l'interface n'offre que ça :
 | Pennylane | API REST publique | API REST publique (à confirmer sur le compte de test) | jeton API |
 | Sage Business Cloud | API REST | API REST | OAuth2 (application développeur Sage) |
 | Cegid en ligne | API, selon l'offre | API, selon l'offre | accès développeur Cegid |
-| Sage 100 / Sage 50 | export FEC du client | **fichier d'import Sage** produit par CONCORDE | aucun |
-| Quadra / Cegid Loop | export FEC du client | **fichier d'import Quadra** produit par CONCORDE | aucun |
+| Sage 100 / Sage 50 | export FEC **déposé dans CONCORDE** par le client | **fichier d'import Sage** produit par CONCORDE | aucun |
+| Quadra / Cegid Loop | export FEC **déposé dans CONCORDE** par le client | **fichier d'import Quadra** produit par CONCORDE | aucun |
 | Tout autre logiciel français | export FEC | FEC | aucun |
 
 **Lecture directe** : pour un logiciel à API, CONCORDE se connecte au serveur du logiciel
@@ -83,7 +83,8 @@ un périmètre (période, journaux, données : écritures, plan, tiers, lettrage
   même. Source = destination : refusé.
 - La source est lue **une seule fois**. Sa photo (FEC + xlsx) est gardée dans le dossier
   du transfert, puis chaque destination suit son propre circuit, indépendant des autres :
-  un refus pour Pennylane ne bloque pas Odoo, et chaque destination a son rapport.
+  un refus pour Pennylane ne bloque pas Odoo, et chaque destination a son rapport
+  (arbitrage du 08/11/2026 : destinations indépendantes, pas de tout-ou-rien).
 - Chaque destination suit **la même procédure**, dans cet ordre (demande de Stéphane
   du 08/11/2026). Chaque étape ne s'ouvre que si la précédente est bonne :
   1. **vérifier les données** à transférer : lecture, conversion et batterie de
@@ -96,8 +97,8 @@ un périmètre (période, journaux, données : écritures, plan, tiers, lettrage
      la destination, relu et comparé au centime ;
   5. si le test est bon : **rapport** (données, contrôles, simulation, test), puis
      **attente du feu vert** de Stéphane. Sans feu vert, rien ne part ;
-  6. au feu vert : **nouveau test de transfert**, car la source ou la destination ont pu
-     changer depuis le rapport ;
+  6. au feu vert : **nouveau test de transfert dans l'environnement de test**, car la
+     source ou la destination ont pu changer depuis le rapport ;
   7. si ce nouveau test est bon : **transfert complet**, après sauvegarde déclarée de la
      destination, puis relecture de la destination et comparaison au centime.
 - Tout écart, à n'importe quelle étape, arrête la destination concernée et figure dans
@@ -148,7 +149,7 @@ L'ADR-0004 reste en vigueur pour les contrôles. L'ADR-0008 la remplace sur troi
   l'écran Bases restent en mémoire, comme aujourd'hui.
 
 ## Conséquences
-- Le module `connecteurs/` devient le seul endroit qui connaît chaque logiciel.
+- Le paquet `core/connecteurs/` devient le seul endroit qui connaît chaque logiciel.
   `core/migration/connecteur_fec.py` et `injectors/odoo17.py` y sont rattachés, sans
   changer leur comportement, avant tout nouveau connecteur.
 - Il faut un compte de test chez chaque éditeur à API (Pennylane, AzalPlus, Sage Business
@@ -170,23 +171,17 @@ L'ADR-0004 reste en vigueur pour les contrôles. L'ADR-0008 la remplace sur troi
 5. **Cegid** : fichiers d'import Quadra / Loop, puis API en ligne avec l'accès développeur.
 6. Écran **Transferts**.
 
-## Arbitrages
-Tranchés par Stéphane le 08/11/2026 :
-- lecture directe par l'API, sans export ni téléchargement, pour les logiciels à API ;
-- destination à API sans environnement de test : arrêt après la simulation ;
-- plusieurs connexions en même temps ; une seule écriture à la fois par destination ;
-- procédure de transfert du point 4 ;
-- connexion directe au serveur de chaque logiciel par l'API de son éditeur.
-
-Encore ouverts :
-1. Secrets en fichier `/etc/concorde/connecteurs.env` (point 9) : d'accord ?
-2. Plusieurs destinations : indépendantes (un refus n'arrête pas les autres) ou
-   tout-ou-rien ?
-3. Le nouveau test de transfert après le feu vert (étape 6) se fait-il dans
-   l'environnement de test, ou par une écriture dans la vraie destination, aussitôt
-   relue puis supprimée (porte 7 de l'ADR-0004) ?
-4. Logiciels installés sans API (Sage 100, Sage 50, Quadra, Loop) : export FEC par le
-   client, ou petit programme CONCORDE installé chez le client qui lit et envoie ?
+## Arbitrages (Stéphane Moreau, 08/11/2026)
+- Lecture directe par l'API, sans export ni téléchargement, pour les logiciels à API.
+- Logiciels installés sans API (Sage 100, Sage 50, Quadra, Loop) : le client **dépose son
+  export FEC dans CONCORDE** ; pas de programme installé chez le client.
+- Secrets dans `/etc/concorde/connecteurs.env` (point 9).
+- Destination à API sans environnement de test : arrêt après la simulation.
+- Plusieurs connexions en même temps ; une seule écriture à la fois par destination.
+- Plusieurs destinations : **indépendantes**.
+- Procédure de transfert du point 4 ; le nouveau test après le feu vert se fait dans
+  l'environnement de test.
+- Connexion directe au serveur de chaque logiciel par l'API de son éditeur.
 
 ## Options écartées
 - **Une liaison par couple de logiciels** (Sage → Pennylane, Sage → Odoo…) : 20 liaisons

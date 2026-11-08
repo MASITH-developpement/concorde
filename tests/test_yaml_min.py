@@ -41,9 +41,11 @@ def section(arbre: ValeurYaml, cle: str) -> dict[str, ValeurYaml]:
     pas une table ; ``KeyError`` si la clé manque.
     Usages : ``TestVraieConfiguration``.
     """
-    assert isinstance(arbre, dict), f"table attendue, obtenu {arbre!r}"
+    if not isinstance(arbre, dict):
+        raise AssertionError(f"table attendue, obtenu {arbre!r}")
     sous_table = arbre[cle]
-    assert isinstance(sous_table, dict), f"{cle} : table attendue"
+    if not isinstance(sous_table, dict):
+        raise AssertionError(f"{cle} : table attendue")
     return sous_table
 
 
@@ -63,7 +65,8 @@ class TestScalaires(unittest.TestCase):
         self.assertEqual(
             valeur_lue, {"positif": 200, "nul": 0, "negatif": -15}
         )
-        assert isinstance(valeur_lue, dict)
+        if not isinstance(valeur_lue, dict):
+            self.fail("table attendue")
         self.assertIs(type(valeur_lue["positif"]), int)
 
     def test_decimal_reste_chaine(self) -> None:
@@ -270,7 +273,8 @@ class TestVraieConfiguration(unittest.TestCase):
 
     def test_entete(self) -> None:
         """Les valeurs de premier niveau sont exactes et typées."""
-        assert isinstance(self.configuration, dict)
+        if not isinstance(self.configuration, dict):
+            self.fail("concorde.yaml : table attendue")
         self.assertEqual(self.configuration["version"], "1.0")
         self.assertEqual(self.configuration["nom"], "CONCORDE")
         self.assertEqual(self.configuration["marque"], "MARQUÉ DÉPOSÉ")
@@ -285,9 +289,11 @@ class TestVraieConfiguration(unittest.TestCase):
 
     def test_pipeline(self) -> None:
         """Le pipeline est une liste de tables, étapes dans l'ordre."""
-        assert isinstance(self.configuration, dict)
+        if not isinstance(self.configuration, dict):
+            self.fail("concorde.yaml : table attendue")
         pipeline = self.configuration["pipeline"]
-        assert isinstance(pipeline, list)
+        if not isinstance(pipeline, list):
+            self.fail("pipeline : liste attendue")
         noms_etapes = [
             etape["nom"] for etape in pipeline if isinstance(etape, dict)
         ]

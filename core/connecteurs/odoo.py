@@ -81,6 +81,7 @@ class ConnecteurOdoo(Connecteur):
         "ecriture": "api",
     }
     parametres_requis = ("url", "base", "utilisateur")
+    parametres_facultatifs = ("creer_manquants",)
     secrets_requis = ("cle_api",)
 
     def _creer_manquants(self) -> bool:

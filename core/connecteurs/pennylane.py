@@ -51,6 +51,7 @@ class ConnecteurPennylane(Connecteur):
         "lecture": "api",
         "ecriture": "api",
     }
+    parametres_facultatifs = ("societe_id", "adresse", "statuts_lus")
     secrets_requis = ("jeton",)
 
     def __init__(

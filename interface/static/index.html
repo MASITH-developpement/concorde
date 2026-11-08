@@ -6,6 +6,7 @@
 <title>CONCORDE</title>
 <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect width='32' height='32' rx='7' fill='%231f4e79'/%3E%3Cpath d='M9 16h14M16 9v14' stroke='white' stroke-width='3' stroke-linecap='round'/%3E%3C/svg%3E">
 <link rel="stylesheet" href="/style.css">
+<script src="/transferts.js" defer></script>
 <script src="/app.js" defer></script>
 </head>
 <body>
@@ -33,6 +34,7 @@
       <a href="#comparer" data-vue="comparer">Comparer</a>
       <a href="#analyser" data-vue="analyser">Analyser</a>
       <a href="#telecharger" data-vue="telecharger">Télécharger</a>
+      <a href="#transferts" data-vue="transferts">Transferts</a>
       <a href="#envoyer" data-vue="envoyer" class="bientot">Envoyer <span class="pastille">phase 2</span></a>
       <a href="#modifier" data-vue="modifier" class="bientot">Modifier <span class="pastille">phase 3</span></a>
       <hr>
@@ -240,6 +242,61 @@
         <thead><tr><th>Date</th><th>Action</th><th>Base</th><th>Statut</th><th>Durée</th><th></th></tr></thead>
         <tbody></tbody>
       </table></div>
+    </section>
+
+    <!-- TRANSFERTS (ADR-0011) -->
+    <section class="vue" id="vue-transferts" hidden>
+      <h1>Transferts</h1>
+      <p class="aide">Transférer une comptabilité d'un logiciel à un autre. Chaque destination suit 7 étapes ; rien n'est écrit dans une vraie destination sans votre feu vert, et la source n'est jamais modifiée.</p>
+
+      <h2>Connexions</h2>
+      <div class="carte"><table class="tableau" id="table-connexions">
+        <thead><tr><th>Connexion</th><th>Logiciel</th><th>Sert de</th><th>Secrets</th><th>Dernier essai</th><th>Actions</th></tr></thead>
+        <tbody></tbody>
+      </table></div>
+
+      <form id="form-ajout-connexion" class="carte formulaire" autocomplete="off">
+        <h3>Ajouter une connexion</h3>
+        <div class="ligne-champs">
+          <label>Logiciel <select name="logiciel" id="ajout-logiciel" required></select></label>
+          <label>Nom (pour s'y retrouver) <input name="libelle" maxlength="80" placeholder="ex. Sage 100 — client A" required></label>
+          <label id="ajout-test-zone">Environnement de test <select name="connexion_test" id="ajout-test"></select></label>
+        </div>
+        <fieldset id="ajout-usage" hidden>
+          <legend>Ce fichier FEC sert de</legend>
+          <label class="case"><input type="radio" name="usage" value="source" checked> source : vous déposez l'export FEC du logiciel</label>
+          <label class="case"><input type="radio" name="usage" value="destination"> destination : CONCORDE produit un FEC à importer</label>
+        </fieldset>
+        <div class="ligne-champs" id="ajout-parametres"></div>
+        <div class="ligne-champs" id="ajout-secrets"></div>
+        <p class="note" id="ajout-note"></p>
+        <p class="erreur" id="erreur-ajout-connexion" role="alert"></p>
+        <button class="bouton principal" type="submit">Ajouter</button>
+      </form>
+
+      <h2>Nouveau transfert</h2>
+      <form id="form-transfert" class="carte formulaire" autocomplete="off">
+        <div class="ligne-champs">
+          <label>Source (lue, jamais modifiée) <select name="source" id="transfert-source" required></select></label>
+          <label>Du <input type="date" name="du"></label>
+          <label>Au <input type="date" name="au"></label>
+        </div>
+        <fieldset>
+          <legend>Destinations</legend>
+          <div id="transfert-destinations" class="destinations"></div>
+        </fieldset>
+        <p class="erreur" id="erreur-transfert" role="alert"></p>
+        <button class="bouton principal" type="submit">Vérifier (étapes 1 à 4)</button>
+      </form>
+      <div id="resultat-transfert"></div>
+
+      <h2>Transferts enregistrés</h2>
+      <div class="carte"><table class="tableau" id="table-transferts">
+        <thead><tr><th>Créé le</th><th>Source</th><th>Destinations</th><th></th></tr></thead>
+        <tbody></tbody>
+      </table></div>
+      <div id="detail-transfert"></div>
+      <div id="resultat-feu_vert"></div>
     </section>
 
     <!-- BASES -->

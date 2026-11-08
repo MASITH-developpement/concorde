@@ -126,11 +126,12 @@ class Annuaire:
     ) -> FicheConnexion:
         """Enregistre une connexion ; rend sa fiche.
 
-        Lève ErreurAnnuaire (paramètre au nom de secret, libellé vide,
-        connexion de test inconnue ou d'un autre logiciel) ou
+        Lève ErreurAnnuaire (paramètre au nom de secret ou inconnu du
+        connecteur, libellé vide, connexion de test inconnue ou d'un autre
+        logiciel) ou
         ErreurConnexion (logiciel non branché).
         """
-        classe_connecteur(logiciel)
+        classe = classe_connecteur(logiciel)
         libelle = (libelle or "").strip()
         if not libelle:
             raise ErreurAnnuaire("Libellé de connexion vide.")
@@ -143,6 +144,17 @@ class Annuaire:
             raise ErreurAnnuaire(
                 "Paramètre(s) refusé(s) : %s. Un secret va dans le fichier "
                 "de secrets, jamais dans l'annuaire." % ", ".join(refuses)
+            )
+        attendus = classe.parametres_requis + classe.parametres_facultatifs
+        inconnus = sorted(set(parametres) - set(attendus))
+        if inconnus:
+            raise ErreurAnnuaire(
+                "Paramètre(s) inconnu(s) pour %s : %s (attendus : %s)."
+                % (
+                    classe.libelle,
+                    ", ".join(inconnus),
+                    ", ".join(attendus) or "aucun",
+                )
             )
         ident = "%s_%s" % (logiciel, uuid.uuid4().hex[:6])
         with self._verrou:

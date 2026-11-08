@@ -108,8 +108,10 @@ class Connecteur(ABC):
     logiciel: ClassVar[str]
     libelle: ClassVar[str]
     capacites: ClassVar[CapacitesConnecteur]
-    # Noms des paramètres et des secrets attendus : l'annuaire les vérifie.
+    # Noms des paramètres et des secrets attendus : l'annuaire les vérifie
+    # et refuse tout autre paramètre ; l'écran construit son formulaire.
     parametres_requis: ClassVar[tuple[str, ...]] = ()
+    parametres_facultatifs: ClassVar[tuple[str, ...]] = ()
     secrets_requis: ClassVar[tuple[str, ...]] = ()
 
     def __init__(

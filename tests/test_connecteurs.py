@@ -94,6 +94,7 @@ class ConnecteurFaux(Connecteur):
         "lecture": None,
         "ecriture": "api",
     }
+    parametres_facultatifs = ("refuser",)
     secrets_requis = ("jeton",)
     ecrits: ClassVar[dict[str, Lot]] = {}
 
@@ -274,7 +275,7 @@ class TestSecrets(Bac):
             ecrire_variable(self.secrets, "A", "")
 
     def test_ecriture_atomique_dans_un_dossier_neuf(self) -> None:
-        """Vérifie le dossier créé en 700 et l'absence de fichier temporaire."""
+        """Vérifie le dossier en 700 et l'absence de fichier temporaire."""
         chemin = os.path.join(self.dossier, "connecteurs", "connecteurs.env")
         ecrire_variable(chemin, "A", "1")
         ecrire_variable(chemin, "B", "2")

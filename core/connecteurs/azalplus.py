@@ -152,6 +152,7 @@ class ConnecteurAzalPlus(Connecteur):
         "tenant_id",
         "societe_id",
     )
+    parametres_facultatifs = ("sslmode",)
     secrets_requis = ("mot_de_passe",)
 
     def __init__(

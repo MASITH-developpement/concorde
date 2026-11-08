@@ -12,8 +12,21 @@ Le module Odoo porte la même version au format `17.0.X.Y.Z` (`deploy/addons/con
   les secrets déjà enregistrés. Une valeur vide est refusée.
 - Retirer une connexion efface aussi ses secrets.
 ### Ajouté
+- Écran **Transferts** dans l'interface (ADR-0011) : connexions (ajouter,
+  tester, saisir un secret en masqué, retirer), dépôt d'un FEC depuis le
+  navigateur (relu aussitôt, refusé sans être gardé s'il est faux), nouveau
+  transfert (source, destinations, période, plan identique ou table de
+  correspondance), suivi des 7 étapes par destination, fichiers du rapport,
+  feu vert (libellé retapé, date de sauvegarde, adresse IP dans l'audit).
+  Module `interface/transferts.py` et page `interface/static/transferts.js`.
+- Plafond d'un FEC déposé : 200 Mo, réglable par `CONCORDE_DEPOT_MAX_MO`.
 - `Annuaire.secrets_renseignes` : pour chaque secret attendu, renseigné ou
   non, jamais la valeur.
+- Connecteurs : `parametres_facultatifs` ; l'annuaire refuse un paramètre
+  inconnu du connecteur.
+- Routines partagées : `Taches.lancer` (toute tâche de fond),
+  `transfert.valider_demande` et `transfert.controler_feu_vert` (mêmes règles
+  pour l'écran et le moteur).
 
 ## [1.7.0] — 2026-11-08
 ### Ajouté

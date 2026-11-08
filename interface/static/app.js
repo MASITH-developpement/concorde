@@ -7,11 +7,17 @@ const $ = (s, r = document) => r.querySelector(s);
 const $$ = (s, r = document) => Array.from(r.querySelectorAll(s));
 
 const ACTIONS = { analyser: "Analyse", telecharger: "Téléchargement", comparer: "Comparaison",
-                  supprimer_base: "Suppression de base", reinitialiser_base: "Réinitialisation" };
+                  supprimer_base: "Suppression de base", reinitialiser_base: "Réinitialisation",
+                  transfert: "Transfert", feu_vert: "Feu vert" };
+// Vue qui affiche le résultat d'une action, quand elle ne porte pas son nom.
+const VUE_ACTION = { transfert: "transferts", feu_vert: "transferts" };
 const STATUTS = {
   en_attente: "En attente", en_cours: "En cours", terminee: "Terminée",
   echec: "Échec", interrompue: "Interrompue",
   conforme: "Conforme", alertes: "Alertes", bloquant: "Bloquant",
+  verte: "Bonne", bloquee: "Bloquée", non_jouee: "Pas encore faite",
+  attente_feu_vert: "Attend le feu vert", arretee_sans_test: "Arrêtée sans test",
+  transferee: "Transférée",
 };
 
 // --- utilitaires ------------------------------------------------------------
@@ -31,12 +37,17 @@ function el(tag, attrs = {}, ...enfants) {
   return n;
 }
 
+// Appel de l'API : options.corps (objet JSON) ou options.fichier (envoyé brut).
 async function api(chemin, options = {}) {
   const init = { method: options.method || "GET", credentials: "same-origin",
                  headers: { "X-Concorde": "1" } };
   if (options.corps !== undefined) {
     init.headers["Content-Type"] = "application/json";
     init.body = JSON.stringify(options.corps);
+  }
+  if (options.fichier !== undefined) {
+    init.headers["Content-Type"] = "application/octet-stream";
+    init.body = options.fichier;
   }
   const r = await fetch(chemin, init);
   let donnees = {};
@@ -129,6 +140,7 @@ function router() {
   if (existe === "journal") suivreJournal();
   if (existe === "rapport" && !etat.rapport) chargerRapport();
   if (existe === "bases") { afficherBases(); chargerCles(); chargerSauvegardes(); }
+  if (existe === "transferts") chargerEcranTransferts();
 }
 window.addEventListener("hashchange", router);
 
@@ -400,6 +412,7 @@ function rendreTache(t) {
       el("p", { class: "erreur", texte: t.erreur || "Erreur inconnue." }));
   }
   if (t.action === "comparer") return rendreComparaison(t);
+  if (t.action === "transfert" || t.action === "feu_vert") return rendreTacheTransfert(t);
   if (t.action === "supprimer_base" || t.action === "reinitialiser_base") {
     return el("div", { class: "carte" },
       el("div", { class: "entete-resultat" }, el("h2", { texte: (t.action === "supprimer_base"
@@ -504,7 +517,7 @@ async function chargerHistorique() {
     el("td", { class: "mono", texte: t.duree_s != null ? t.duree_s + " s" : "—" }),
     el("td", {}, $("#resultat-" + t.action) ? el("button", { class: "bouton petit", type: "button",
       texte: "Ouvrir", onclick: () => {
-        location.hash = "#" + t.action;
+        location.hash = "#" + (VUE_ACTION[t.action] || t.action);
         suivre(t.id, $("#resultat-" + t.action));
       } }) : el("small", { texte: t.erreur || "" })))));
   if (!taches.length) corps.append(el("tr", {}, el("td", { colspan: 6, class: "vide", texte: "Aucune tâche pour l'instant." })));

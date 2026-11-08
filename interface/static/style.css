@@ -167,6 +167,10 @@ input[type=checkbox] { width: 16px; height: 16px; accent-color: var(--accent); }
 .statut.alertes { background: var(--alerte-fond); color: var(--alerte); }
 .statut.bloquant, .statut.echec, .statut.interrompue { background: var(--bloquant-fond); color: var(--bloquant); }
 .statut.en_cours, .statut.en_attente { background: var(--info-fond); color: var(--info); }
+.statut.verte, .statut.transferee { background: var(--ok-fond); color: var(--ok); }
+.statut.bloquee { background: var(--bloquant-fond); color: var(--bloquant); }
+.statut.attente_feu_vert, .statut.arretee_sans_test { background: var(--alerte-fond); color: var(--alerte); }
+.statut.non_jouee { background: var(--surface-2); color: var(--texte-2); }
 .chiffres {
   display: grid; grid-template-columns: repeat(auto-fit, minmax(160px, 1fr)); gap: .75rem;
   margin: 1rem 0;
@@ -333,4 +337,21 @@ input[type=checkbox] { width: 16px; height: 16px; accent-color: var(--accent); }
   .carte { padding: 1rem; }
   .tableau { display: block; overflow-x: auto; }
   .produit { grid-template-columns: 1fr; gap: .2rem; }
+}
+
+/* --- écran Transferts (ADR-0011) --- */
+#vue-transferts fieldset { min-width: 0; }  /* par défaut, un fieldset ne rétrécit pas */
+#vue-transferts input[type=file] { max-width: 100%; }
+.destinations { display: grid; gap: .6rem; }
+.destination-choix { border: 1px solid var(--bord); border-radius: 9px; padding: .6rem .8rem; display: grid; gap: .5rem; min-width: 0; overflow-wrap: anywhere; }
+.destination-choix .ligne-champs { margin-left: 1.6rem; }
+.etapes { list-style: none; padding: 0; margin: .5rem 0 0; display: grid; gap: .35rem; }
+.etapes li { display: grid; grid-template-columns: minmax(12rem, 16rem) auto 1fr; gap: .4rem .75rem; align-items: start; }
+.etapes li .erreur, .etapes li small { grid-column: 1 / -1; }
+.destination-carte h3 { margin: 0; }
+.fichiers-transfert { display: flex; flex-wrap: wrap; gap: .4rem .9rem; margin: .5rem 0 0; padding: 0; list-style: none; }
+@media (max-width: 640px) {
+  .etapes li { grid-template-columns: 1fr auto; }
+  .destination-choix .ligne-champs { margin-left: 0; }
+  #table-connexions, #table-transferts { display: block; overflow-x: auto; }
 }

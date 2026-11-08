@@ -17,6 +17,7 @@ Avant d'en créer une, vérifier (casse ignorée) qu'elle n'existe pas déjà.
 | `_attente` | `core/connecteurs/http_json.py` | Routine : secondes à attendre d'après Retry-After |
 | `_avec_delai` | `core/odoo_source.py` | Routine : applique le délai d'attente à une connexion HTTP |
 | `_bilan_etape` | `deploy/addons/concorde/wizard/concorde_import_wizard.py` | Routine : dict produit par une étape du pipeline |
+| `_BLOC` | `interface/transferts.py` | Taille d'un bloc de réception (64 Kio) |
 | `_bloquer` | `core/connecteurs/transfert.py` | Routine : arrête une destination à une étape, motif au journal |
 | `_centimes_base` | `core/migration/injection.py` | Montant SQL en euros -> centimes (remplace la fonction locale `c`) |
 | `_centimes_ou_rien` | `core/migration/filtres.py` | Routine : montant en euros -> centimes, ou None |
@@ -50,12 +51,15 @@ Avant d'en créer une, vérifier (casse ignorée) qu'elle n'existe pas déjà.
 | `_date_ou_rien` | `core/migration/filtres.py` | Routine : date ISO -> date, ou None |
 | `_decoder` | `core/connecteurs/http_json.py` | Routine : réponse HTTP -> JSON, ou erreur nommée sans jeton |
 | `_decouper_liste_en_ligne` | `core/yaml_min.py` | Routine : éléments d'une liste en ligne [a, b] |
+| `_decrire` | `interface/transferts.py` | Méthode : description d'une connexion pour l'écran (sans secret) |
+| `_depot` | `interface/transferts.py` | Méthode : fiche du dernier FEC déposé |
 | `_derniere_empreinte_valide` | `core/guardian.py` | Méthode partagée : recalcule la chaîne d'audit, None si un maillon est altéré |
 | `_description_sql` | `interface/serveur.py` | Méthode de Bases : fiche d'une base du serveur |
 | `_disposition_piece_jointe` | `interface/serveur.py` | Routine : valeur de l'en-tête Content-Disposition |
 | `_DOC_OFFICE` | `core/xlsx_ecrire.py` | Espace de noms des relations officeDocument |
 | `_Domaine` | `stubs/odoo/models.pyi` | Type d'un domaine de recherche Odoo (stub) |
 | `_dossier` | `core/connecteurs/transfert.py` | Routine : dossier d'un transfert |
+| `_ecran` | `interface/serveur.py` | Routine : exécute une action de l'écran Transferts, refus en HTTP 400 |
 | `_ecrire_csv` | `core/export_odoo.py` | Routine partagée : CSV CRLF préfixé du BOM UTF-8 |
 | `_ecrites` | `core/connecteurs/pennylane.py` | Identifiants Pennylane écrits sous chaque référence |
 | `_ecritures_de` | `core/connecteurs/pennylane.py` | Méthode Pennylane : écritures répondant à des filtres |
@@ -78,15 +82,19 @@ Avant d'en créer une, vérifier (casse ignorée) qu'elle n'existe pas déjà.
 | `_fiches` | `core/connecteurs/connexions.py` | Connexions de l'annuaire, par identifiant |
 | `_fichier_instantane` | `interface/serveur.py` | Routine : chemin de la photo de surveillance d'une base |
 | `_garde` | `tests/test_connecteurs.py` | Méthode de test : un élément passe-t-il un filtre Pennylane |
+| `_get_transferts` | `interface/serveur.py` | Routes GET de l'écran Transferts |
 | `_groupes_date` | `core/xlsx_vers_fec.py` | Routine : découpe une date texte en groupes selon ses séparateurs |
+| `_IDENT_TRANSFERT` | `interface/transferts.py` | Forme d'un identifiant de transfert (T + date + 4 hex) |
 | `_identifiant_sql` | `core/bases_locales.py` | Routine : vérifie un nom de base (`_NOM_VALIDE`) et le rend entre guillemets pour le SQL |
 | `_identifiants` | `tests/outils.py` | Paramètres ignorés de `FauxCommun.authenticate` |
 | `_ids_par_code` | `injectors/socle_odoo.py` | {code: id} d'un modèle Odoo pour une liste de codes |
 | `_jeton` | `core/connecteurs/http_json.py` | Jeton Bearer, gardé en mémoire seulement |
+| `_JETON_TABLE` | `interface/transferts.py` | Forme du jeton d'une table reçue (32 hex) |
 | `_jour_valide` | `interface/serveur.py` | Routine : vrai si le texte est une date AAAA-MM-JJ |
 | `_journaux` | `core/connecteurs/pennylane.py` | Méthode Pennylane : {id de journal: code} |
 | `_json` | `tests/test_connecteurs.py` | Méthode de test : réponse JSON simulée |
 | `_lecteur` | `tests/test_mapping.py` | Paramètre ignoré d'un lecteur de valeur simulé |
+| `_libelle` | `interface/transferts.py` | Méthode : libellé d'une connexion, ou « (retirée) » |
 | `_libelle_action` | `core/rapport_jour.py` | Libellé français d'une action de tâche |
 | `_lignes_a_retirer` | `core/migration/filtres.py` | Lignes retirées par un filtre selon sa portée |
 | `_lignes_problemes` | `core/migration/circuit.py` | Lignes de problemes.xlsx (explication calculée une fois par constat) |
@@ -123,6 +131,7 @@ Avant d'en créer une, vérifier (casse ignorée) qu'elle n'existe pas déjà.
 | `_perimetre` | `core/connecteurs/transfert.py` | Routine : période d'une demande, en dates |
 | `_photo_source` | `core/connecteurs/transfert.py` | Routine : photo FEC de la source lue |
 | `_plan` | `deploy/addons/concorde/wizard/concorde_import_wizard.py` | Plan comptable rendu par `_executer_pipeline`, inutile à l'export |
+| `_post_transferts` | `interface/serveur.py` | Routes POST (JSON) de l'écran Transferts |
 | `_preparer_destination` | `core/connecteurs/transfert.py` | Routine partagée : étapes 1 à 4 d'une destination (rapport et nouveau test) |
 | `_quand_borne` | `core/rapport_jour.py` | Borne un horodatage ISO à la seconde (champ « quand ») |
 | `_racine` | `tests/test_mapping.py` | Paramètre ignoré (racine XML) d'un lecteur simulé |
@@ -142,18 +151,113 @@ Avant d'en créer une, vérifier (casse ignorée) qu'elle n'existe pas déjà.
 | `_SQL_LIGNES_AZALPLUS` | `core/connecteurs/azalplus.py` | Requête : lignes validées d'une société AzalPlus |
 | `_SQL_SOCIETE_AZALPLUS` | `core/connecteurs/azalplus.py` | Requête : lignes de la société, sans société, autres statuts |
 | `_SQL_TIERS_AZALPLUS` | `core/connecteurs/azalplus.py` | Requête : noms et codes des clients et fournisseurs actifs |
+| `_table` | `interface/transferts.py` | Méthode : table reçue, par son jeton |
 | `_telecharger` | `interface/serveur.py` | Méthode de Taches : exécution d'un export |
+| `_televerser` | `interface/serveur.py` | Route d'un fichier envoyé brut (FEC déposé, table) |
 | `_tester` | `core/connecteurs/transfert.py` | Routine : écriture dans l'environnement de test, relecture, comparaison |
+| `_texte` | `interface/transferts.py` | Routine : champ texte du corps d'une requête |
 | `_texte_compte_mapping` | `core/mapping.py` | Routine : compte JSON validé et mis en texte |
 | `_tmp` | `tests/test_connecteurs.py` | Dossier temporaire d'un test |
 | `_TransportDelai` | `core/odoo_source.py` | Transport XML-RPC HTTP avec délai |
 | `_TransportSurDelai` | `core/odoo_source.py` | Transport XML-RPC HTTPS avec délai |
+| `_travail_feu_vert` | `interface/transferts.py` | Tâche « feu vert » : étapes 6 et 7 |
+| `_travail_transfert` | `interface/transferts.py` | Tâche « transfert » : étapes 1 à 4 |
 | `_TYPE_OFFICE` | `core/xlsx_ecrire.py` | Préfixe des types de contenu officedocument |
+| `_usage_fec` | `interface/transferts.py` | Méthode : FEC source (dépôt) ou destination (produit) |
 | `_Valeur` | `stubs/odoo/fields.pyi` | Type de la valeur d'un champ (paramètre générique du stub Field) |
 | `_valeur_colonne` | `core/xlsx_vers_fec.py` | Lit la cellule d'un champ dans une ligne (None si absente) |
 | `_valeur_en_ligne` | `core/yaml_min.py` | Routine : scalaire ou liste en ligne |
 | `_valeurs_fichier_fec` | `deploy/addons/concorde/wizard/concorde_import_wizard.py` | Routine : valeurs name / fec_filename / fec_file d'une fiche d'import |
-| `_valider` | `core/connecteurs/transfert.py` | Routine : refuse une demande de transfert impossible |
+| `_verifier_ident` | `interface/transferts.py` | Méthode : refuse un identifiant de transfert mal formé |
+| `ACTIONS_BASE` | `interface/serveur.py` | Actions de POST /api/taches (sur une base de l'écran Bases) |
+| `afficherConnexions` | `interface/static/transferts.js` | Tableau des connexions |
+| `app` | `tests/test_ecran_transferts.py` | Application de l'interface dans un test |
+| `bloc` | `interface/transferts.py` | Bloc d'octets reçu |
+| `brut_chemin` | `interface/transferts.py` | Fichier brut d'une table reçue (effacé après lecture) |
+| `carteDestination` | `interface/static/transferts.js` | Carte d'une destination : 7 étapes, fichiers, feu vert |
+| `cause` | `tests/test_ecran_transferts.py` | Cause d'un refus |
+| `champLibre` | `interface/static/transferts.js` | Routine JS : nom de paramètre lisible |
+| `chargerEcranTransferts` | `interface/static/transferts.js` | Charge l'écran Transferts |
+| `chargerListeTransferts` | `interface/static/transferts.js` | Tableau des transferts enregistrés |
+| `chemin_dans` | `interface/transferts.py` | Routine partagée : vrai si un chemin reste dans un dossier |
+| `connexion_fec` | `tests/test_ecran_transferts.py` | Méthode de test : ajoute une connexion FEC |
+| `controler_feu_vert` | `core/connecteurs/transfert.py` | Routine partagée : vérifie qu'un feu vert peut être donné (écran et donner_feu_vert) |
+| `cookie` | `tests/test_ecran_transferts.py` | Cookie de session d'un test |
+| `cx` | `tests/test_ecran_transferts.py` | Connexion parcourue dans un test |
+| `depot` | `interface/transferts.py`, `tests/test_ecran_transferts.py` | Fiche d'un FEC déposé (nom, taille, lignes, totaux) |
+| `depot_max` | `interface/transferts.py` | Plafond d'un FEC déposé, en octets |
+| `DEPOT_MAX_MO_DEFAUT` | `interface/transferts.py` | Plafond par défaut d'un FEC déposé (200 Mo) |
+| `depots` | `interface/transferts.py`, `tests/test_ecran_transferts.py` | Dossier des FEC déposés |
+| `description` | `interface/transferts.py` | Fichier depot.json ; aussi : description d'une connexion |
+| `detail_transfert` | `interface/transferts.py` | Méthode : état complet d'un transfert, libellés et fichiers |
+| `dialogueDepot` | `interface/static/transferts.js` | Dépôt d'un FEC |
+| `dialogueSecret` | `interface/static/transferts.js` | Saisie masquée d'un secret |
+| `dossier_depot` | `interface/transferts.py` | Dossier du FEC déposé d'une connexion |
+| `dossier_fec` | `interface/transferts.py` | Nom du dossier choisi par CONCORDE pour un FEC |
+| `ecran` | `interface/serveur.py` | L'écran Transferts de l'application, dans une route |
+| `EcranTransferts` | `interface/transferts.py` | Classe : ce que fait l'écran Transferts (ADR-0011) |
+| `ecrire_secret` | `interface/transferts.py` | Méthode : écrit un secret saisi, rend « renseigné ou non » |
+| `environnement` | `interface/transferts.py` | Variables d'environnement lues |
+| `envoyer` | `tests/test_ecran_transferts.py` | Méthode de test : requête JSON ou fichier brut |
+| `envoyerFichier` | `interface/static/transferts.js` | Routine JS : envoie un fichier brut (FEC, table) |
+| `ErreurEcran` | `interface/transferts.py` | Demande refusée par l'écran Transferts |
+| `ERREURS_ECRAN` | `interface/transferts.py` | Refus rendus au navigateur avec leur cause (HTTP 400) |
+| `ETAPES_TRANSFERT` | `interface/static/transferts.js` | Les 7 étapes d'une destination, avec leur nom affiché |
+| `etatTransferts` | `interface/static/transferts.js` | État de l'écran : logiciels, plafond de dépôt, connexions |
+| `exc` | `interface/transferts.py` | Erreur attrapée |
+| `FEC_VENTES` | `tests/test_ecran_transferts.py` | FEC d'essai : à-nouveaux et une vente |
+| `flux` | `interface/transferts.py` | Corps de requête à lire |
+| `FluxEntrant` | `interface/transferts.py` | Protocole : corps de requête lisible par blocs |
+| `formulaireFeuVert` | `interface/static/transferts.js` | Feu vert : libellé retapé et date de sauvegarde |
+| `ident_connexion` | `interface/serveur.py` | Identifiant de connexion lu dans l'URL |
+| `ident_cx` | `interface/transferts.py` | Identifiant d'une connexion d'un transfert |
+| `ident_tache` | `interface/transferts.py` | Identifiant de la tâche lancée |
+| `inconnus` | `core/connecteurs/connexions.py` | Paramètres reçus inconnus du connecteur |
+| `ip` | `interface/transferts.py` | Adresse IP de la session qui donne le feu vert |
+| `json_ok` | `tests/test_ecran_transferts.py` | Méthode de test : requête qui doit réussir |
+| `lancer_transfert` | `interface/transferts.py` | Méthode : valide puis lance les étapes 1 à 4 |
+| `libelleConnexion` | `interface/static/transferts.js` | Libellé d'une connexion par son identifiant |
+| `lister_transferts` | `interface/transferts.py` | Méthode : transferts enregistrés, plus récent d'abord |
+| `logicielBranche` | `interface/static/transferts.js` | Routine JS : description d'un logiciel branché |
+| `logiciels` | `interface/transferts.py` | Méthode : logiciels branchés et ce que chacun demande |
+| `majDestinations` | `interface/static/transferts.js` | Destinations possibles (jamais la source) |
+| `majFormulaireAjout` | `interface/static/transferts.js` | Champs du formulaire d'ajout selon le logiciel |
+| `mauvaise` | `tests/test_ecran_transferts.py` | Valeur refusée de CONCORDE_DEPOT_MAX_MO |
+| `NOMS_FICHIERS` | `interface/static/transferts.js` | Nom affiché des fichiers d'un transfert |
+| `ouvrirTransfert` | `interface/static/transferts.js` | Détail d'un transfert |
+| `par_nom` | `tests/test_ecran_transferts.py` | Logiciels rangés par nom |
+| `parametres_facultatifs` | `core/connecteurs/base.py`, `core/connecteurs/fec.py`, `core/connecteurs/odoo.py`, `core/connecteurs/azalplus.py`, `core/connecteurs/pennylane.py`, `tests/test_connecteurs.py` | Paramètres acceptés en plus des requis ; l'annuaire refuse tout autre nom |
+| `parent` | `interface/transferts.py` | Dossier parcouru (os.walk) |
+| `preparerAjout` | `interface/static/transferts.js` | Prépare le formulaire d'ajout |
+| `preparerTransfert` | `interface/static/transferts.js` | Prépare le formulaire de nouveau transfert |
+| `recevoir_fichier` | `interface/transferts.py` | Routine partagée : corps de requête -> fichier, par blocs, plafonné |
+| `recevoir_table` | `interface/transferts.py` | Méthode : reçoit une table de correspondance, rend un jeton |
+| `rechargerConnexions` | `interface/static/transferts.js` | Relit les connexions et met l'écran à jour |
+| `recu` | `interface/transferts.py` | Fichier reçu avant sa relecture |
+| `recus` | `interface/transferts.py` | Paramètres reçus du navigateur |
+| `relatif` | `interface/transferts.py` | Chemin d'un fichier relatif au dossier d'un transfert |
+| `rendreTacheTransfert` | `interface/static/transferts.js` | Résultat d'une tâche de transfert ou de feu vert |
+| `restant` | `interface/transferts.py` | Octets restant à recevoir |
+| `resumes` | `interface/transferts.py` | Résumés des transferts |
+| `retirerConnexion` | `interface/static/transferts.js` | Retire une connexion après confirmation |
+| `SAISIE_PENNYLANE` | `tests/test_ecran_transferts.py` | Valeur de secret saisie dans un test (jamais renvoyée) |
+| `sertDe` | `interface/static/transferts.js` | Routine JS : rôle d'une connexion (source, destination) |
+| `serveur` | `tests/test_ecran_transferts.py` | Serveur HTTP d'un test |
+| `sorties` | `interface/transferts.py` | Dossier des FEC produits |
+| `suivreTransfert` | `interface/static/transferts.js` | Suit une tâche de transfert puis ouvre le transfert |
+| `TABLE_MAX_OCTETS` | `interface/transferts.py` | Plafond d'une table de correspondance (5 Mo) |
+| `taches` | `interface/transferts.py` | Tâches de l'interface, dans l'écran Transferts |
+| `taille_depot_max` | `interface/transferts.py` | Routine : plafond d'un FEC déposé (CONCORDE_DEPOT_MAX_MO) |
+| `taille_max` | `interface/transferts.py` | Plafond de réception, en octets |
+| `TestEcranTransferts` | `tests/test_ecran_transferts.py` | Classe de test : écran Transferts par HTTP |
+| `testerConnexion` | `interface/static/transferts.js` | Teste une connexion et montre le résultat |
+| `TestOutilsEcran` | `tests/test_ecran_transferts.py` | Classe de test : routines de l'écran |
+| `texte_date` | `interface/transferts.py` | Date de sauvegarde reçue, en texte |
+| `tiroir` | `interface/static/transferts.js` | Routine JS : ouvre le tiroir avec un titre et un contenu |
+| `Travail` | `interface/serveur.py` | Type : travail d'une tâche branchée par un autre module |
+| `travaux` | `interface/serveur.py` | Taches : action -> travail branché (transfert, feu vert) |
+| `url_feu_vert` | `tests/test_ecran_transferts.py` | Route du feu vert d'un transfert |
+| `usage` | `interface/transferts.py`, `tests/test_ecran_transferts.py` | Rôle d'un FEC : source ou destination |
 | `_verifier_version` | `core/export_odoo.py` | Routine partagée : refuse une version Odoo inconnue |
 | `_verrou` | `core/connecteurs/connexions.py` | Verrou de l'annuaire entre les fils |
 | `_verrou_des_verrous` | `core/connecteurs/transfert.py` | Verrou qui protège le dictionnaire des verrous par connexion |
@@ -166,7 +270,7 @@ Avant d'en créer une, vérifier (casse ignorée) qu'elle n'existe pas déjà.
 | `ActionOdoo` | `deploy/addons/concorde/wizard/concorde_import_wizard.py` | Type d'une action Odoo rendue au client web |
 | `adresse` | `core/migration/injection.py`, `core/connecteurs/http_json.py` | Paramètre : URL du service XML-RPC |
 | `ADRESSE_PENNYLANE` | `core/connecteurs/pennylane.py` | Adresse de l'API v2 de Pennylane |
-| `ajouter` | `core/connecteurs/connexions.py`, `scripts/concorde_connexion.py` | Méthode de l'annuaire : enregistre une connexion |
+| `ajouter` | `core/connecteurs/connexions.py`, `scripts/concorde_connexion.py`, `interface/transferts.py` | Méthode de l'annuaire : enregistre une connexion ; aussi : méthode de l'écran Transferts : ajoute une connexion (chemins FEC choisis par CONCORDE) |
 | `AlerteEnregistree` | `core/surveillance.py` | Type : alerte mémorisée dans le fichier JSON du centre |
 | `analyseur` | `scripts/concorde_connexion.py` | Analyseur argparse de concorde_connexion |
 | `analytique` | `core/migration/filtres.py`, `core/connecteurs/azalplus.py` | Critères du filtre en cours de normalisation |
@@ -194,7 +298,7 @@ Avant d'en créer une, vérifier (casse ignorée) qu'elle n'existe pas déjà.
 | `ascii_seul` | `core/fichier_json.py` | Paramètre de ecrire_json_atomique (ensure_ascii) |
 | `assistant` | `tests/test_assistant_import.py` | Assistant d'import chargé hors d'Odoo |
 | `AssistantImport` | `tests/test_assistant_import.py` | Protocole : partie de l'assistant d'import vérifiée (`_lire_binaire`) |
-| `attendre` | `core/connecteurs/http_json.py` | Paramètre : fonction d'attente |
+| `attendre` | `core/connecteurs/http_json.py`, `tests/test_ecran_transferts.py` | Paramètre : fonction d'attente ; aussi : méthode de test : attend la fin d'une tâche |
 | `attendu` | `core/migration/filtres.py`, `tests/test_connecteurs.py` | Valeur attendue par une condition libre |
 | `attendus` | `tests/test_mapping.py`, `tests/test_plan_comptable.py`, `scripts/concorde_connexion.py` | Valeurs attendues d'un test ; aussi : secrets attendus par le connecteur ajouté (concorde_connexion) |
 | `ATTENTE` | `core/connecteurs/transfert.py` | Statut d'une destination : rapport prêt, en attente du feu vert |
@@ -263,7 +367,7 @@ Avant d'en créer une, vérifier (casse ignorée) qu'elle n'existe pas déjà.
 | `CHEMIN_CONNEXIONS` | `core/connecteurs/connexions.py` | Fichier de l'annuaire des connexions (CONCORDE_CONNEXIONS) |
 | `chemin_executable` | `securite/concorde_securite.py` | Chemin absolu d'un programme (FileNotFoundError si absent) |
 | `chemin_feuille` | `tests/test_mapping.py`, `tests/test_xlsx_vers_fec.py` | Chemin de la feuille dans l'archive |
-| `chemin_fichier` | `interface/serveur.py` | Chemin d'un fichier produit |
+| `chemin_fichier` | `interface/serveur.py`, `interface/transferts.py` | Chemin d'un fichier produit ; aussi : fichier d'un transfert, sans sortir de son dossier (écran Transferts) |
 | `chemin_mapping` | `tests/test_moteur.py` | Chemin du fichier JSON de mapping synthétique |
 | `CHEMIN_PREMIERE_FEUILLE` | `tests/classeurs_xlsx.py` | Chemin xl/worksheets/sheet1.xml |
 | `chemin_rapport` | `interface/serveur.py` | Chemin du rapport.json d'une tâche |
@@ -366,7 +470,7 @@ Avant d'en créer une, vérifier (casse ignorée) qu'elle n'existe pas déjà.
 | `ConnexionOdoo` | `injectors/socle_odoo.py` | Session XML-RPC authentifiée (db, uid, mot_de_passe, modeles) |
 | `ConnexionPg` | `core/bases_locales.py` | Protocol d'une connexion PostgreSQL fournie par l'appelant |
 | `ConnexionPgFermable` | `core/bases_locales.py` | Protocol d'une connexion ouverte (et fermée) par le module |
-| `connexions` | `securite/concorde_securite.py`, `tests/test_connecteurs.py` | Liste des connexions lues dans les conteneurs ; aussi : méthode de test : source et destination FEC (test_connecteurs) |
+| `connexions` | `securite/concorde_securite.py`, `tests/test_connecteurs.py`, `interface/transferts.py` | Liste des connexions lues dans les conteneurs ; aussi : méthode de test : source et destination FEC (test_connecteurs) ; aussi : méthode de l'écran Transferts : connexions décrites, sans secret |
 | `connexions_conteneurs` | `securite/concorde_securite.py` | (pid, adresse distante) des connexions des espaces réseau des conteneurs |
 | `ConnexionSql` | `core/odoo_source.py` | Protocol : connexion PostgreSQL (psycopg2) de la source SQL |
 | `Constat` | `core/analyser.py`, `core/migration/lot.py`, `interface/serveur.py` | Alias `dict[str, Any]` : constat d'un Rapport (JSON) |
@@ -451,7 +555,7 @@ Avant d'en créer une, vérifier (casse ignorée) qu'elle n'existe pas déjà.
 | `demande` | `core/connecteurs/transfert.py`, `tests/test_connecteurs.py`, `core/connecteurs/http_json.py` | Demande de transfert |
 | `DemandeTransfert` | `core/connecteurs/transfert.py` | TypedDict : source, destinations, période, filtres, correspondances |
 | `depart` | `interface/serveur.py` | Instant de départ d'une mesure de durée |
-| `deposer` | `tests/test_connecteurs.py` | Méthode de test : dépose un FEC |
+| `deposer` | `tests/test_connecteurs.py`, `interface/transferts.py`, `tests/test_ecran_transferts.py` | Méthode de test : dépose un FEC ; aussi : méthode de l'écran Transferts : reçoit et relit un FEC déposé |
 | `dernier_test` | `core/connecteurs/connexions.py` | Date du dernier test d'une connexion |
 | `derniere` | `core/guardian.py` | Dernière empreinte recalculée (`verifier_chaine`) |
 | `derniere_info` | `core/connecteurs/connexions.py` | Ce que le dernier test de connexion a lu |
@@ -603,7 +707,7 @@ Avant d'en créer une, vérifier (casse ignorée) qu'elle n'existe pas déjà.
 | `FEC_SIMPLE` | `tests/test_connecteurs.py` | FEC de test sans tiers ni lettrage |
 | `fermee` | `tests/test_connecteurs.py` | Nombre de fermetures de la base simulée |
 | `fetchall` | `core/connecteurs/azalplus.py`, `tests/test_connecteurs.py` | Méthode : toutes les lignes lues (DB-API) |
-| `feu_vert` | `core/connecteurs/transfert.py`, `tests/test_connecteurs.py` | Étape 5 : qui, quand, date de sauvegarde |
+| `feu_vert` | `core/connecteurs/transfert.py`, `tests/test_connecteurs.py`, `interface/transferts.py` | Étape 5 : qui, quand, date de sauvegarde ; aussi : méthode de l'écran Transferts : contrôle puis lance les étapes 6 et 7 |
 | `Feuille` | `core/xlsx_ecrire.py` | Type : (nom, entêtes, lignes) d'une feuille à écrire |
 | `FEUILLE_DATE_ET_NOMBRE` | `tests/test_xlsx_vers_fec.py` | Feuille : une date (série 45296) et un nombre |
 | `feuille_depuis_lignes` | `tests/classeurs_xlsx.py` | Routine : feuille à partir de lignes de valeurs |
@@ -700,7 +804,7 @@ Avant d'en créer une, vérifier (casse ignorée) qu'elle n'existe pas déjà.
 | `journal_vente` | `tests/test_mapping.py` | Routine : canonique 411/706/445 de test |
 | `journaux` | `core/migration/filtres.py`, `core/connecteurs/pennylane.py`, `tests/test_connecteurs.py` | Critères du filtre en cours de normalisation |
 | `journaux_lot` | `core/migration/injection.py` | Journaux demandés par le lot, avec leur libellé |
-| `lancer` | `tests/test_connecteurs.py` | Méthode de test : lance concorde_connexion |
+| `lancer` | `tests/test_connecteurs.py`, `interface/serveur.py` | Méthode de test : lance concorde_connexion ; aussi : méthode Taches : crée et lance une tâche (routine partagée) |
 | `lecteur` | `tests/test_xml_sur.py` | Racine lue ; lecteur de réponses XML-RPC |
 | `lecteur_reponse_xmlrpc` | `core/xml_sur.py` | Fabrique du lecteur de réponses XML-RPC (protégé) |
 | `lecteur_valeur` | `tests/test_mapping.py` | Lecteur de valeur de cellule testé |
@@ -945,7 +1049,7 @@ Avant d'en créer une, vérifier (casse ignorée) qu'elle n'existe pas déjà.
 | `RapportConversion` | `injectors/odoo_conversion.py` | Type du rapport de `convertir_chainee` |
 | `RapportFec` | `core/telecharger.py` | TypedDict : résultat de `generer_fec` |
 | `RapportInjection` | `injectors/socle_odoo.py` | Type du rapport rendu par `InjecteurOdoo.injecter` |
-| `read` | `core/connecteurs/http_json.py`, `tests/test_connecteurs.py` | Méthode : corps de la réponse HTTP |
+| `read` | `core/connecteurs/http_json.py`, `tests/test_connecteurs.py`, `interface/transferts.py` | Méthode : corps de la réponse HTTP ; aussi : méthode du protocole FluxEntrant (corps d'une requête) |
 | `readonly` | `core/connecteurs/azalplus.py`, `tests/test_connecteurs.py` | Paramètre de set_session (lecture seule) |
 | `rechercher_existants` | `core/migration/injection.py` | Routine : comptes, journaux, tiers du lot déjà dans Odoo |
 | `reel` | `tests/test_connecteurs.py` | Résultat d'une écriture réelle, dans un test |
@@ -956,7 +1060,7 @@ Avant d'en créer une, vérifier (casse ignorée) qu'elle n'existe pas déjà.
 | `references` | `core/connecteurs/transfert.py`, `tests/test_connecteurs.py` | (référence du transfert, référence du test) |
 | `references_presentes` | `core/migration/injection.py` | Routine : références d'écritures déjà dans Odoo |
 | `refs` | `core/connecteurs/odoo.py`, `tests/test_connecteurs.py`, `core/connecteurs/pennylane.py` | Références des écritures du lot |
-| `refus` | `tests/test_connecteurs.py` | Destination qui refuse le transfert, dans un test |
+| `refus` | `tests/test_connecteurs.py`, `tests/test_ecran_transferts.py` | Destination qui refuse le transfert, dans un test ; aussi : méthode de test : requête refusée, rend la cause |
 | `refuses` | `core/connecteurs/connexions.py` | Paramètres au nom de secret refusés |
 | `REGISTRE` | `core/connecteurs/registre.py` | Logiciels branchés : nom court -> classe du connecteur |
 | `Regle` | `core/comptes.py` | Type : règle d'alerte (code, niveau, condition, message) |
@@ -996,7 +1100,7 @@ Avant d'en créer une, vérifier (casse ignorée) qu'elle n'existe pas déjà.
 | `ResumeEcriture` | `core/analyser.py` | TypedDict : résumé d'une écriture pendant l'analyse |
 | `retirees` | `core/connecteurs/fec.py` | Lignes retirées (hors période) |
 | `retirees_filtres` | `core/connecteurs/transfert.py` | Lignes retirées par les filtres |
-| `retirer` | `core/connecteurs/connexions.py` | Méthode de l'annuaire : retire une connexion |
+| `retirer` | `core/connecteurs/connexions.py`, `interface/transferts.py` | Méthode de l'annuaire : retire une connexion ; aussi : méthode de l'écran Transferts : retire connexion, secrets et FEC déposé |
 | `retirer_hors_periode` | `core/connecteurs/fec.py` | Routine : retire les écritures hors période (gardées à part) |
 | `retrait` | `core/migration/filtres.py`, `core/fichier_json.py` | Bilan du filtre en cours (remplace `t`) |
 | `RetraitFiltre` | `core/migration/filtres.py` | Type du bilan d'un filtre |
@@ -1101,7 +1205,7 @@ Avant d'en créer une, vérifier (casse ignorée) qu'elle n'existe pas déjà.
 | `TestDictionnairePlan` | `tests/test_plan_comptable.py` | Tests de dictionnaire_plan |
 | `TestEntete` | `tests/test_xlsx_vers_fec.py` | Tests de détection de l'en-tête |
 | `TestEnvoiOdoo` | `tests/test_connecteurs.py` | Classe de test : envoi vers une base Odoo quelconque |
-| `tester` | `core/connecteurs/base.py`, `core/connecteurs/connexions.py`, `core/connecteurs/fec.py`, `tests/test_connecteurs.py`, `core/connecteurs/odoo.py`, `core/connecteurs/azalplus.py`, `core/connecteurs/pennylane.py` | Méthode : essaie la connexion et lit la société |
+| `tester` | `core/connecteurs/base.py`, `core/connecteurs/connexions.py`, `core/connecteurs/fec.py`, `tests/test_connecteurs.py`, `core/connecteurs/odoo.py`, `core/connecteurs/azalplus.py`, `core/connecteurs/pennylane.py`, `interface/transferts.py` | Méthode : essaie la connexion et lit la société ; aussi : méthode de l'écran Transferts : teste et rend la connexion à jour |
 | `TestErreursExplicites` | `tests/test_yaml_min.py` | Tests des erreurs YAML explicites |
 | `TestErreursPlan` | `tests/test_plan_comptable.py` | Tests des refus du plan comptable |
 | `TestExporter` | `tests/test_assistant_import.py` | Tests de `action_exporter` |
@@ -1186,6 +1290,7 @@ Avant d'en créer une, vérifier (casse ignorée) qu'elle n'existe pas déjà.
 | `ValeursEcritureOdoo` | `core/migration/injection.py` | Types des valeurs account.move.line / account.move créées |
 | `ValeursLigneOdoo` | `core/migration/injection.py` | Types des valeurs account.move.line / account.move créées |
 | `ValeurYaml` | `core/yaml_min.py` | Type récursif d'une valeur YAML (scalaire, liste, dict) |
+| `valider_demande` | `core/connecteurs/transfert.py` | Routine partagée : refuse une demande de transfert impossible (écran et creer) |
 | `variable_docker` | `interface/serveur.py` | Nom de variable POSTGRES_* (docker) |
 | `variable_pg` | `interface/serveur.py` | Nom de variable PG* (libpq) |
 | `verifier_erreur` | `tests/test_yaml_min.py` | Routine : vérifie l'ErreurYaml et la ligne citée |
@@ -1198,6 +1303,7 @@ Avant d'en créer une, vérifier (casse ignorée) qu'elle n'existe pas déjà.
 | `version_texte_odoo` | `deploy/addons/concorde/wizard/concorde_import_wizard.py` | Texte de version d'Odoo (odoo.release.version), repli de _version_majeure_odoo |
 | `vide` | `tests/test_connecteurs.py` | Fichier vide, dans un test |
 | `vraie` | `tests/test_connecteurs.py` | Connexion destination réelle, dans un test |
+| `VUE_ACTION` | `interface/static/app.js` | Vue qui affiche le résultat d'une action (transfert, feu vert -> transferts) |
 | `XML_PIEGE` | `tests/test_xml_sur.py` | Document XML ordinaire / bombe d'entités |
 | `XML_SAIN` | `tests/test_xml_sur.py` | Document XML ordinaire / bombe d'entités |
 | `_action` | `tests/integration/verifier_photo.py` | Lance une action Odoo dont le retour ne passe pas par XML-RPC |

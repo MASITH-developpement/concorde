@@ -39,6 +39,15 @@ API (JSON ; toute requête qui modifie exige l'en-tête X-Concorde: 1) :
   POST /api/distants/<id>/cle   DELETE /api/distants/<id>/cle
   POST /api/bases/nom  {base_id, libelle}
        (nom parlant d'une base, vide = retiré)
+  Écran Transferts (ADR-0011, interface/transferts.py) :
+  GET  /api/logiciels   GET /api/connexions   POST /api/connexions
+  POST /api/connexions/<id>/secret {champ, valeur}   (jamais renvoyé)
+  POST /api/connexions/<id>/tester    DELETE /api/connexions/<id>
+  POST /api/connexions/<id>/depot?nom=…   (corps = le FEC brut)
+  POST /api/tables?nom=…                  (corps = la table brute)
+  GET  /api/transferts   POST /api/transferts   GET /api/transferts/<id>
+  GET  /api/transferts/<id>/fichier?chemin=…
+  POST /api/transferts/<id>/feu-vert {destination, confirmation, sauvegarde_du}
   (suppression / réinitialisation d'une base LOCALE : POST /api/taches avec
    action = supprimer_base | reinitialiser_base et confirmation = nom
    retapé — ADR-0005)
@@ -68,6 +77,7 @@ from core import bases_locales
 from core import rapport_jour
 from core.comparaison import comparer_bases
 from core.comptes import alertes_balance, grand_livre
+from core.connecteurs.secrets import CHEMIN_SECRETS
 from core.fichier_json import ecrire_json_atomique
 from core.guardian import Guardian
 from core.journal import Journal, duree_texte, nombre_texte
@@ -90,12 +100,16 @@ from core.surveillance import (
     depuis_24h,
 )
 from interface.auth import Sessions, verifier
+from interface.transferts import ERREURS_ECRAN, EcranTransferts
 
 # Objet JSON (tâche, base, constat, corps de requête) : contenu dynamique,
 # relu depuis le disque ou reçu du navigateur, d'où les valeurs Any.
 ObjetJson = dict[str, Any]
 # Paramètres d'URL (?cle=valeur), dernière valeur gardée.
 ParametresUrl = dict[str, str]
+# Travail d'une tâche branchée par un autre module (écran Transferts) :
+# (tâche, journal, guardian) ; remplit tache["resultat"], lève en cas d'échec.
+Travail = Callable[[ObjetJson, Journal, Guardian], None]
 SourceOdoo = SourceSqlOdoo17 | SourceXmlRpcOdoo17
 
 STATIQUE = os.path.join(os.path.dirname(os.path.abspath(__file__)), "static")
@@ -614,6 +628,7 @@ class Taches:
         self._journaux: dict[str, Journal] = {}
         self._verrou = threading.Lock()
         self._places = threading.Semaphore(TACHES_SIMULTANEES)
+        self.travaux: dict[str, Travail] = {}
         os.makedirs(dossier, exist_ok=True)
         self._recharger()
 
@@ -652,7 +667,17 @@ class Taches:
         "supprimer_base": "suppression",
         "reinitialiser_base": "réinitialisation",
         "comparer": "comparaison",
+        "transfert": "transfert",
+        "feu_vert": "feu vert",
     }
+    # Actions sur une base de l'écran Bases (POST /api/taches).
+    ACTIONS_BASE = (
+        "analyser",
+        "telecharger",
+        "supprimer_base",
+        "reinitialiser_base",
+        "comparer",
+    )
 
     def creer(
         self, action: str | None, base_id: str | None, params: ObjetJson
@@ -660,14 +685,14 @@ class Taches:
         """Crée une tâche et la lance en arrière-plan ; rend son id.
 
         Rôle : point d'entrée de POST /api/taches.
-        Paramètres : action (clé de ACTIONS), base_id (id de la base),
+        Paramètres : action (clé de ACTIONS_BASE), base_id (id de la base),
         params (paramètres validés par Gestionnaire._params_tache).
         Retour : l'id de la tâche.
         Erreurs : ValueError si l'action ou une base est inconnue, ou si la
         suppression vise une base distante.
         Usages : Gestionnaire.do_POST, tests/test_interface.py.
         """
-        if action is None or action not in self.ACTIONS:
+        if action is None or action not in self.ACTIONS_BASE:
             raise ValueError("Action inconnue : %s" % action)
         if action in ("supprimer_base", "reinitialiser_base") and not str(
             base_id
@@ -688,6 +713,34 @@ class Taches:
             for fiche in self.bases.lister()
         ):
             raise ValueError("Base B inconnue : %s" % params.get("base_b"))
+        return self.lancer(
+            action, base_id, base["nom"], base.get("societe", ""), params
+        )
+
+    def lancer(
+        self,
+        action: str,
+        base_id: str | None,
+        nom: str,
+        societe: str,
+        params: ObjetJson,
+    ) -> str:
+        """Enregistre une tâche et la lance en arrière-plan ; rend son id.
+
+        Rôle : un seul endroit qui crée la fiche, le journal et le fil
+        d'exécution d'une tâche (limite de TACHES_SIMULTANEES comprise).
+        Paramètres : action — clé de ACTIONS (pour une action hors
+        ACTIONS_BASE, son travail doit être dans `travaux`) ; base_id —
+        base visée ou None ; nom et societe — ce qu'affiche l'historique ;
+        params — paramètres déjà validés.
+        Retour : l'id de la tâche.
+        Erreurs : ValueError si l'action est inconnue ou sans travail.
+        Usages : creer, interface/transferts.py.
+        """
+        if action not in self.ACTIONS or (
+            action not in self.ACTIONS_BASE and action not in self.travaux
+        ):
+            raise ValueError("Action inconnue : %s" % action)
         ident = datetime.now().strftime("%Y%m%d-%H%M%S-") + secrets.token_hex(
             3
         )
@@ -695,8 +748,8 @@ class Taches:
             "id": ident,
             "action": action,
             "base_id": base_id,
-            "base": base["nom"],
-            "societe": base.get("societe", ""),
+            "base": nom,
+            "societe": societe,
             "params": params,
             "statut": "en_attente",
             "cree_le": datetime.now().isoformat(timespec="seconds"),
@@ -708,8 +761,7 @@ class Taches:
         }
         journal = Journal()
         journal.dire(
-            "Tâche créée : %s de la base %s"
-            % (self.ACTIONS[action], base["nom"]),
+            "Tâche créée : %s — %s" % (self.ACTIONS[action], nom),
             "etape",
         )
         with self._verrou:
@@ -746,6 +798,10 @@ class Taches:
         source: SourceOdoo | None = None
         try:
             parametres = tache["params"]
+            if tache["action"] in self.travaux:
+                self.travaux[tache["action"]](tache, journal, guardian)
+                tache["statut"] = "terminee"
+                return
             if tache["action"] in ("supprimer_base", "reinitialiser_base"):
                 self._supprimer_base(tache, parametres, journal, guardian)
                 tache["statut"] = "terminee"
@@ -1405,8 +1461,12 @@ class Application:
         dossier: str,
         bases: Bases | None = None,
         minutes_surveillance: int = 0,
+        fichier_secrets: str = CHEMIN_SECRETS,
     ) -> None:
-        """Assemble le service autour du dossier de données."""
+        """Assemble le service autour du dossier de données.
+
+        Lève ValueError si CONCORDE_DEPOT_MAX_MO est invalide.
+        """
         self.empreinte_mdp = empreinte_mdp
         self.dossier = dossier
         os.makedirs(dossier, exist_ok=True)
@@ -1421,6 +1481,9 @@ class Application:
         self.taches = Taches(dossier, self.bases, self.centre)
         self.surveillance = Surveillance(self, minutes_surveillance)
         self.taches.surveillance_dossier = self.surveillance.dossier
+        self.transferts = EcranTransferts(
+            dossier, self.taches, self.journal, fichier_secrets
+        )
         self.journal.dire("Service CONCORDE démarré", "ok")
 
 
@@ -1558,6 +1621,12 @@ class Gestionnaire(BaseHTTPRequestHandler):
             return self._statique(chemin)
         if chemin == "/api/etat":
             return self._json(200, {"connecte": self._connecte()})
+        if chemin.startswith(
+            ("/api/logiciels", "/api/connexions", "/api/transferts")
+        ):
+            if not self._connecte():
+                return self._erreur(401, "Connexion requise.")
+            return self._get_transferts(chemin)
         if not self._connecte():
             return self._erreur(401, "Connexion requise.")
         requete = self._requete()
@@ -1677,6 +1746,12 @@ class Gestionnaire(BaseHTTPRequestHandler):
         chemin = urlparse(self.path).path
         if not self._verifier_origine():
             return self._erreur(403, "Requête refusée.")
+        if chemin == "/api/tables" or re.fullmatch(
+            r"/api/connexions/[\w-]+/depot", chemin
+        ):
+            if not self._connecte():
+                return self._erreur(401, "Connexion requise.")
+            return self._televerser(chemin)
         try:
             corps = self._corps()
         except (ValueError, UnicodeDecodeError) as exc:
@@ -1740,6 +1815,8 @@ class Gestionnaire(BaseHTTPRequestHandler):
                 % self.app.bases.nom(correspondance.group(1))
             )
             return self._json(200, {"ok": True})
+        if chemin.startswith(("/api/connexions", "/api/transferts")):
+            return self._post_transferts(chemin, corps)
         if chemin == "/api/cles/revoquer":
             return self._revoquer_cle(corps)
         if chemin == "/api/rapport":
@@ -1769,6 +1846,11 @@ class Gestionnaire(BaseHTTPRequestHandler):
             return self._erreur(403, "Requête refusée.")
         if not self._connecte():
             return self._erreur(401, "Connexion requise.")
+        if re.fullmatch(r"/api/connexions/[\w-]+", chemin):
+            ident_connexion = chemin.split("/")[3]
+            return self._ecran(
+                200, lambda: self.app.transferts.retirer(ident_connexion)
+            )
         correspondance = re.fullmatch(
             r"/api/distants/(xmlrpc:\w+)/cle", chemin
         )
@@ -1788,6 +1870,86 @@ class Gestionnaire(BaseHTTPRequestHandler):
             self.app.journal.dire("Base distante retirée de CONCORDE", "info")
             return self._json(200, {"ok": True})
         return self._erreur(404, "Base inconnue.")
+
+    # --- écran Transferts (ADR-0011) ----------------------------------------
+    def _ecran(self, code: int, appel: Callable[[], object]) -> None:
+        """Exécute une action de l'écran Transferts et envoie sa réponse.
+
+        Rôle : une seule traduction des refus en HTTP 400, cause comprise
+        (jamais de secret : les erreurs n'en contiennent pas).
+        Paramètres : code — code HTTP en cas de succès ; appel — l'action.
+        Retour : aucun (réponse envoyée).
+        Erreurs : aucune (chaque refus devient une réponse 400).
+        Usages : _get_transferts, _post_transferts, _televerser, do_DELETE.
+        """
+        try:
+            donnees = appel()
+        except ERREURS_ECRAN as exc:
+            return self._erreur(400, str(exc))
+        return self._json(code, donnees)
+
+    def _get_transferts(self, chemin: str) -> None:
+        """Lectures de l'écran Transferts."""
+        ecran = self.app.transferts
+        parties = chemin.split("/")  # ["", "api", "transferts", <id>, …]
+        if chemin == "/api/logiciels":
+            return self._ecran(200, ecran.logiciels)
+        if chemin == "/api/connexions":
+            return self._ecran(200, ecran.connexions)
+        if chemin == "/api/transferts":
+            return self._ecran(200, ecran.lister_transferts)
+        if re.fullmatch(r"/api/transferts/[\w-]+", chemin):
+            return self._ecran(200, lambda: ecran.detail_transfert(parties[3]))
+        if re.fullmatch(r"/api/transferts/[\w-]+/fichier", chemin):
+            try:
+                fichier = ecran.chemin_fichier(
+                    parties[3], self._requete().get("chemin", "")
+                )
+            except ERREURS_ECRAN as exc:
+                return self._erreur(404, str(exc))
+            return self._fichier(fichier, os.path.basename(fichier))
+        return self._erreur(404, "Route inconnue.")
+
+    def _post_transferts(self, chemin: str, corps: ObjetJson) -> None:
+        """Actions de l'écran Transferts (corps JSON)."""
+        ecran = self.app.transferts
+        parties = chemin.split("/")  # ["", "api", <écran>, <id>, <action>]
+        if chemin == "/api/connexions":
+            return self._ecran(201, lambda: ecran.ajouter(corps))
+        if chemin == "/api/transferts":
+            return self._ecran(
+                201, lambda: {"id": ecran.lancer_transfert(corps)}
+            )
+        if re.fullmatch(r"/api/connexions/[\w-]+/secret", chemin):
+            return self._ecran(
+                200,
+                lambda: {"secrets": ecran.ecrire_secret(parties[3], corps)},
+            )
+        if re.fullmatch(r"/api/connexions/[\w-]+/tester", chemin):
+            return self._ecran(200, lambda: ecran.tester(parties[3]))
+        if re.fullmatch(r"/api/transferts/[\w-]+/feu-vert", chemin):
+            return self._ecran(
+                201,
+                lambda: {"id": ecran.feu_vert(parties[3], corps, self._ip())},
+            )
+        return self._erreur(404, "Route inconnue.")
+
+    def _televerser(self, chemin: str) -> None:
+        """Fichier envoyé brut : FEC déposé ou table de correspondance."""
+        try:
+            taille = int(self.headers.get("Content-Length") or 0)
+        except ValueError:
+            return self._erreur(400, "Taille du fichier invalide.")
+        nom = self._requete().get("nom", "")
+        ecran = self.app.transferts
+        if chemin == "/api/tables":
+            return self._ecran(
+                201, lambda: ecran.recevoir_table(nom, self.rfile, taille)
+            )
+        ident = chemin.split("/")[3]
+        return self._ecran(
+            201, lambda: ecran.deposer(ident, nom, self.rfile, taille)
+        )
 
     # --- actions -------------------------------------------------------------
     def _connexion(self, corps: ObjetJson) -> None:

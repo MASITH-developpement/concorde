@@ -81,6 +81,7 @@ class ConnecteurFec(Connecteur):
         "lecture": "fichier",
         "ecriture": "fichier",
     }
+    parametres_facultatifs = ("chemin", "dossier")
 
     def tester(self, journal: Journal) -> InfoConnexion:
         """Vérifie que le fichier se lit, ou que le dossier s'écrit."""

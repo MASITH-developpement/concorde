@@ -195,8 +195,20 @@ def charger(ident: str, racine: str = CHEMIN_TRANSFERTS) -> EtatTransfert:
     return etat
 
 
-def _valider(annuaire_connexions: Annuaire, demande: DemandeTransfert) -> None:
-    """Refuse une demande impossible, avant toute lecture."""
+def valider_demande(
+    annuaire_connexions: Annuaire, demande: DemandeTransfert
+) -> None:
+    """Refuse une demande impossible, avant toute lecture.
+
+    Rôle : une seule règle d'acceptation, pour l'écran (réponse immédiate)
+    et pour `creer`.
+    Paramètres : annuaire ; demande.
+    Retour : aucun.
+    Erreurs : ErreurTransfert (destination absente ou en double, source
+    parmi les destinations, connexion inconnue, secret manquant, logiciel
+    qui ne sait pas lire ou écrire) ; ValueError (date invalide).
+    Usages : creer, interface/transferts.py.
+    """
     if not demande["destinations"]:
         raise ErreurTransfert("Aucune destination.")
     if len(set(demande["destinations"])) != len(demande["destinations"]):
@@ -455,7 +467,7 @@ def creer(
     journal_actif = ou_muet(journal)
     audit = guardian or Guardian()
     audit.self_check()
-    _valider(annuaire_connexions, demande)
+    valider_demande(annuaire_connexions, demande)
     ident = "T%s-%s" % (
         datetime.now().strftime("%Y%m%d%H%M%S"),
         uuid.uuid4().hex[:4],
@@ -515,6 +527,49 @@ def creer(
     return charger(ident, racine)
 
 
+def controler_feu_vert(
+    annuaire_connexions: Annuaire,
+    ident: str,
+    ident_dest: str,
+    confirmation: str,
+    sauvegarde_du: date,
+    racine: str = CHEMIN_TRANSFERTS,
+    aujourd_hui: date | None = None,
+) -> tuple[EtatTransfert, EtatDestination]:
+    """Vérifie qu'un feu vert peut être donné, sans rien lancer.
+
+    Rôle : une seule règle du feu vert, pour l'écran (réponse immédiate)
+    et pour `donner_feu_vert`.
+    Paramètres : annuaire ; ident — transfert ; ident_dest — destination ;
+    confirmation — libellé de la destination, retapé ; sauvegarde_du —
+    date de la sauvegarde de la destination ; racine ; aujourd_hui.
+    Retour : (état du transfert, état de la destination).
+    Erreurs : ErreurTransfert si le feu vert est refusé : transfert ou
+    destination inconnus, destination pas en attente, libellé mal
+    retapé, sauvegarde datée du futur.
+    Usages : donner_feu_vert, interface/transferts.py.
+    """
+    jour = aujourd_hui or date.today()
+    etat = charger(ident, racine)
+    etat_dest = etat["destinations"].get(ident_dest)
+    if etat_dest is None:
+        raise ErreurTransfert("Destination inconnue : %s" % ident_dest)
+    if etat_dest["statut"] != ATTENTE:
+        raise ErreurTransfert(
+            "%s n'attend pas de feu vert (statut %s)."
+            % (ident_dest, etat_dest["statut"])
+        )
+    fiche = annuaire_connexions.obtenir(ident_dest)
+    if confirmation.strip() != fiche["libelle"]:
+        raise ErreurTransfert(
+            "Le nom de la destination n'est pas retapé à l'identique : "
+            "rien n'est parti."
+        )
+    if sauvegarde_du > jour:
+        raise ErreurTransfert("Date de sauvegarde dans le futur.")
+    return etat, etat_dest
+
+
 def donner_feu_vert(
     annuaire_connexions: Annuaire,
     ident: str,
@@ -542,24 +597,15 @@ def donner_feu_vert(
     Usages : interface (écran Transferts), tests.
     """
     journal_actif = ou_muet(journal)
-    jour = aujourd_hui or date.today()
-    etat = charger(ident, racine)
-    etat_dest = etat["destinations"].get(ident_dest)
-    if etat_dest is None:
-        raise ErreurTransfert("Destination inconnue : %s" % ident_dest)
-    if etat_dest["statut"] != ATTENTE:
-        raise ErreurTransfert(
-            "%s n'attend pas de feu vert (statut %s)."
-            % (ident_dest, etat_dest["statut"])
-        )
-    fiche = annuaire_connexions.obtenir(ident_dest)
-    if confirmation.strip() != fiche["libelle"]:
-        raise ErreurTransfert(
-            "Le nom de la destination n'est pas retapé à l'identique : "
-            "rien n'est parti."
-        )
-    if sauvegarde_du > jour:
-        raise ErreurTransfert("Date de sauvegarde dans le futur.")
+    etat, etat_dest = controler_feu_vert(
+        annuaire_connexions,
+        ident,
+        ident_dest,
+        confirmation,
+        sauvegarde_du,
+        racine,
+        aujourd_hui,
+    )
     audit = guardian or Guardian()
     audit.self_check()
     etapes = etat_dest["etapes"]

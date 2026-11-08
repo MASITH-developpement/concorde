@@ -151,6 +151,9 @@ class Lot:
         self.lignes = lignes
         self.retirees: list[tuple[LigneLot, object]] = []  # porte 3 bis
         self.illisibles: list[LigneIllisible] = []  # porte 1
+        # Ce que le connecteur source signale sans bloquer (ex. tiers
+        # retrouvé par son nom) : repris en alerte par les contrôles.
+        self.signalements: list[str] = []
 
     def ecritures(self) -> "OrderedDict[CleEcriture, list[LigneLot]]":
         """OrderedDict clé -> [lignes], dans l'ordre du fichier."""

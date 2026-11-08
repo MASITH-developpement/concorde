@@ -375,6 +375,12 @@ CATALOGUE: dict[str, tuple[str, str, str]] = {
         "sortie.",
         "Ne rien envoyer ; signaler l'anomalie.",
     ),
+    "MIG_SIGNALEMENT_SOURCE": (
+        "Signalé à la lecture",
+        "Le connecteur a dû interpréter une donnée de la source (par exemple "
+        "un tiers retrouvé par son nom faute de code).",
+        "Vérifier chaque élément signalé avant de donner le feu vert.",
+    ),
     # --- Transferts entre logiciels (ADR-0008) -------------------------------
     "TRF_ECART_CONCORDANCE": (
         "Source et lot différents",

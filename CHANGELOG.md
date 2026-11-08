@@ -27,6 +27,13 @@ Le module Odoo porte la même version au format `17.0.X.Y.Z` (`deploy/addons/con
     destination, un compte, un journal ou un tiers absent bloque l'écriture
     (rien n'est créé sans arbitrage) ; option `creer_manquants=oui` pour une
     base de test vierge.
+  - `azalplus` : AzalPlus comme source, lecture seule de sa base PostgreSQL
+    (ADR-0009) : entreprise et société filtrées, statuts VALIDEE / VALIDE,
+    lignes sans société comptées et signalées, tiers retrouvés par leur nom
+    (signalés) ou bloquants (introuvable, sans code, en double).
+- `Lot.signalements` et alerte `MIG_SIGNALEMENT_SOURCE` dans les contrôles.
+- ADR-0009 (AzalPlus : lecture de la base maintenant, écriture par l'API v2
+  une fois terminée).
 - Envoi Odoo (`core/migration/injection.py`) : `CibleOdoo` (toute base,
   https exigé hors du serveur) ; `CibleTest` en devient un cas particulier,
   avec les mêmes verrous qu'avant. Préfixe de référence au choix du
@@ -36,7 +43,7 @@ Le module Odoo porte la même version au format `17.0.X.Y.Z` (`deploy/addons/con
 - `scripts/concorde_connexion.py` : lister, ajouter, tester, retirer une
   connexion ; saisie masquée d'un secret.
 - Code `TRF_ECART_CONCORDANCE` expliqué par Marceau.
-- 46 tests (`tests/test_connecteurs.py`) ; 399 → 445 tests.
+- 53 tests (`tests/test_connecteurs.py`) ; 399 → 452 tests.
 ### Modifié
 - Routines partagées au lieu de copies : `core/fichier_json.ecrire_json_atomique`
   (ex-`_ecrire_json_atomique` de l'interface, repris par `surveillance`),

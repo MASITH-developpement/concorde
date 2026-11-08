@@ -61,6 +61,12 @@ def controler(
         "Lignes illisibles dans le fichier",
         ["ligne %d : %s" % (n, motif) for n, _, motif in lot.illisibles],
     )
+    r.constat(
+        "ALERTE",
+        "MIG_SIGNALEMENT_SOURCE",
+        "Signalé à la lecture de la source",
+        lot.signalements,
+    )
     ecritures = lot.ecritures()
     desequ: list[str] = []
     une_ligne: list[str] = []

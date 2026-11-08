@@ -7,6 +7,8 @@
   connexions  annuaire des connexions enregistrées (sans aucun secret)
   transfert   procédure en 7 étapes, une destination indépendante des autres
   fec         FEC déposé dans CONCORDE (lecture) ou produit (écriture)
+  odoo        Odoo 17 par l'API XML-RPC (lecture, écriture, relecture)
+  azalplus    AzalPlus, source seulement : lecture seule de sa base (ADR-0009)
 
 Tous les connecteurs rendent et reçoivent le même `Lot`
 (core/migration/lot.py), en centimes : c'est le pivot.

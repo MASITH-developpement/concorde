@@ -61,7 +61,10 @@ class ErreurConnexion(RuntimeError):
 
 
 class CapacitesConnecteur(TypedDict):
-    """Ce que le connecteur sait faire : « api », « fichier » ou None."""
+    """Ce que le connecteur sait faire : « api », « fichier », « base »
+
+    (lecture seule directe de la base du logiciel) ou None.
+    """
 
     lecture: str | None
     ecriture: str | None

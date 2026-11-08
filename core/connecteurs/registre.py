@@ -4,11 +4,13 @@
 Brancher un nouveau logiciel = écrire son connecteur et l'ajouter ici.
 """
 
+from .azalplus import ConnecteurAzalPlus
 from .base import Connecteur, ErreurConnexion
 from .fec import ConnecteurFec
 from .odoo import ConnecteurOdoo
 
 REGISTRE: dict[str, type[Connecteur]] = {
+    ConnecteurAzalPlus.logiciel: ConnecteurAzalPlus,
     ConnecteurFec.logiciel: ConnecteurFec,
     ConnecteurOdoo.logiciel: ConnecteurOdoo,
 }

@@ -9,8 +9,10 @@ import sys
 import tempfile
 import threading
 import unittest
+import uuid
 from contextlib import redirect_stderr, redirect_stdout
 from datetime import date
+from decimal import Decimal
 from collections.abc import Iterable, Mapping
 from typing import Any, ClassVar
 from unittest import mock
@@ -28,6 +30,7 @@ from core.connecteurs.base import (
     ResultatEcriture,
 )
 from core.connecteurs.connexions import Annuaire, ErreurAnnuaire
+from core.connecteurs.azalplus import ConnecteurAzalPlus
 from core.connecteurs.odoo import ConnecteurOdoo
 from core.connecteurs.fec import (
     ConnecteurFec,
@@ -1206,3 +1209,336 @@ class TestEnvoiOdoo(unittest.TestCase):
         with self.assertRaises(injection.ErreurInjection) as contexte:
             injection.preparer(cible, lot, Journal(), creer_manquants=True)
         self.assertIn("trop long", str(contexte.exception))
+
+
+TENANT_TEST = "11111111-1111-1111-1111-111111111111"
+SOCIETE_TEST = "22222222-2222-2222-2222-222222222222"
+
+
+class FauxCurseurPg:
+    """Curseur PostgreSQL simulé : rend les lignes selon la requête."""
+
+    def __init__(self, base: "FauxPg") -> None:
+        """Garde la base simulée et la dernière requête."""
+        self.base = base
+        self.requete = ""
+
+    def __enter__(self) -> "FauxCurseurPg":
+        """Ouvre le bloc with."""
+        return self
+
+    def __exit__(self, *details: object) -> None:
+        """Ferme le bloc with."""
+
+    def execute(self, requete: str, parametres: Mapping[str, object]) -> None:
+        """Enregistre la requête ; lève l'erreur prévue par le test."""
+        if self.base.erreur is not None:
+            raise self.base.erreur
+        self.base.requetes.append((requete, dict(parametres)))
+        self.requete = requete
+
+    def fetchall(self) -> list[tuple[object, ...]]:
+        """Lignes simulées de la requête exécutée."""
+        if "count(*) FILTER" in self.requete:
+            return [self.base.comptes]
+        if "UNION ALL" in self.requete:
+            return self.base.tiers
+        return self.base.lignes
+
+
+class FauxPg:
+    """Base AzalPlus simulée (connexion DB-API)."""
+
+    def __init__(self) -> None:
+        """Deux écritures équilibrées ; tiers clients et fournisseurs."""
+        jour = date(2026, 10, 3)
+        self.lignes: list[tuple[object, ...]] = [
+            (
+                jour,
+                "VT",
+                "Ventes",
+                "VT-1",
+                "",
+                "411000",
+                "Clients",
+                "ACME",
+                "Facture",
+                Decimal("120.00"),
+                Decimal("0"),
+                "A",
+                "",
+                None,
+                "",
+            ),
+            (
+                jour,
+                "VT",
+                None,
+                "VT-1",
+                "",
+                "706000",
+                "Ventes",
+                "",
+                "Facture",
+                Decimal("0"),
+                Decimal("120.00"),
+                "",
+                "",
+                None,
+                "",
+            ),
+            (
+                jour,
+                "BQ",
+                "Banque",
+                "BQ-1",
+                "REL-9",
+                "512000",
+                "Banque",
+                "",
+                "Règlement",
+                Decimal("120.00"),
+                Decimal("0"),
+                "",
+                "EUR",
+                None,
+                "AXE1",
+            ),
+            (
+                jour,
+                "BQ",
+                "Banque",
+                "BQ-1",
+                "REL-9",
+                "411000",
+                "Clients",
+                "ACME",
+                "Règlement",
+                Decimal("0"),
+                Decimal("120.00"),
+                "A",
+                "",
+                None,
+                "",
+            ),
+        ]
+        self.tiers: list[tuple[object, ...]] = [
+            ("ACME", "C001"),
+            ("DOUBLON", "C002"),
+            ("DOUBLON", "F001"),
+            ("SANSCODE", None),
+        ]
+        self.comptes: tuple[object, ...] = (4, 680, 0)
+        self.requetes: list[tuple[str, dict[str, object]]] = []
+        self.session: dict[str, bool] = {}
+        self.fermee = 0
+        self.erreur: Exception | None = None
+
+    def cursor(self, name: str | None = None) -> FauxCurseurPg:
+        """Ouvre un curseur simulé."""
+        return FauxCurseurPg(self)
+
+    def set_session(self, *, readonly: bool, autocommit: bool) -> None:
+        """Garde le mode demandé (lecture seule attendue)."""
+        self.session = {"readonly": readonly, "autocommit": autocommit}
+
+    def close(self) -> None:
+        """Compte les fermetures."""
+        self.fermee += 1
+
+
+class TestConnecteurAzalPlus(Bac):
+    """Connecteur AzalPlus en lecture seule (ADR-0009)."""
+
+    PARAMETRES = {
+        "hote": "10.0.0.2",
+        "port": "5432",
+        "base": "azals",
+        "utilisateur": "concorde_ro",
+        "tenant_id": TENANT_TEST,
+        "societe_id": SOCIETE_TEST,
+    }
+
+    def setUp(self) -> None:
+        """Branche psycopg2.connect sur la base simulée."""
+        super().setUp()
+        self.base_pg = FauxPg()
+        self.connexions: list[dict[str, object]] = []
+
+        def connecter(**options: object) -> FauxPg:
+            """Garde les options de connexion, rend la base simulée."""
+            self.connexions.append(options)
+            return self.base_pg
+
+        correctif = mock.patch("psycopg2.connect", connecter)
+        correctif.start()
+        self.addCleanup(correctif.stop)
+
+    def azalplus(self, **options: str) -> ConnecteurAzalPlus:
+        """Connecteur vers la société simulée."""
+        parametres = dict(self.PARAMETRES)
+        parametres.update(options)
+        return ConnecteurAzalPlus(parametres, {"mot_de_passe": "secret"})
+
+    def test_parametres(self) -> None:
+        """Vérifie les paramètres exigés et les identifiants en UUID."""
+        with self.assertRaises(ErreurConnexion) as contexte:
+            ConnecteurAzalPlus({}, {})
+        self.assertIn("tenant_id", str(contexte.exception))
+        with self.assertRaises(ErreurConnexion):
+            self.azalplus(tenant_id="pas-un-uuid")
+        self.assertEqual(self.azalplus().tenant, uuid.UUID(TENANT_TEST))
+
+    def test_tester_compte_et_signale(self) -> None:
+        """Vérifie le comptage, l'alerte sans société, la lecture seule."""
+        journal = Journal()
+        info = self.azalplus().tester(journal)
+        self.assertEqual(info["societe"], SOCIETE_TEST)
+        messages = " ".join(
+            evenement["message"] for evenement in journal.tout()
+        )
+        self.assertIn("680 ligne(s) d'écritures sans société", messages)
+        self.base_pg.comptes = (4, 0, 3)
+        journal = Journal()
+        self.azalplus().tester(journal)
+        self.assertIn(
+            "ni « VALIDEE » ni « VALIDE »",
+            " ".join(evenement["message"] for evenement in journal.tout()),
+        )
+        self.assertEqual(
+            self.base_pg.session, {"readonly": True, "autocommit": False}
+        )
+        self.assertEqual(self.connexions[0]["sslmode"], "require")
+        self.assertEqual(self.connexions[0]["password"], "secret")
+        for requete, parametres in self.base_pg.requetes:
+            self.assertIn("tenant_id = %(tenant)s", requete)
+            self.assertEqual(parametres["tenant"], TENANT_TEST)
+        self.assertEqual(self.base_pg.fermee, len(self.base_pg.requetes))
+
+    def test_lire(self) -> None:
+        """Vérifie les lignes, les tiers trouvés par leur nom, la période."""
+        lot = self.azalplus().lire(
+            {"du": date(2026, 10, 1), "au": None}, Journal()
+        )
+        self.assertEqual(lot.source["type"], "azalplus")
+        self.assertEqual(
+            lot.totaux(),
+            {"lignes": 4, "ecritures": 2, "debit": 24000, "credit": 24000},
+        )
+        self.assertEqual(lot.illisibles, [])
+        premiere, banque = lot.lignes[0], lot.lignes[2]
+        self.assertEqual(
+            (premiere["tiers_ref"], premiere["tiers_nom"]), ("C001", "ACME")
+        )
+        self.assertEqual(lot.lignes[1]["journal_lib"], "")
+        self.assertEqual(
+            (banque["piece"], banque["ecriture"], banque["analytique"]),
+            ("REL-9", "BQ-1", "AXE1"),
+        )
+        self.assertEqual(
+            lot.signalements,
+            ["tiers « ACME » retrouvé par son nom : code C001"],
+        )
+        requete, parametres = self.base_pg.requetes[1]
+        self.assertEqual(parametres["du"], date(2026, 10, 1))
+        self.assertEqual(parametres["statuts"], ["VALIDEE", "VALIDE"])
+        self.assertIn("deleted_at IS NULL AND NOT e.archived", requete)
+
+    def test_tiers_et_montants_bloquants(self) -> None:
+        """Vérifie : tiers introuvable, en double, sans code ; 3 décimales."""
+        jour = date(2026, 10, 3)
+        modele = list(self.base_pg.lignes[0])
+
+        def ligne(tiers: str, debit: Decimal) -> tuple[object, ...]:
+            """Ligne simulée avec un tiers et un débit donnés."""
+            copie = list(modele)
+            copie[7], copie[9], copie[0] = tiers, debit, jour
+            return tuple(copie)
+
+        self.base_pg.lignes = [
+            ligne("INCONNU", Decimal("1")),
+            ligne("DOUBLON", Decimal("1")),
+            ligne("SANSCODE", Decimal("1")),
+            ligne("", Decimal("1.234")),
+        ]
+        lot = self.azalplus().lire({"du": None, "au": None}, Journal())
+        motifs = [motif for _, _, motif in lot.illisibles]
+        self.assertEqual(len(motifs), 4)
+        self.assertIn("introuvable", motifs[0])
+        self.assertIn("2 clients ou fournisseurs", motifs[1])
+        self.assertIn("sans code", motifs[2])
+        self.assertIn("centime", motifs[3])
+        self.assertEqual(lot.lignes[3]["debit"], 0)
+
+    def test_devise(self) -> None:
+        """Vérifie qu'une ligne en devise garde son montant en devise."""
+        en_dollars = list(self.base_pg.lignes[0])
+        en_dollars[12], en_dollars[13] = "USD", Decimal("130.50")
+        self.base_pg.lignes = [tuple(en_dollars)]
+        ligne_lue = self.azalplus().lire({"du": None, "au": None}, Journal())
+        self.assertEqual(
+            (
+                ligne_lue.lignes[0]["devise"],
+                ligne_lue.lignes[0]["montant_devise"],
+            ),
+            ("USD", 13050),
+        )
+
+    def test_erreurs(self) -> None:
+        """Vérifie : base injoignable, requête refusée, psycopg2 absent."""
+        import psycopg2
+
+        with mock.patch(
+            "psycopg2.connect",
+            side_effect=psycopg2.OperationalError("injoignable"),
+        ):
+            with self.assertRaises(ErreurConnexion) as contexte:
+                self.azalplus().tester(Journal())
+        self.assertIn("injoignable", str(contexte.exception))
+        self.assertNotIn("secret", str(contexte.exception))
+        self.base_pg.erreur = psycopg2.Error("droit refusé")
+        with self.assertRaises(ErreurConnexion):
+            self.azalplus().lire({"du": None, "au": None}, Journal())
+        self.assertEqual(self.base_pg.fermee, 1)  # fermée malgré l'erreur
+        with self.assertRaises(ErreurConnexion):
+            self.azalplus(port="cinq").tester(Journal())
+        with mock.patch.dict(sys.modules, {"psycopg2": None}):
+            with self.assertRaises(ErreurConnexion) as contexte:
+                self.azalplus().tester(Journal())
+        self.assertIn("psycopg2", str(contexte.exception))
+
+    def test_transfert_azalplus_vers_fec(self) -> None:
+        """Vérifie un transfert complet AzalPlus -> FEC, jamais l'inverse."""
+        source = self.annuaire_connexions.ajouter(
+            "azalplus", "AzalPlus société A", self.PARAMETRES
+        )["id"]
+        ecrire_variable(
+            self.secrets, nom_variable(source, "mot_de_passe"), "secret"
+        )
+        destination = self.annuaire_connexions.ajouter(
+            "fec", "Sortie", {"dossier": os.path.join(self.dossier, "s")}
+        )["id"]
+        etat = transfert.creer(
+            self.annuaire_connexions,
+            self.demande(source, destination),
+            self.transferts,
+            AUJ,
+            Journal(),
+            self.guardian,
+        )
+        dest = etat["destinations"][destination]
+        self.assertEqual(dest["statut"], ATTENTE)
+        constats = [
+            constat_lu["code"]
+            for constat_lu in dest["etapes"]["donnees"]["constats"]
+        ]
+        self.assertEqual(constats, ["MIG_SIGNALEMENT_SOURCE"])
+        with self.assertRaises(ErreurTransfert):
+            transfert.creer(
+                self.annuaire_connexions,
+                self.demande(destination, source),
+                self.transferts,
+                AUJ,
+                Journal(),
+                self.guardian,
+            )

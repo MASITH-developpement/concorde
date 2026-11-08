@@ -327,24 +327,15 @@ class SourceXmlRpc:
         """
         # Import local : seul ce client hors Odoo en a besoin (le module
         # Odoo n'utilise que SourceEnv).
-        from .odoo_source import transport_xmlrpc
-        from .xml_sur import FauteXmlRpc, ProxyXmlRpc
+        from .odoo_source import proxys_xmlrpc
+        from .xml_sur import FauteXmlRpc
 
         self.url = url.rstrip("/")
         self.db = db
         self._cle = cle_api
         self._fault = FauteXmlRpc
 
-        commun = ProxyXmlRpc(
-            self.url + "/xmlrpc/2/common",
-            transport=transport_xmlrpc(self.url, timeout),
-            allow_none=True,
-        )
-        self._objet = ProxyXmlRpc(
-            self.url + "/xmlrpc/2/object",
-            transport=transport_xmlrpc(self.url, timeout),
-            allow_none=True,
-        )
+        commun, self._objet = proxys_xmlrpc(self.url, timeout)
         try:
             infos_version = commun.version()
         except Exception:

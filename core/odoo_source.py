@@ -385,12 +385,37 @@ def transport_xmlrpc(url: str, delai: float) -> TransportXmlRpc:
     chiffrée) ; delai — délai d'attente en secondes.
     Retour : un transport à passer à `ProxyXmlRpc`.
     Erreurs : aucune (les erreurs réseau surviennent à l'appel).
-    Usages : `SourceXmlRpcOdoo17.__init__`, `core.demat.SourceXmlRpc`,
-    `interface.serveur.Surveillance._verifier_odoo`.
+    Usages : `proxys_xmlrpc`, `interface.serveur.Surveillance._verifier_odoo`.
     """
     if url.startswith("https"):
         return _TransportSurDelai(delai)
     return _TransportDelai(delai)
+
+
+def proxys_xmlrpc(url: str, delai: float) -> tuple[ProxyXmlRpc, ProxyXmlRpc]:
+    """Accès XML-RPC « common » et « object » d'un serveur Odoo.
+
+    Rôle : un seul endroit qui ouvre l'API XML-RPC d'Odoo (délai borné,
+    XML lu sans risque, None autorisé dans les échanges).
+    Paramètres : url — adresse du serveur, sans / final ; delai — délai
+    d'attente de chaque appel, en secondes.
+    Retour : (proxy common, proxy object).
+    Erreurs : aucune ici (les erreurs réseau surviennent à l'appel).
+    Usages : SourceXmlRpcOdoo17, core.demat.SourceXmlRpc,
+    tests/integration/verifier_photo.
+    """
+    return (
+        ProxyXmlRpc(
+            url + "/xmlrpc/2/common",
+            transport=transport_xmlrpc(url, delai),
+            allow_none=True,
+        ),
+        ProxyXmlRpc(
+            url + "/xmlrpc/2/object",
+            transport=transport_xmlrpc(url, delai),
+            allow_none=True,
+        ),
+    )
 
 
 def _avec_delai(connexion: _ConnexionHttp, delai: float) -> _ConnexionHttp:
@@ -601,6 +626,29 @@ class ConnexionSql(Protocol):
         """Ferme la connexion."""
 
 
+def connexion_lecture_seule(base: str) -> ConnexionSql:
+    """Ouvre une connexion PostgreSQL en lecture seule vers `base`.
+
+    Rôle : la seule ouverture de connexion SQL vers une base Odoo.
+    Paramètres : base — nom de la base ; hôte, port, utilisateur et mot de
+    passe viennent des variables PG* (libpq), jamais d'un argument.
+    Retour : connexion psycopg2, session en lecture seule.
+    Erreurs : ErreurSource si psycopg2 n'est pas installé ;
+    psycopg2.Error si la base est injoignable.
+    Usages : SourceSqlOdoo17, montee_version.photo.
+    """
+    try:
+        import psycopg2  # dépendance optionnelle (ADR-0001)
+    except ImportError as exc:
+        raise ErreurSource(
+            "Lecture SQL indisponible : psycopg2 n'est pas installé "
+            "(utilisez --source xmlrpc)."
+        ) from exc
+    connexion: ConnexionSql = psycopg2.connect(dbname=base)
+    connexion.set_session(readonly=True, autocommit=False)
+    return connexion
+
+
 class SourceSqlOdoo17:
     """Lecture directe de la base PostgreSQL d'un Odoo 17 (lecture seule)."""
 
@@ -626,15 +674,7 @@ class SourceSqlOdoo17:
             "Connexion à la base %s (PostgreSQL, lecture seule)" % base
         )
         if connexion is None:
-            try:
-                import psycopg2  # dépendance optionnelle (ADR-0001)
-            except ImportError as exc:
-                raise ErreurSource(
-                    "Source SQL indisponible : psycopg2 n'est pas installé "
-                    "(utilisez --source xmlrpc)."
-                ) from exc
-            # Hôte, port, utilisateur et mot de passe : variables PG* (libpq).
-            connexion = psycopg2.connect(dbname=base)
+            connexion = connexion_lecture_seule(base)
         connexion.set_session(readonly=True, autocommit=False)
         self._cx = connexion
         self.base = base
@@ -1072,16 +1112,7 @@ class SourceXmlRpcOdoo17:
         self.base = base
         self._cle = cle_api
         if proxy_objet is None:
-            proxy_commun = ProxyXmlRpc(
-                self.url + "/xmlrpc/2/common",
-                transport=transport_xmlrpc(self.url, timeout),
-                allow_none=True,
-            )
-            proxy_objet = ProxyXmlRpc(
-                self.url + "/xmlrpc/2/object",
-                transport=transport_xmlrpc(self.url, timeout),
-                allow_none=True,
-            )
+            proxy_commun, proxy_objet = proxys_xmlrpc(self.url, timeout)
         self._objet = proxy_objet
         self.version_serveur = proxy_commun.version().get(
             "server_version", "?"

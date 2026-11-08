@@ -1194,3 +1194,87 @@ Avant d'en créer une, vérifier (casse ignorée) qu'elle n'existe pas déjà.
 | `vraie` | `tests/test_connecteurs.py` | Connexion destination réelle, dans un test |
 | `XML_PIEGE` | `tests/test_xml_sur.py` | Document XML ordinaire / bombe d'entités |
 | `XML_SAIN` | `tests/test_xml_sur.py` | Document XML ordinaire / bombe d'entités |
+| `_action` | `tests/integration/verifier_photo.py` | Lance une action Odoo dont le retour ne passe pas par XML-RPC |
+| `_code` | `core/montee_version/photo.py` | Code d'un compte pour une société |
+| `_codes_comptes` | `core/montee_version/photo.py` | {(société, compte): code}, code commun ou par société |
+| `_codes_par_societe` | `tests/integration/verifier_photo.py` | {(société, compte): code} lu par l'ORM |
+| `_compte_analytique` | `tests/integration/verifier_photo.py` | Crée un compte analytique (avec plan à partir de 16) |
+| `_dates_verrous` | `core/montee_version/photo.py` | Dates de verrouillage *_lock_date de chaque société |
+| `_ecriture` | `tests/integration/verifier_photo.py` | Crée et valide une écriture dans la base de la CI |
+| `_ident` | `tests/integration/verifier_photo.py` | Champ many2one XML-RPC -> identifiant ou None |
+| `_lettrer` | `tests/integration/verifier_photo.py` | Lettre des lignes puis vérifie en relisant |
+| `_mot_de_passe` | `tests/integration/verifier_photo.py` | Mot de passe de la base jetable de la CI |
+| `_objet` | `tests/integration/verifier_photo.py`, `core/odoo_source.py`, `core/demat.py` | Proxy XML-RPC « object » d'Odoo |
+| `_sections_lignes` | `core/montee_version/photo.py` | Balance, balance tiers et lettrage depuis les lignes |
+| `_sections_pieces` | `core/montee_version/photo.py` | Journaux et analytique |
+| `_SQL_ANALYTIQUE_PHOTO` | `core/montee_version/photo.py` | Requête : lignes analytiques liées à une écriture, par compte analytique |
+| `_SQL_COMPTES_PHOTO` | `core/montee_version/photo.py` | Requête : code des comptes (code ou code_store) |
+| `_SQL_JOURNAUX_PHOTO` | `core/montee_version/photo.py` | Requête : code des journaux |
+| `_SQL_LIGNES_PHOTO` | `core/montee_version/photo.py` | Requête : lignes validées par société, année, compte, tiers |
+| `_SQL_PIECES_PHOTO` | `core/montee_version/photo.py` | Requête : écritures et lignes validées par société, année, journal |
+| `_SQL_SOCIETES_PHOTO` | `core/montee_version/photo.py` | Requête : sociétés en JSON (dates de verrouillage) |
+| `_SQL_VERSION_PHOTO` | `core/montee_version/photo.py` | Requête : version du module base |
+| `_verrous_orm` | `tests/integration/verifier_photo.py` | Dates de verrouillage stockées, lues par l'ORM |
+| `acompte` | `tests/integration/verifier_photo.py` | Lignes de l'écriture de règlement partiel |
+| `ajouter_valeurs` | `core/montee_version/photo.py` | Routine : cumule des valeurs terme à terme sous une clé |
+| `annee` | `core/montee_version/photo.py`, `tests/integration/verifier_photo.py` | Année de la date d'une ligne |
+| `annoncer` | `tests/integration/verifier_photo.py` | Écrit les écarts en annotations d'erreur de la CI |
+| `annulations` | `tests/test_montee_version.py` | Nombre de fins de transaction de la base simulée |
+| `appel` | `tests/integration/verifier_photo.py` | Méthode : execute_kw vers Odoo |
+| `BasePhoto` | `tests/test_montee_version.py` | Doublure : connexion SQL simulée pour la photo |
+| `cle_journal` | `tests/integration/verifier_photo.py` | Clé société|année|journal d'une ligne |
+| `code_societe` | `core/montee_version/photo.py` | Code d'un compte pour une société (code_store) |
+| `CODE_SORTIE` | `tests/integration/verifier_photo.py` | Code de sortie du script de vérification (0 = zéro écart) |
+| `codes_societes` | `core/montee_version/photo.py` | code_store d'un compte : {société: code} |
+| `commun` | `tests/integration/verifier_photo.py`, `tests/test_montee_version.py`, `core/demat.py` | Proxy XML-RPC « common » d'Odoo |
+| `comparer_photos` | `core/montee_version/photo.py` | Routine : écarts entre deux photos, au centime |
+| `COMPTES_CODE_COMMUN` | `tests/test_montee_version.py` | Comptes simulés avec code en colonne (Odoo 14 à 17) |
+| `COMPTES_CODE_PAR_SOCIETE` | `tests/test_montee_version.py` | Comptes simulés avec code par société, code_store (Odoo 18) |
+| `connexion_lecture_seule` | `core/odoo_source.py` | Routine : connexion PostgreSQL en lecture seule |
+| `creance` | `tests/integration/verifier_photo.py` | Compte client (à recevoir) du tiers de test |
+| `creer_donnees` | `tests/integration/verifier_photo.py` | Crée les écritures connues dans la base de la CI |
+| `cumul` | `core/montee_version/photo.py` | Valeurs cumulées d'une clé |
+| `cumuls` | `core/montee_version/photo.py`, `tests/integration/verifier_photo.py` | {section: {clé: valeurs}} en cours de calcul |
+| `CurseurPhoto` | `tests/test_montee_version.py` | Doublure : curseur SQL qui rend les lignes prévues par requête |
+| `divers` | `tests/integration/verifier_photo.py` | Journal des opérations diverses |
+| `EcartPhoto` | `core/montee_version/photo.py` | TypedDict : une différence entre deux photos (section, clé, avant, après) |
+| `ecarts` | `core/montee_version/photo.py`, `tests/integration/verifier_photo.py`, `tests/test_montee_version.py` | Liste des écarts entre deux photos |
+| `empreinte` | `core/montee_version/photo.py` | Empreinte SHA-256 d'une photo |
+| `empreinte_sections` | `core/montee_version/photo.py` | Routine : empreinte des sections d'une photo |
+| `encaissement` | `tests/integration/verifier_photo.py` | Lignes de l'écriture d'encaissement |
+| `ErreurPhoto` | `core/montee_version/photo.py` | Exception : base illisible comme Odoo 14 à 18 (cause nommée) |
+| `extra` | `tests/integration/verifier_photo.py` | Champs supplémentaires d'une ligne d'écriture de test |
+| `lien` | `tests/integration/verifier_photo.py` | Champ qui relie une ligne analytique à une ligne d'écriture |
+| `lien_analytique` | `tests/integration/verifier_photo.py` | Champ analytique de la ligne (analytic_account_id ou analytic_distribution) |
+| `objet` | `tests/test_montee_version.py` | Proxy XML-RPC « object » dans un test |
+| `OdooVerif` | `tests/integration/verifier_photo.py` | Classe : appels ORM vers la base Odoo jetable de la CI |
+| `photo_code_commun` | `tests/test_montee_version.py` | Photo d'une base avec code en colonne |
+| `photo_code_societe` | `tests/test_montee_version.py` | Photo d'une base avec code par société |
+| `photo_orm` | `tests/integration/verifier_photo.py` | Même photo calculée par l'ORM d'Odoo |
+| `photo_sql` | `tests/integration/verifier_photo.py` | Photo prise en SQL |
+| `PhotoComptable` | `core/montee_version/photo.py` | TypedDict : photo comptable d'une base (sections, version, empreinte) |
+| `pieces` | `tests/integration/verifier_photo.py` | Identifiants des écritures d'une clé de journal |
+| `plans` | `tests/integration/verifier_photo.py` | Plans analytiques existants |
+| `prendre_photo` | `core/montee_version/photo.py` | Routine : photo comptable d'une base Odoo 14 à 18 |
+| `proxys` | `tests/integration/verifier_photo.py` | Couple de proxys XML-RPC (common, object) |
+| `proxys_xmlrpc` | `core/odoo_source.py` | Routine : proxys XML-RPC common et object d'Odoo |
+| `relues` | `tests/integration/verifier_photo.py` | Lignes relues après lettrage |
+| `reponses` | `tests/test_montee_version.py` | {requête SQL: lignes} de la base simulée |
+| `reponses_odoo` | `tests/test_montee_version.py` | Réponses d'une petite base simulée |
+| `rollback` | `tests/test_montee_version.py` | Méthode : fin de transaction de la base simulée |
+| `sections` | `core/montee_version/photo.py`, `tests/integration/verifier_photo.py`, `tests/test_montee_version.py` | Sections d'une photo, en texte |
+| `SECTIONS_PHOTO` | `core/montee_version/photo.py` | Sections d'une photo : balance, tiers, journaux, lettrage, analytique, verrous |
+| `sections_texte` | `core/montee_version/photo.py` | Routine : cumuls -> sections en texte, clés triées |
+| `societes` | `tests/integration/verifier_photo.py` | Identifiants des sociétés de la base |
+| `sql` | `core/montee_version/photo.py`, `tests/test_montee_version.py` | Texte d'une requête SQL |
+| `tailles` | `tests/integration/verifier_photo.py` | Nombre de clés par section |
+| `TestComparer` | `tests/test_montee_version.py` | Tests de comparer_photos |
+| `TestOuvertures` | `tests/test_montee_version.py` | Tests de connexion_lecture_seule et proxys_xmlrpc |
+| `TestPhoto` | `tests/test_montee_version.py` | Tests de prendre_photo |
+| `uid` | `tests/integration/verifier_photo.py` | Identifiant de l'utilisateur Odoo connecté |
+| `valeurs_apres` | `core/montee_version/photo.py` | Valeurs d'une section après la montée |
+| `valeurs_avant` | `core/montee_version/photo.py` | Valeurs d'une section avant la montée |
+| `valeurs_section` | `core/montee_version/photo.py` | {clé: valeurs} d'une section |
+| `vente` | `tests/integration/verifier_photo.py` | Lignes de l'écriture de vente 2023 |
+| `vente_partielle` | `tests/integration/verifier_photo.py` | Lignes de la vente 2024 réglée en partie |
+| `verrous` | `core/montee_version/photo.py`, `tests/integration/verifier_photo.py` | Dates de verrouillage d'une photo |

@@ -3,6 +3,22 @@
 Format : [Keep a Changelog](https://keepachangelog.com/fr/1.1.0/), versions sémantiques.
 Le module Odoo porte la même version au format `17.0.X.Y.Z` (`deploy/addons/concorde/__manifest__.py`).
 
+## [Non publiée]
+### Ajouté
+- Montée de version Odoo (ADR-0010, acceptée le 08/11/2026) : photo comptable
+  d'une base Odoo 14 à 18, en lecture seule (`core/montee_version/photo.py`).
+  Balance, balance tiers, journaux, lettrage, analytique et dates de
+  verrouillage, en centimes, avec empreinte ; `comparer_photos` liste chaque
+  écart (tolérance zéro). Les différences de schéma entre versions sont lues
+  dans la base, jamais déduites du numéro de version.
+- CI : job `photo-odoo`, sur un vrai Odoo 14, 15, 16, 17 et 18 (base jetable).
+  Il crée des écritures connues, prend la photo en SQL, la recalcule par l'ORM
+  d'Odoo et exige zéro écart (`tests/integration/verifier_photo.py`).
+### Modifié
+- Routines partagées : `odoo_source.connexion_lecture_seule` (seule ouverture
+  SQL vers Odoo) et `odoo_source.proxys_xmlrpc` (accès XML-RPC, auparavant
+  recopié dans `demat`).
+
 ## [1.6.0] — 2026-11-08
 ### Ajouté
 - Transferts entre logiciels (ADR-0008, acceptée le 08/11/2026) : socle

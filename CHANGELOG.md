@@ -45,6 +45,18 @@ Le module Odoo porte la même version au format `17.0.X.Y.Z` (`deploy/addons/con
   bombe d'entités, entités externes et DTD refusées. Nouvelle dépendance :
   `defusedxml` (paquet Ubuntu `python3-defusedxml`), à installer aussi dans le
   conteneur Odoo (moteur embarqué).
+- bandit : 66 alertes → 16, revues une à une et figées dans
+  `bandit_reference.json` (la CI échoue sur toute nouvelle alerte) :
+  - B404 / B603 (8) : `subprocess` lance pg_dump, pg_restore, clamscan, git et
+    docker par chemin absolu, arguments en liste, sans shell ;
+  - B411 (1) : `core/xml_sur.py` importe `xmlrpc.client` pour le protéger
+    (`defusedxml.xmlrpc.monkey_patch`) ;
+  - B104 (3) : le webhook écoute sur toutes les interfaces pour recevoir GitHub
+    (requêtes signées HMAC) ; deux faux positifs comparent l'adresse `0.0.0.0`
+    lue dans Docker ;
+  - B108 (3) : `/tmp`, `/var/tmp`, `/dev/shm` sont des dossiers surveillés par
+    l'antivirus, rien n'y est écrit ;
+  - B311 (1) : `random` à graine fixe pour les données de test.
 
 ## [1.4.9] et antérieures
 Voir l'historique git (`git log`).

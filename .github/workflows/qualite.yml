@@ -43,8 +43,11 @@ jobs:
           pylint --disable=all
           --enable=missing-function-docstring,missing-class-docstring,missing-module-docstring
           $CODE
+      # bandit_reference.json : 16 alertes revues et acceptées le 08/11/2026
+      # (détail dans CHANGELOG 1.5.0, Sécurité). Toute alerte absente de
+      # cette liste fait échouer l'étape.
       - name: Sécurité (bandit)
-        run: bandit -q -r $CODE
+        run: bandit -q -r $CODE -b bandit_reference.json
       - name: Pas de règle désactivée dans le code
         run: |
           if grep -rnE "noqa|type: *ignore|nosec|pylint: *disable|fmt: *off" \

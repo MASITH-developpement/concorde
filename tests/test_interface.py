@@ -14,8 +14,7 @@ from core.journal import Journal
 from core.odoo_source import SourceXmlRpcOdoo17
 from interface import auth
 from interface.serveur import Application, Bases, creer_serveur
-from tests.outils import FauxCommun
-from tests.test_odoo_donnees import FauxObjet
+from tests.outils import FauxCommun, FauxObjet
 
 MDP = "mot-de-passe-de-test"
 

@@ -24,7 +24,7 @@ from core.telecharger import (
     nom_fichier_fec,
 )
 from core.xlsx_ecrire import Centimes, ecrire_xlsx, euros_texte
-from tests.outils import Enregistrement, FauxCommun
+from tests.outils import Enregistrement, FauxCommun, FauxObjet
 
 
 def ligne(**kw: Any) -> Enregistrement:
@@ -343,133 +343,6 @@ class TestAnalyse(unittest.TestCase):
         )  # ACME seulement (GB exclu)
         self.assertEqual(c["SIREN_INVALIDE"], 1)  # Bad ; HRB (GB) ignoré
         self.assertEqual(c["TIERS_DOUBLON"], 1)  # ACME SARL ~ Acme
-
-
-class FauxObjet:
-    """Odoo 17 simulé pour la source XML-RPC (pagination par id comprise)."""
-
-    def __init__(self) -> None:
-        """Prépare les enregistrements Odoo simulés et le relevé d'appels."""
-        self.appels: list[tuple[str, str]] = []
-        self.donnees: dict[str, list[Enregistrement]] = {
-            "res.company": [
-                {
-                    "id": 1,
-                    "name": "Soc",
-                    "company_registry": "384684957",
-                    "vat": False,
-                    "currency_id": [1, "EUR"],
-                }
-            ],
-            "account.account": [
-                {
-                    "id": 1,
-                    "code": "706000",
-                    "name": "Prestations",
-                    "account_type": "income",
-                    "reconcile": False,
-                    "deprecated": False,
-                },
-                {
-                    "id": 2,
-                    "code": "411000",
-                    "name": "Clients",
-                    "account_type": "asset_receivable",
-                    "reconcile": True,
-                    "deprecated": False,
-                },
-            ],
-            "account.journal": [
-                {
-                    "id": 1,
-                    "code": "VEN",
-                    "name": "Ventes",
-                    "type": "sale",
-                    "active": True,
-                }
-            ],
-            "account.move": [
-                {
-                    "id": 5,
-                    "name": "VEN/1",
-                    "move_type": "out_invoice",
-                    "state": "posted",
-                    "journal_id": [1, "Ventes"],
-                    "date": "2025-10-03",
-                    "invoice_date": "2025-10-03",
-                    "ref": False,
-                    "write_date": "2025-10-03 10:00:00",
-                    "auto_post": "no",
-                }
-            ],
-            "res.partner": [
-                {
-                    "id": 7,
-                    "name": "ACME",
-                    "ref": "C7",
-                    "vat": "FR02384684957",
-                    "company_registry": "384684957",
-                    "email": False,
-                    "phone": False,
-                    "street": False,
-                    "zip": False,
-                    "city": False,
-                    "country_code": "FR",
-                    "is_company": True,
-                    "active": True,
-                    "customer_rank": 1,
-                    "supplier_rank": 0,
-                    "parent_id": False,
-                }
-            ],
-            "account.full.reconcile": [
-                {"id": 3, "create_date": "2025-11-02 08:00:00"}
-            ],
-            "account.analytic.account": [
-                {"id": 9, "code": "AXE1", "name": "Axe 1"}
-            ],
-            "account.move.line": [
-                {
-                    "id": i,
-                    "move_id": [5, "VEN/1"],
-                    "account_id": [acc, ""],
-                    "partner_id": [7, "ACME"],
-                    "name": "L%d" % i,
-                    "debit": d,
-                    "credit": c,
-                    "matching_number": "A1" if acc == 2 else False,
-                    "full_reconcile_id": [3, "A1"] if acc == 2 else False,
-                    "amount_currency": d - c,
-                    "currency_id": [1, "EUR"],
-                    "company_currency_id": [1, "EUR"],
-                    "date_maturity": False,
-                    "write_date": "2025-10-03 10:00:00",
-                }
-                for i, acc, d, c in ((11, 1, 0.0, 100.1), (12, 2, 100.1, 0.0))
-            ],
-        }
-
-    def execute_kw(
-        self,
-        db: str,
-        uid: int,
-        cle: str,
-        modele: str,
-        methode: str,
-        args: list[Any],
-        kw: dict[str, Any],
-    ) -> list[Enregistrement]:
-        """Simule ``read`` et ``search_read`` (pagination par id)."""
-        self.appels.append((modele, methode))
-        recs = self.donnees[modele]
-        if methode == "read":
-            return [r for r in recs if r["id"] in args[0]]
-        dom = args[0]
-        mini = max(
-            [c[2] for c in dom if isinstance(c, tuple) and c[0] == "id"] or [0]
-        )
-        res = [r for r in recs if r["id"] > mini]
-        return res[: kw.get("limit") or None]
 
 
 class TestSourceXmlRpc(unittest.TestCase):

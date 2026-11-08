@@ -15,8 +15,11 @@ from collections.abc import Iterable, Mapping
 from typing import Any, ClassVar
 from unittest import mock
 
+from core.connecteurs import odoo as module_odoo
 from core.connecteurs import registre, transfert
 from core.migration import filtres as module_filtres
+from core.migration import injection
+from core.migration.correspondance import appliquer as appliquer_correspondance
 from core.connecteurs.base import (
     CapacitesConnecteur,
     Connecteur,
@@ -25,6 +28,7 @@ from core.connecteurs.base import (
     ResultatEcriture,
 )
 from core.connecteurs.connexions import Annuaire, ErreurAnnuaire
+from core.connecteurs.odoo import ConnecteurOdoo
 from core.connecteurs.fec import (
     ConnecteurFec,
     dossier_reference,
@@ -51,8 +55,17 @@ from core.journal import Journal
 from core.migration.connecteur_fec import lire_fec
 from core.migration.filtres import ResultatFiltres
 from core.migration.lot import Lot
+from core.odoo_source import ErreurSource, SourceXmlRpcOdoo17
 from scripts import concorde_connexion
-from tests.outils import BASE, RACINE_DEPOT, fec, ligne_fec
+from tests.outils import (
+    BASE,
+    RACINE_DEPOT,
+    FauxCommun,
+    FauxObjet,
+    FauxOdoo,
+    fec,
+    ligne_fec,
+)
 
 AUJ = date(2026, 11, 8)
 
@@ -928,3 +941,268 @@ class TestCommande(Bac):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class TestConnecteurOdoo(Bac):
+    """Connecteur Odoo 17 sur des Odoo simulés (lecture et écriture)."""
+
+    def setUp(self) -> None:
+        """Prépare les deux Odoo simulés et branche le connecteur dessus."""
+        super().setUp()
+        self.lecture = FauxObjet()
+        self.ecriture = FauxOdoo()
+        cible_reelle = injection.CibleOdoo
+        lecture, ecriture = self.lecture, self.ecriture
+
+        def source(
+            url: str,
+            base: str,
+            utilisateur: str,
+            cle: str,
+            journal: Journal | None = None,
+        ) -> SourceXmlRpcOdoo17:
+            """Source XML-RPC sur l'Odoo de lecture simulé."""
+            return SourceXmlRpcOdoo17(
+                url,
+                base,
+                utilisateur,
+                cle,
+                proxy_commun=FauxCommun(),
+                proxy_objet=lecture,
+                journal=journal,
+            )
+
+        def cible(
+            url: str, base: str, utilisateur: str, mot_de_passe: str
+        ) -> injection.CibleOdoo:
+            """Cible d'écriture sur l'Odoo d'écriture simulé."""
+            return cible_reelle(
+                url,
+                base,
+                utilisateur,
+                mot_de_passe,
+                proxy_commun=FauxCommun(),
+                proxy_objet=ecriture,
+            )
+
+        for correctif in (
+            mock.patch.object(module_odoo, "SourceXmlRpcOdoo17", source),
+            mock.patch.object(injection, "CibleOdoo", cible),
+        ):
+            correctif.start()
+            self.addCleanup(correctif.stop)
+
+    def odoo(self, **options: str) -> ConnecteurOdoo:
+        """Connecteur vers « client » (options : creer_manquants…)."""
+        parametres = {
+            "url": "https://client.odoo.com",
+            "base": "client",
+            "utilisateur": "admin",
+        }
+        parametres.update(options)
+        return ConnecteurOdoo(parametres, {"cle_api": "cle"})
+
+    def lot_pret(self) -> Lot:
+        """FEC de référence, comptes repris à l'identique."""
+        lot = lire_fec(fec(*BASE))
+        appliquer_correspondance(lot, identique=True)
+        return lot
+
+    def test_parametres_requis(self) -> None:
+        """Vérifie que l'adresse, la base, le login et la clé sont exigés."""
+        with self.assertRaises(ErreurConnexion) as contexte:
+            ConnecteurOdoo({"url": "https://x"}, {})
+        for manque in ("base", "utilisateur", "secret cle_api"):
+            self.assertIn(manque, str(contexte.exception))
+
+    def test_tester_et_lire(self) -> None:
+        """Vérifie la société lue et les lignes au format commun."""
+        info = self.odoo().tester(Journal())
+        self.assertEqual(
+            (info["societe"], info["siren"], info["version"]),
+            ("Soc", "384684957", "17.0"),
+        )
+        lot = self.odoo().lire({"du": None, "au": None}, Journal())
+        self.assertEqual(lot.source["type"], "odoo")
+        self.assertEqual(
+            lot.totaux(),
+            {"lignes": 2, "ecritures": 1, "debit": 10010, "credit": 10010},
+        )
+        client = lot.lignes[1]
+        self.assertEqual(
+            (client["compte"], client["tiers_ref"], client["piece"]),
+            ("411000", "C7", "VEN/1"),  # sans référence : nom de la pièce
+        )
+
+    def test_relire_par_reference(self) -> None:
+        """Vérifie que seules les écritures de la référence sont relues."""
+        self.lecture.donnees["account.move"][0]["ref"] = "CONCORDE/T1/VEN/1"
+        self.assertEqual(
+            self.odoo().relire("CONCORDE/T1", Journal()).totaux()["lignes"], 2
+        )
+        self.assertEqual(
+            self.odoo().relire("CONCORDE/T2", Journal()).totaux()["lignes"], 0
+        )
+
+    def test_vraie_destination_incomplete_bloquee(self) -> None:
+        """Vérifie qu'un compte, journal ou tiers absent bloque l'écriture."""
+        essai = self.odoo().ecrire(
+            self.lot_pret(), "CONCORDE/T1", True, Journal()
+        )
+        self.assertEqual(essai["ecritures_a_creer"], 4)
+        self.assertEqual(len(essai["erreurs"]), 3)  # comptes, journaux, tiers
+        self.assertIn("101000", " ".join(essai["erreurs"]))
+        reel = self.odoo().ecrire(
+            self.lot_pret(), "CONCORDE/T1", False, Journal()
+        )
+        self.assertEqual(reel["erreurs"], essai["erreurs"])
+        self.assertEqual(self.ecriture.donnees["account.move"], [])
+
+    def test_base_de_test_ecriture_puis_reprise(self) -> None:
+        """Vérifie l'envoi dans une base de test, puis l'absence de doublon."""
+        test = self.odoo(creer_manquants="oui")
+        essai = test.ecrire(
+            self.lot_pret(), "CONCORDE/T1/test1", True, Journal()
+        )
+        self.assertEqual(essai["erreurs"], [])
+        self.assertEqual(self.ecriture.donnees["account.move"], [])
+        ecrit = test.ecrire(
+            self.lot_pret(), "CONCORDE/T1/test1", False, Journal()
+        )
+        self.assertEqual(ecrit["erreurs"], [])
+        refs = sorted(
+            ecriture_odoo["ref"]
+            for ecriture_odoo in self.ecriture.donnees["account.move"]
+        )
+        self.assertEqual(refs[0], "CONCORDE/T1/test1/AN/1")
+        self.assertEqual(len(refs), 4)
+        encore = test.ecrire(
+            self.lot_pret(), "CONCORDE/T1/test1", True, Journal()
+        )
+        self.assertEqual(
+            (encore["ecritures_a_creer"], encore["ecritures_deja_presentes"]),
+            (0, 4),
+        )
+
+    def test_refus_d_odoo_rapportes(self) -> None:
+        """Vérifie que les refus d'Odoo deviennent des erreurs nommées."""
+        self.ecriture.refuser_compte = 1  # 512000 refusé à la création
+        ecrit = self.odoo(creer_manquants="oui").ecrire(
+            self.lot_pret(), "CONCORDE/T1", False, Journal()
+        )
+        self.assertTrue(ecrit["erreurs"])
+        self.assertIn("compte refusé", " ".join(ecrit["erreurs"]))
+        devise = self.lot_pret()
+        devise.lignes[0]["devise"] = "USD"
+        ecrit = self.odoo(creer_manquants="oui").ecrire(
+            devise, "CONCORDE/T2", False, Journal()
+        )
+        self.assertIn("devise", " ".join(ecrit["erreurs"]))
+
+    def test_erreurs_de_connexion(self) -> None:
+        """Vérifie que chaque échec d'Odoo devient une ErreurConnexion."""
+        with mock.patch.object(
+            module_odoo,
+            "SourceXmlRpcOdoo17",
+            side_effect=ErreurSource("refusée"),
+        ):
+            for action in (
+                lambda: self.odoo().tester(Journal()),
+                lambda: self.odoo().lire({"du": None, "au": None}, Journal()),
+                lambda: self.odoo().relire("R", Journal()),
+            ):
+                with self.assertRaises(ErreurConnexion):
+                    action()
+        with mock.patch.object(
+            SourceXmlRpcOdoo17, "societe_info", side_effect=OSError("coupé")
+        ):
+            with self.assertRaises(ErreurConnexion):
+                self.odoo().tester(Journal())
+        with mock.patch.object(
+            SourceXmlRpcOdoo17, "lignes", side_effect=OSError("coupé")
+        ):
+            for action in (
+                lambda: self.odoo().lire({"du": None, "au": None}, Journal()),
+                lambda: self.odoo().relire("R", Journal()),
+            ):
+                with self.assertRaises(ErreurConnexion):
+                    action()
+        with mock.patch.object(
+            injection,
+            "CibleOdoo",
+            side_effect=injection.ErreurInjection("refusée"),
+        ):
+            with self.assertRaises(ErreurConnexion):
+                self.odoo().ecrire(self.lot_pret(), "R", True, Journal())
+        with mock.patch.object(
+            injection, "rechercher_existants", side_effect=OSError("coupé")
+        ):
+            with self.assertRaises(ErreurConnexion):
+                self.odoo().ecrire(self.lot_pret(), "R", True, Journal())
+
+
+class TestEnvoiOdoo(unittest.TestCase):
+    """Envoi vers une base Odoo quelconque (injection, ADR-0008)."""
+
+    def test_adresse_non_chiffree_refusee(self) -> None:
+        """Vérifie le refus d'une adresse http hors de ce serveur."""
+        with self.assertRaises(injection.ErreurInjection):
+            injection.CibleOdoo("http://client.example", "b", "u", "m")
+
+    def test_rien_cree_sans_permission(self) -> None:
+        """Vérifie qu'un élément absent bloque l'envoi sans création."""
+        odoo = FauxOdoo()
+        cible = injection.CibleOdoo(
+            "https://client.odoo.com",
+            "client",
+            "u",
+            "m",
+            proxy_commun=FauxCommun(),
+            proxy_objet=odoo,
+        )
+        lot = lire_fec(fec(*BASE))
+        appliquer_correspondance(lot, identique=True)
+        with self.assertRaises(injection.ErreurInjection) as contexte:
+            injection.envoyer(cible, lot, None, "CONCORDE/T1", False)
+        self.assertIn("101000", str(contexte.exception))
+        self.assertEqual(
+            [
+                ecriture_odoo
+                for ecriture_odoo, methode in odoo.appels
+                if methode == "create"
+            ],
+            [],
+        )
+        self.assertEqual(
+            injection.manquants(injection.rechercher_existants(cible, lot))[
+                "journaux"
+            ],
+            ["AN", "VE", "BQ", "OD"],
+        )
+
+    def test_identification_refusee_et_journal_trop_long(self) -> None:
+        """Vérifie le refus d'identification et d'un code journal > 5."""
+        with mock.patch.object(FauxCommun, "authenticate", return_value=0):
+            with self.assertRaises(injection.ErreurInjection) as contexte:
+                injection.CibleOdoo(
+                    "https://client.odoo.com",
+                    "client",
+                    "u",
+                    "m",
+                    proxy_commun=FauxCommun(),
+                    proxy_objet=FauxOdoo(),
+                )
+        self.assertIn("Authentification refusée", str(contexte.exception))
+        cible = injection.CibleOdoo(
+            "https://client.odoo.com",
+            "client",
+            "u",
+            "m",
+            proxy_commun=FauxCommun(),
+            proxy_objet=FauxOdoo(),
+        )
+        lot = lire_fec(fec(ligne_fec("TROPLONG", "1", "20250101", "512000")))
+        appliquer_correspondance(lot, identique=True)
+        with self.assertRaises(injection.ErreurInjection) as contexte:
+            injection.preparer(cible, lot, Journal(), creer_manquants=True)
+        self.assertIn("trop long", str(contexte.exception))

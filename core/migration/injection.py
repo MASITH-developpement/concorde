@@ -296,8 +296,86 @@ def _serveur_xmlrpc(adresse: str) -> ProxyXmlRpc:
     return ProxyXmlRpc(adresse, allow_none=True)
 
 
-class CibleTest:
-    """Client XML-RPC vers la base de test locale (méthodes limitées)."""
+class CibleOdoo:
+    """Client XML-RPC vers une base Odoo 17 (méthodes limitées).
+
+    Destination d'un transfert (ADR-0008) : le transfert garantit la
+    simulation, le test et le feu vert avant toute écriture réelle.
+    """
+
+    def __init__(
+        self,
+        url: str,
+        base: str,
+        utilisateur: str,
+        mot_de_passe: str,
+        proxy_commun: ProxyCommun | None = None,
+        proxy_objet: ProxyObjet | None = None,
+    ) -> None:
+        """S'identifie sur la base.
+
+        Lève ErreurInjection si l'adresse ferait circuler le mot de passe
+        en clair (http hors de ce serveur) ou si l'identification est
+        refusée.
+        """
+        if proxy_objet is None and not url.startswith(
+            ("https://", "http://127.0.0.1", "http://localhost")
+        ):
+            raise ErreurInjection(
+                "Adresse Odoo non chiffrée (%s) : https:// exigé hors de ce "
+                "serveur." % url
+            )
+        self.base, self._mdp, self._url = base, mot_de_passe, url
+        self._objet_fixe = proxy_objet  # tests : un faux Odoo partagé
+        # Un client XML-RPC par fil (non partageable).
+        self._local = threading.local()
+        commun: ProxyCommun = proxy_commun or _serveur_xmlrpc(
+            url + "/xmlrpc/2/common"
+        )
+        self.version: str = commun.version().get("server_version", "?")
+        self.uid: int = commun.authenticate(
+            base, utilisateur, mot_de_passe, {}
+        )
+        if not self.uid:
+            raise ErreurInjection(
+                "Authentification refusée sur la base %s." % base
+            )
+
+    def _objet(self) -> ProxyObjet:
+        """Service « object » : le faux Odoo des tests, ou celui du fil."""
+        if self._objet_fixe is not None:
+            return self._objet_fixe
+        objet_fil: ProxyObjet | None = getattr(self._local, "objet", None)
+        if objet_fil is None:
+            objet_fil = _serveur_xmlrpc(self._url + "/xmlrpc/2/object")
+            self._local.objet = objet_fil
+        return objet_fil
+
+    def appel(
+        self,
+        modele: str,
+        methode: str,
+        args: list[Any],
+        kwargs: dict[str, Any] | None = None,
+    ) -> Any:
+        """Appelle une méthode autorisée d'un modèle Odoo.
+
+        Retourne la réponse XML-RPC (type dynamique). Lève PermissionError
+        si la méthode n'est pas dans METHODES_AUTORISEES.
+        """
+        if methode not in METHODES_AUTORISEES:
+            raise PermissionError(
+                "Méthode %r interdite à l'envoi vers Odoo." % methode
+            )
+        kw = dict(kwargs or {})
+        kw["context"] = dict(CONTEXTE_IMPORT, **kw.get("context", {}))
+        return self._objet().execute_kw(
+            self.base, self.uid, self._mdp, modele, methode, args, kw
+        )
+
+
+class CibleTest(CibleOdoo):
+    """Base de test locale du serveur (porte 6 de l'ADR-0004)."""
 
     def __init__(
         self,
@@ -326,52 +404,8 @@ class CibleTest:
                 "Porte 6 : la base de test doit être sur ce serveur (%s)."
                 % url
             )
-        self.base, self._mdp, self._url = base, mot_de_passe, url
-        self._objet_fixe = proxy_objet  # tests : un faux Odoo partagé
-        # Un client XML-RPC par fil (non partageable).
-        self._local = threading.local()
-        commun: ProxyCommun = proxy_commun or _serveur_xmlrpc(
-            url + "/xmlrpc/2/common"
-        )
-        self.version: str = commun.version().get("server_version", "?")
-        self.uid: int = commun.authenticate(
-            base, utilisateur, mot_de_passe, {}
-        )
-        if not self.uid:
-            raise ErreurInjection(
-                "Authentification refusée sur la base de test %s." % base
-            )
-
-    def _objet(self) -> ProxyObjet:
-        """Service « object » : le faux Odoo des tests, ou celui du fil."""
-        if self._objet_fixe is not None:
-            return self._objet_fixe
-        objet_fil: ProxyObjet | None = getattr(self._local, "objet", None)
-        if objet_fil is None:
-            objet_fil = _serveur_xmlrpc(self._url + "/xmlrpc/2/object")
-            self._local.objet = objet_fil
-        return objet_fil
-
-    def appel(
-        self,
-        modele: str,
-        methode: str,
-        args: list[Any],
-        kwargs: dict[str, Any] | None = None,
-    ) -> Any:
-        """Appelle une méthode autorisée d'un modèle Odoo.
-
-        Retourne la réponse XML-RPC (type dynamique). Lève PermissionError
-        si la méthode n'est pas dans METHODES_AUTORISEES.
-        """
-        if methode not in METHODES_AUTORISEES:
-            raise PermissionError(
-                "Méthode %r interdite à la porte 6." % methode
-            )
-        kw = dict(kwargs or {})
-        kw["context"] = dict(CONTEXTE_IMPORT, **kw.get("context", {}))
-        return self._objet().execute_kw(
-            self.base, self.uid, self._mdp, modele, methode, args, kw
+        super().__init__(
+            url, base, utilisateur, mot_de_passe, proxy_commun, proxy_objet
         )
 
 
@@ -417,9 +451,41 @@ def lot_id(lot: Lot) -> str:
     return lot.source["empreinte"][:10]
 
 
-def _ref(lid: str, cle: CleEcriture) -> str:
-    """Référence Odoo unique d'une écriture du lot."""
-    return "CONCORDE/%s/%s/%s" % (lid, cle[0], cle[1])
+def ref_ecriture(debut: str, cle: CleEcriture) -> str:
+    """Référence Odoo unique d'une écriture.
+
+    Rôle : un seul format de référence (idempotence : une écriture déjà
+    présente sous sa référence n'est jamais renvoyée).
+    Paramètres : debut — « CONCORDE/<lot> » ou référence de transfert ;
+    cle — (journal, numéro).
+    Retour : « <debut>/<journal>/<n°> ».
+    Erreurs : aucune.
+    Usages : envoyer, connecteurs.odoo.ConnecteurOdoo.ecrire.
+    """
+    return "%s/%s/%s" % (debut, cle[0], cle[1])
+
+
+def references_presentes(cible: CibleOdoo, refs: list[str]) -> set[str]:
+    """Références d'écritures déjà présentes dans Odoo.
+
+    Rôle : savoir ce qui a déjà été envoyé (reprise sans doublon).
+    Paramètres : cible ; refs — références cherchées.
+    Retour : sous-ensemble des références trouvées.
+    Erreurs : celles d'Odoo (XML-RPC).
+    Usages : envoyer, connecteurs.odoo.ConnecteurOdoo.ecrire (essai).
+    """
+    deja: set[str] = set()
+    for paquet_refs in decouper(refs, 1000):
+        deja |= {
+            m["ref"]
+            for m in cible.appel(
+                "account.move",
+                "search_read",
+                [[["ref", "in", paquet_refs]]],
+                {"fields": ["ref"]},
+            )
+        }
+    return deja
 
 
 def _erreur_odoo(exc: Exception) -> str:
@@ -429,36 +495,142 @@ def _erreur_odoo(exc: Exception) -> str:
     return lignes[-1][:300] if lignes else type(exc).__name__
 
 
-def preparer(cible: CibleTest, lot: Lot, j: Journal) -> tuple[
+class Existants(TypedDict):
+    """Ce que le lot demande et ce que la base Odoo contient déjà.
+
+    `*_lot` : codes (ou références) demandés par le lot, avec le libellé
+    lu dans la source ; les autres : ce qui existe déjà dans Odoo.
+    """
+
+    comptes_lot: dict[str | None, str]
+    comptes: dict[str | None, tuple[int, bool]]
+    journaux_lot: dict[str, str]
+    journaux: dict[str, int]
+    tiers_lot: dict[str, str]
+    tiers: dict[str, int]
+
+
+def rechercher_existants(cible: CibleOdoo, lot: Lot) -> Existants:
+    """Comptes, journaux et tiers du lot déjà présents dans Odoo.
+
+    Rôle : un seul endroit qui cherche, pour la simulation comme pour
+    l'envoi.
+    Paramètres : cible — base Odoo ; lot — comptes cibles renseignés.
+    Retour : Existants (demandés et trouvés).
+    Erreurs : celles d'Odoo (XML-RPC).
+    Usages : manquants, preparer.
+    """
+    comptes_lot: OrderedDict[str | None, str] = OrderedDict()
+    journaux_lot: OrderedDict[str, str] = OrderedDict()
+    tiers_lot: OrderedDict[str, str] = OrderedDict()
+    for ligne in lot.lignes:
+        comptes_lot.setdefault(ligne["compte_cible"], ligne["compte_lib"])
+        journaux_lot.setdefault(ligne["journal_code"], ligne["journal_lib"])
+        if ligne["tiers_ref"]:
+            tiers_lot.setdefault(ligne["tiers_ref"], ligne["tiers_nom"])
+    comptes: dict[str | None, tuple[int, bool]] = {
+        c["code"]: (c["id"], c["reconcile"])
+        for c in cible.appel(
+            "account.account",
+            "search_read",
+            [[["code", "in", list(comptes_lot)]]],
+            {
+                "fields": ["code", "reconcile"],
+                "context": {"active_test": False},
+            },
+        )
+    }
+    journaux: dict[str, int] = {
+        jr["code"]: jr["id"]
+        for jr in cible.appel(
+            "account.journal",
+            "search_read",
+            [[["code", "in", list(journaux_lot)]]],
+            {"fields": ["code"], "context": {"active_test": False}},
+        )
+    }
+    tiers: dict[str, int] = {}
+    for paquet_refs in decouper(list(tiers_lot), 500):
+        for partenaire in cible.appel(
+            "res.partner",
+            "search_read",
+            [[["ref", "in", paquet_refs]]],
+            {"fields": ["ref"], "context": {"active_test": False}},
+        ):
+            tiers.setdefault(partenaire["ref"], partenaire["id"])
+    return {
+        "comptes_lot": dict(comptes_lot),
+        "comptes": comptes,
+        "journaux_lot": dict(journaux_lot),
+        "journaux": journaux,
+        "tiers_lot": dict(tiers_lot),
+        "tiers": tiers,
+    }
+
+
+def manquants(elements_existants: Existants) -> dict[str, list[str]]:
+    """Ce que le lot demande et qu'Odoo n'a pas.
+
+    Rôle : refuser d'écrire dans une vraie destination à qui il manque
+    un compte, un journal ou un tiers (jamais créé en douce).
+    Paramètres : existants — résultat de rechercher_existants.
+    Retour : {« comptes » | « journaux » | « tiers » : [codes absents]},
+    sans les natures complètes.
+    Erreurs : aucune.
+    Usages : preparer, connecteurs.odoo.ConnecteurOdoo.ecrire.
+    """
+    absents = {
+        "comptes": [
+            str(code)
+            for code in elements_existants["comptes_lot"]
+            if code not in elements_existants["comptes"]
+        ],
+        "journaux": [
+            code
+            for code in elements_existants["journaux_lot"]
+            if code not in elements_existants["journaux"]
+        ],
+        "tiers": [
+            ref
+            for ref in elements_existants["tiers_lot"]
+            if ref not in elements_existants["tiers"]
+        ],
+    }
+    return {nature: codes for nature, codes in absents.items() if codes}
+
+
+def preparer(
+    cible: CibleOdoo, lot: Lot, j: Journal, creer_manquants: bool = True
+) -> tuple[
     dict[str | None, tuple[int, bool]],
     dict[str, int],
     dict[str, int],
     Preparation,
 ]:
-    """Crée comptes, journaux et tiers manquants.
+    """Trouve comptes, journaux et tiers ; crée les manquants si permis.
 
     Retourne ({code: (id, lettrable)}, {journal: id}, {tiers: id}, bilan).
-    Lève ErreurInjection si un code journal dépasse 5 caractères.
+    Lève ErreurInjection si un code journal dépasse 5 caractères, ou si
+    quelque chose manque alors que `creer_manquants` est faux (vraie
+    destination : rien n'est créé sans arbitrage).
     """
-    with j.etape(
-        "Préparation : comptes, journaux et tiers de la base de test"
-    ) as e:
-        codes: OrderedDict[str | None, str] = OrderedDict()
-        for ligne in lot.lignes:
-            codes.setdefault(ligne["compte_cible"], ligne["compte_lib"])
-        comptes: dict[str | None, tuple[int, bool]] = {
-            c["code"]: (c["id"], c["reconcile"])
-            for c in cible.appel(
-                "account.account",
-                "search_read",
-                [[["code", "in", list(codes)]]],
-                {
-                    "fields": ["code", "reconcile"],
-                    "context": {"active_test": False},
-                },
+    with j.etape("Préparation : comptes, journaux et tiers de la base") as e:
+        elements_existants = rechercher_existants(cible, lot)
+        absents = manquants(elements_existants)
+        if absents and not creer_manquants:
+            raise ErreurInjection(
+                "Absents de la base %s (à créer par le comptable avant "
+                "l'envoi) : %s"
+                % (
+                    cible.base,
+                    " ; ".join(
+                        "%s %s" % (nature, ", ".join(codes))
+                        for nature, codes in absents.items()
+                    ),
+                )
             )
-        }
-        a_creer = [c for c in codes if c not in comptes]
+        comptes = elements_existants["comptes"]
+        a_creer = absents.get("comptes", [])
         for c in a_creer:
             t = type_compte_pcg(c)
             ident = cible.appel(
@@ -467,7 +639,7 @@ def preparer(cible: CibleTest, lot: Lot, j: Journal) -> tuple[
                 [
                     {
                         "code": c,
-                        "name": codes[c] or c,
+                        "name": elements_existants["comptes_lot"][c] or c,
                         "account_type": t,
                         "reconcile": t
                         in ("asset_receivable", "liability_payable"),
@@ -478,55 +650,29 @@ def preparer(cible: CibleTest, lot: Lot, j: Journal) -> tuple[
                 ident,
                 t in ("asset_receivable", "liability_payable"),
             )
-        journaux_lot: OrderedDict[str, str] = OrderedDict()
-        for ligne in lot.lignes:
-            journaux_lot.setdefault(
-                ligne["journal_code"], ligne["journal_lib"]
-            )
-        journaux: dict[str, int] = {
-            jr["code"]: jr["id"]
-            for jr in cible.appel(
-                "account.journal",
-                "search_read",
-                [[["code", "in", list(journaux_lot)]]],
-                {"fields": ["code"], "context": {"active_test": False}},
-            )
-        }
+        journaux = elements_existants["journaux"]
         jr_crees: list[str] = []
-        for code, lib in journaux_lot.items():
-            if code not in journaux:
-                if len(code) > 5:
-                    raise ErreurInjection(
-                        "Code journal %r trop long pour Odoo 17 (5 caractères "
-                        "au plus) : à faire arbitrer." % code
-                    )
-                journaux[code] = cible.appel(
-                    "account.journal",
-                    "create",
-                    [
-                        {
-                            "code": code,
-                            "name": lib or "Journal %s" % code,
-                            "type": "general",
-                        }
-                    ],
+        for code in absents.get("journaux", []):
+            if len(code) > 5:
+                raise ErreurInjection(
+                    "Code journal %r trop long pour Odoo 17 (5 caractères "
+                    "au plus) : à faire arbitrer." % code
                 )
-                jr_crees.append(code)
-        tiers_lot: OrderedDict[str, str] = OrderedDict()
-        for ligne in lot.lignes:
-            if ligne["tiers_ref"]:
-                tiers_lot.setdefault(ligne["tiers_ref"], ligne["tiers_nom"])
-        tiers: dict[str, int] = {}
-        refs = list(tiers_lot)
-        for paquet_refs in decouper(refs, 500):
-            for p in cible.appel(
-                "res.partner",
-                "search_read",
-                [[["ref", "in", paquet_refs]]],
-                {"fields": ["ref"], "context": {"active_test": False}},
-            ):
-                tiers.setdefault(p["ref"], p["id"])
-        t_crees = [r for r in refs if r not in tiers]
+            journaux[code] = cible.appel(
+                "account.journal",
+                "create",
+                [
+                    {
+                        "code": code,
+                        "name": elements_existants["journaux_lot"][code]
+                        or "Journal %s" % code,
+                        "type": "general",
+                    }
+                ],
+            )
+            jr_crees.append(code)
+        tiers = elements_existants["tiers"]
+        t_crees = absents.get("tiers", [])
         for lot_t in decouper(t_crees, 200):
             ids = cible.appel(
                 "res.partner",
@@ -534,7 +680,7 @@ def preparer(cible: CibleTest, lot: Lot, j: Journal) -> tuple[
                 [
                     [
                         {
-                            "name": tiers_lot[r] or r,
+                            "name": elements_existants["tiers_lot"][r] or r,
                             "ref": r,
                             "is_company": True,
                         }
@@ -556,12 +702,13 @@ def preparer(cible: CibleTest, lot: Lot, j: Journal) -> tuple[
             "Journaux créés en type « divers » : %s" % ", ".join(jr_crees),
             "detail",
         )
+    comptes_crees: list[str | None] = list(a_creer)
     return (
         comptes,
         journaux,
         tiers,
         {
-            "comptes_crees": a_creer,
+            "comptes_crees": comptes_crees,
             "journaux_crees": jr_crees,
             "tiers_crees": len(t_crees),
         },
@@ -569,11 +716,22 @@ def preparer(cible: CibleTest, lot: Lot, j: Journal) -> tuple[
 
 
 def envoyer(
-    cible: CibleTest, lot: Lot, j: Journal | None = None
+    cible: CibleOdoo,
+    lot: Lot,
+    j: Journal | None = None,
+    prefixe: str | None = None,
+    creer_manquants: bool = True,
 ) -> ResultatEnvoi:
-    """Porte 6 complète. Retourne le résultat (erreurs, lettrage, durée…).
+    """Envoie le lot : préparation, création, validation, lettrage.
 
-    Lève ErreurInjection si le lot contient des lignes en devise.
+    Rôle : porte 6 (base de test) et écriture d'un transfert (ADR-0008).
+    Paramètres : cible ; lot ; j — journal ; prefixe — début des
+    références « <prefixe>/<journal>/<n°> » (défaut : CONCORDE/<lot>) ;
+    creer_manquants — créer comptes, journaux et tiers absents (base de
+    test) ou refuser (vraie destination).
+    Retour : ResultatEnvoi (erreurs, lettrage, durée…).
+    Erreurs : ErreurInjection (lignes en devise, éléments absents).
+    Usages : circuit.executer (porte 6), connecteurs.odoo.
     """
     j = ou_muet(j)
     debut = time.monotonic()
@@ -593,21 +751,12 @@ def envoyer(
             "Lignes en devise (%s) : non gérées à la porte 6 pour l'instant."
             % ", ".join(sorted(devises))
         )
-    comptes, journaux, tiers, prep = preparer(cible, lot, j)
+    comptes, journaux, tiers, prep = preparer(cible, lot, j, creer_manquants)
 
     ecritures = lot.ecritures()
-    refs = {cle: _ref(lid, cle) for cle in ecritures}
-    deja: set[str] = set()
-    for paquet_refs in decouper(list(refs.values()), 1000):
-        deja |= {
-            m["ref"]
-            for m in cible.appel(
-                "account.move",
-                "search_read",
-                [[["ref", "in", paquet_refs]]],
-                {"fields": ["ref"]},
-            )
-        }
+    debut_ref = prefixe or "CONCORDE/%s" % lid
+    refs = {cle: ref_ecriture(debut_ref, cle) for cle in ecritures}
+    deja = references_presentes(cible, list(refs.values()))
     if deja:
         j.dire(
             "%s écriture(s) déjà présentes (envoi précédent) : elles ne "
@@ -790,7 +939,7 @@ def envoyer(
 
 
 def lettrer(
-    cible: CibleTest,
+    cible: CibleOdoo,
     lot: Lot,
     crees: dict[CleEcriture, int],
     comptes: dict[str | None, tuple[int, bool]],

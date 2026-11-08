@@ -4,114 +4,17 @@
 import os
 import unittest
 from collections.abc import Callable
-from typing import Any
 
 from core.journal import ou_muet
 from core.migration import injection
 from core.migration.connecteur_fec import lire_fec
 from core.migration.correspondance import appliquer
 from core.migration.lot import Lot
-from tests.outils import CurseurSimule, Enregistrement, FauxCommun
+from tests.outils import CurseurSimule, FauxCommun, FauxOdoo
 from tests.outils import BASE, fec
 
 # Rang SQL relu dans la base de test (référence, état, compte, montants…).
 RangRelu = tuple[object, ...]
-
-
-class FauxOdoo:
-    """Odoo simulé : comptes, journaux, tiers, écritures, lettrage."""
-
-    def __init__(self, refuser_compte: int | None = None) -> None:
-        """Crée un Odoo vide (un seul compte 512000) ; ``refuser_compte``."""
-        self.donnees: dict[str, list[Enregistrement]] = {
-            "account.account": [
-                {"id": 1, "code": "512000", "reconcile": False}
-            ],
-            "account.journal": [],
-            "res.partner": [],
-            "account.move": [],
-            "account.move.line": [],
-        }
-        self.appels: list[tuple[str, str]] = []
-        self.refuser_compte = refuser_compte
-        self.seq = 100
-
-    def _id(self) -> int:
-        """Rend le prochain identifiant d'enregistrement."""
-        self.seq += 1
-        return self.seq
-
-    def execute_kw(
-        self,
-        db: str,
-        uid: int,
-        mdp: str,
-        modele: str,
-        methode: str,
-        args: list[Any],
-        kw: dict[str, Any],
-    ) -> object:
-        """Simule ``execute_kw`` : lecture, création, validation, lettrage."""
-        self.appels.append((modele, methode))
-        recs = self.donnees[modele]
-        if methode == "search_read":
-            dom = args[0]
-            res = recs
-            for champ, op, val in dom:
-                if op == "in":
-                    if champ == "move_id":
-                        res = [r for r in res if r["move_id"][0] in val]
-                    else:
-                        res = [r for r in res if r.get(champ) in val]
-            return [dict(r) for r in res]
-        if methode == "read":
-            return [dict(r) for r in recs if r["id"] in args[0]]
-        if methode == "create":
-            vals = args[0]
-            if isinstance(vals, list):
-                return [self._creer(modele, v) for v in vals]
-            return self._creer(modele, vals)
-        if methode == "action_post":
-            for m in recs:
-                if m["id"] in args[0]:
-                    m["state"] = "posted"
-            return True
-        if methode == "reconcile":
-            for ml in self.donnees["account.move.line"]:
-                if ml["id"] in args[0]:
-                    ml["matching_number"] = "M%d" % args[0][0]
-            # comme le vrai Odoo : la méthode ne renvoie rien, d'où une
-            # erreur de transmission XML-RPC
-            raise injection.FauteXmlRpc(
-                1, "TypeError: cannot marshal None unless allow_none"
-            )
-        raise AssertionError(methode)
-
-    def _creer(self, modele: str, v: Enregistrement) -> int:
-        """Enregistre ``v`` ; une écriture crée aussi ses lignes."""
-        i = self._id()
-        if modele == "account.move":
-            for _, _, valeurs_ligne in v["line_ids"]:
-                if valeurs_ligne["account_id"] == self.refuser_compte:
-                    raise injection.FauteXmlRpc(
-                        2, "ValidationError: compte refusé"
-                    )
-            self.donnees[modele].append(
-                {"id": i, "ref": v["ref"], "state": "draft"}
-            )
-            for _, _, valeurs_ligne in v["line_ids"]:
-                self.donnees["account.move.line"].append(
-                    {
-                        "id": self._id(),
-                        "move_id": [i, v["ref"]],
-                        "debit": valeurs_ligne["debit"],
-                        "credit": valeurs_ligne["credit"],
-                        "matching_number": False,
-                    }
-                )
-        else:
-            self.donnees[modele].append(dict(v, id=i))
-        return i
 
 
 def cible(odoo: FauxOdoo) -> injection.CibleTest:

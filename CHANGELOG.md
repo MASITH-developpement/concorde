@@ -22,17 +22,28 @@ Le module Odoo porte la même version au format `17.0.X.Y.Z` (`deploy/addons/con
     écriture à la fois par connexion.
   - `fec` : premier connecteur — FEC déposé dans CONCORDE (Sage 100, Sage 50,
     Quadra, Loop…) ou FEC produit ; une référence n'est jamais réécrite.
+  - `odoo` : connecteur Odoo 17 par l'API XML-RPC (lecture, écriture,
+    relecture par référence, sur Odoo Online comme sur site). Sur une vraie
+    destination, un compte, un journal ou un tiers absent bloque l'écriture
+    (rien n'est créé sans arbitrage) ; option `creer_manquants=oui` pour une
+    base de test vierge.
+- Envoi Odoo (`core/migration/injection.py`) : `CibleOdoo` (toute base,
+  https exigé hors du serveur) ; `CibleTest` en devient un cas particulier,
+  avec les mêmes verrous qu'avant. Préfixe de référence au choix du
+  transfert ; recherche de l'existant (`rechercher_existants`, `manquants`)
+  séparée de la création.
+- Lecture XML-RPC d'Odoo : filtre `reference_prefixe`.
 - `scripts/concorde_connexion.py` : lister, ajouter, tester, retirer une
   connexion ; saisie masquée d'un secret.
 - Code `TRF_ECART_CONCORDANCE` expliqué par Marceau.
-- 36 tests (`tests/test_connecteurs.py`) ; 399 → 435 tests.
+- 46 tests (`tests/test_connecteurs.py`) ; 399 → 445 tests.
 ### Modifié
 - Routines partagées au lieu de copies : `core/fichier_json.ecrire_json_atomique`
   (ex-`_ecrire_json_atomique` de l'interface, repris par `surveillance`),
   `connecteurs.secrets.ecrire_variable` (repris par
   `concorde_interface_mdp`), `migration.export.ecrire_fec_lot` et
   `lignes_sortie`, `migration.circuit.statut_constats` et
-  `constats_expliques`. Fabriques de FEC de test dans `tests/outils.py`.
+  `constats_expliques`. Fabriques de FEC et Odoo simulés de test dans `tests/outils.py`.
 
 ## [1.5.2] — 2026-11-08
 ### Ajouté

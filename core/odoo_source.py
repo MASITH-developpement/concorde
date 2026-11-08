@@ -1213,10 +1213,13 @@ class SourceXmlRpcOdoo17:
         etats: Sequence[str] = ("posted",),
         comptes: Iterable[str] | None = None,
         ecriture: int | None = None,
+        reference_prefixe: str | None = None,
     ) -> list[Enregistrement]:
         """Lignes d'écritures, triées comme cle_tri (liste complète).
 
-        comptes : liste de codes (grand livre) ; ecriture : id d'une écriture.
+        comptes : liste de codes (grand livre) ; ecriture : id d'une écriture ;
+        reference_prefixe : seulement les écritures dont la référence
+        commence par « <reference_prefixe>/ » (relecture d'un transfert).
         """
         dom: Domaine = [
             ("company_id", "=", self.societe),
@@ -1227,6 +1230,8 @@ class SourceXmlRpcOdoo17:
             dom.append(("account_id.code", "in", list(comptes)))
         if ecriture:
             dom.append(("move_id", "=", int(ecriture)))
+        if reference_prefixe:
+            dom.append(("move_id.ref", "=like", reference_prefixe + "/%"))
         bavard = comptes is None and ecriture is None
         debut_t = time.monotonic()
         if bavard:
@@ -1355,6 +1360,12 @@ class SourceXmlRpcOdoo17:
         if ecriture:
             res = [
                 ligne for ligne in res if ligne["ecriture_id"] == int(ecriture)
+            ]
+        if reference_prefixe:
+            res = [
+                ligne
+                for ligne in res
+                if ligne["reference"].startswith(reference_prefixe + "/")
             ]
         res.sort(key=cle_tri)
         if bavard:

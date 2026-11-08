@@ -16,12 +16,39 @@ et lève ErreurConnexion si on le lui demande quand même.
 """
 
 import datetime
+import hashlib
+import json
 from abc import ABC, abstractmethod
 from collections.abc import Mapping
 from typing import ClassVar, Optional, TypedDict
 
 from ..journal import Journal
-from ..migration.lot import Lot
+from ..migration.lot import LigneLot, Lot
+
+
+def nouveau_lot(logiciel: str, nom: str, lignes: list[LigneLot]) -> Lot:
+    """Lot au format commun à partir de lignes lues par une API.
+
+    Rôle : décrire la source d'un lot lu par API comme celle d'un fichier
+    (type, nom, empreinte), pour la photo et l'audit.
+    Paramètres : logiciel — nom court (« odoo »…) ; nom — base ou
+    société lue ; lignes — lignes au format LigneLot (centimes).
+    Retour : Lot ; empreinte SHA-256 des lignes.
+    Erreurs : aucune.
+    Usages : connecteurs.odoo, connecteurs.azalplus.
+    """
+    texte = json.dumps(lignes, sort_keys=True, default=str)
+    return Lot(
+        {
+            "type": logiciel,
+            "nom": nom,
+            "empreinte": hashlib.sha256(texte.encode("utf-8")).hexdigest(),
+            "encodage": "",
+            "separateur": "",
+            "lignes_fichier": len(lignes),
+        },
+        lignes,
+    )
 
 
 class ErreurConnexion(RuntimeError):

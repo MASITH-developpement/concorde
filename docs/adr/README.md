@@ -15,3 +15,4 @@ Modèle : `0000-modele.md`. Une ADR acceptée ne se modifie pas : on en écrit u
 | [0009](0009-azalplus-lecture-base.md) | AzalPlus : lire la base en lecture seule maintenant, écrire par l'API v2 une fois terminée | Acceptée (08/11/2026) |
 | [0010](0010-montee-version-odoo.md) | Montée de version Odoo : OpenUpgrade fait la migration, CONCORDE certifie la comptabilité | Acceptée (08/11/2026) |
 | [0011](0011-ecran-connexions-transferts.md) | Écrans Connexions, Transferts et Montée de version dans l'interface web | Acceptée (08/11/2026) |
+| [0012](0012-pilotage-montee-version.md) | Montée de version : pilotage de la machine de travail et écran | Proposée (08/11/2026) |

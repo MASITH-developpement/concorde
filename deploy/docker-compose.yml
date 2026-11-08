@@ -27,8 +27,8 @@ services:
       postgres:
         condition: service_healthy
     ports:
-      - "8017:8069"
-      - "8021:8072"
+      - "127.0.0.1:8017:8069"
+      - "127.0.0.1:8021:8072"
     environment:
       HOST: postgres
       USER: ${POSTGRES_USER:-odoo}
@@ -37,7 +37,7 @@ services:
       ADMIN_PASSWD: ${ADMIN_PASSWD:-CHANGEZ_MOI_ADMIN}
     volumes:
       - odoodata:/var/lib/odoo
-      - ./config/odoo.conf:/etc/odoo/odoo.conf:ro
+      - ./config/odoo.local.conf:/etc/odoo/odoo.conf:ro
       - ./addons:/mnt/extra-addons:ro
     command: odoo -c /etc/odoo/odoo.conf
 

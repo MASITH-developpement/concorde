@@ -28,11 +28,18 @@ POSTGRES_PASSWORD=<mot de passe base fort>
 ADMIN_PASSWD=<mot de passe gestionnaire Odoo fort>
 ```
 
-Mettre aussi les mêmes valeurs dans `config/odoo.conf` (`db_password` et `admin_passwd`).
+Copier `config/odoo.conf.exemple` en `config/odoo.local.conf` (hors git) et y mettre
+les mêmes valeurs (`db_password` et `admin_passwd`). Le conteneur lit ce fichier avec
+l'utilisateur `odoo` (uid 101) :
 
 ```bash
-chmod 600 .env config/odoo.conf
+cp config/odoo.conf.exemple config/odoo.local.conf   # puis remplacer les 2 mots de passe
+chmod 600 .env
+chown root:101 config/odoo.local.conf && chmod 640 config/odoo.local.conf
 ```
+
+Odoo n'écoute que sur `127.0.0.1` (ports 8017 et 8021) : il n'est pas joignable
+depuis Internet.
 
 ## 4. Démarrer
 

@@ -56,8 +56,8 @@ DEFAUTS = {
         "azalplus-v2-postgres-1": ["postgres", "azalplus_admin", "azalplus"],
     },
     # Ports publiés par Docker sur Internet, connus et acceptés
-    # (Odoo, aperçu AzalPlus).
-    "ports_publics_acceptes": [8017, 8021, 8080],
+    # (aperçu AzalPlus ; Odoo n'écoute que sur 127.0.0.1).
+    "ports_publics_acceptes": [8080],
     # Processus autorisés à beaucoup consommer (nom de l'exécutable).
     "processus_gourmands_autorises": [
         "clamscan",

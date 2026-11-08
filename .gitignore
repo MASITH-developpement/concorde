@@ -1,6 +1,7 @@
 # Secrets locaux (mots de passe PostgreSQL / Odoo) : jamais dans git.
 .env
 *.env
+deploy/config/odoo.local.conf
 # Fichiers générés par Python et les outils de mesure.
 __pycache__/
 *.pyc

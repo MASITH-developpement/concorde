@@ -40,11 +40,17 @@ Le module Odoo porte la même version au format `17.0.X.Y.Z` (`deploy/addons/con
 - Nouvelle CI bloquante `.github/workflows/qualite.yml`.
 - `scripts/install_module.sh` : plus de `|| true` (erreur SQL explicite).
 ### Sécurité
+- Odoo n'est plus joignable depuis Internet : les ports 8017 et 8021 n'écoutent que
+  sur `127.0.0.1` (Docker contournait le pare-feu ufw). Seul Concorde, sur le
+  serveur, l'utilisait (journaux des 7 derniers jours).
+- `deploy/config/odoo.conf` contenait les mots de passe en clair et était publié :
+  il devient le modèle `odoo.conf.exemple` ; la configuration réelle
+  `odoo.local.conf` reste sur le serveur, hors git. Mots de passe changés.
 - Ajout d'un `.gitignore` : les fichiers `.env` (mots de passe) ne peuvent plus être commités.
 - Lecture XML (.xlsx clients) et XML-RPC protégées par **defusedxml** (`core/xml_sur.py`) :
   bombe d'entités, entités externes et DTD refusées. Nouvelle dépendance :
-  `defusedxml` (paquet Ubuntu `python3-defusedxml`), à installer aussi dans le
-  conteneur Odoo (moteur embarqué).
+  `defusedxml` (paquet Ubuntu `python3-defusedxml`) ; le conteneur Odoo l'a déjà
+  (image odoo:17, defusedxml 0.7.1).
 - bandit : 66 alertes → 16, revues une à une et figées dans
   `bandit_reference.json` (la CI échoue sur toute nouvelle alerte) :
   - B404 / B603 (8) : `subprocess` lance pg_dump, pg_restore, clamscan, git et

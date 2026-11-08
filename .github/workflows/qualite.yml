@@ -127,3 +127,109 @@ jobs:
           exit 1
       - name: Photo SQL = calcul de l'ORM (zéro écart)
         run: python -m tests.integration.verifier_photo
+
+  # ADR-0010 : montée 14 -> 15 -> 16 -> 17 par OpenUpgrade (OCA, AGPL-3),
+  # lancé tel quel dans le conteneur Odoo de chaque version, à un commit
+  # figé ; jamais copié dans CONCORDE. Photo avant, photo après : zéro écart.
+  montee-odoo:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 120
+    services:
+      postgres:
+        image: postgres:13
+        env:
+          POSTGRES_USER: odoo
+          POSTGRES_PASSWORD: odoo
+          POSTGRES_DB: postgres
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U odoo" --health-interval 5s
+          --health-timeout 5s --health-retries 20
+    env:
+      ODOO_URL: http://127.0.0.1:8069
+      ODOO_BASE: concorde_montee
+      ODOO_UTILISATEUR: admin
+      ODOO_MOT_DE_PASSE: admin
+      PGHOST: 127.0.0.1
+      PGUSER: odoo
+      PGPASSWORD: odoo
+      OPENUPGRADELIB: openupgradelib==3.13.7
+      OPENUPGRADE_15: 913e7d32c7dafb1ec7131e74929053af7f7a23a6
+      OPENUPGRADE_16: afa31b1df1a4dd1f5f5c8cc47d938685fa255d1d
+      OPENUPGRADE_17: 61daab09ab6c0d21234b96374d9291d3e02ee9e4
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - name: Outils (versions figées)
+        run: python -m pip install psycopg2-binary==2.9.13 defusedxml==0.7.1
+      - name: Base Odoo 14 avec la comptabilité
+        run: |
+          if ! docker run --rm --network host -e HOST=127.0.0.1 odoo:14.0 \
+               -- -d "$ODOO_BASE" -i account --stop-after-init \
+               > installation.log 2>&1; then
+            tail -n 8 installation.log | sed 's/^/::error::/'
+            exit 1
+          fi
+      - name: Écritures connues et photo avant (Odoo 14)
+        run: |
+          docker run -d --name odoo14 --network host -e HOST=127.0.0.1 \
+            odoo:14.0 -- -d "$ODOO_BASE" --db-filter "^${ODOO_BASE}$"
+          pret=non
+          for essai in $(seq 1 60); do
+            if curl -sf -o /dev/null "$ODOO_URL/web/login"; then
+              pret=oui
+              break
+            fi
+            sleep 3
+          done
+          if [ "$pret" != oui ]; then
+            docker logs --tail 8 odoo14 2>&1 | sed 's/^/::error::/'
+            exit 1
+          fi
+          python -m tests.integration.verifier_photo
+          docker stop odoo14
+          python -m scripts.concorde_montee photo "$ODOO_BASE" avant.json
+      - name: Montée par OpenUpgrade, une version à la fois
+        run: |
+          for version in 15 16 17; do
+            commit_var="OPENUPGRADE_${version}"
+            git init -q "openupgrade-$version"
+            git -C "openupgrade-$version" fetch -q --depth 1 \
+              https://github.com/OCA/OpenUpgrade "${!commit_var}"
+            git -C "openupgrade-$version" checkout -q FETCH_HEAD
+            printf 'FROM odoo:%s.0\nUSER root\nRUN PIP_BREAK_SYSTEM_PACKAGES=1 pip3 install --no-cache-dir %s\nUSER odoo\n' \
+              "$version" "$OPENUPGRADELIB" \
+              | docker build -q -t "odoo-openupgrade:$version" - > /dev/null
+            echo "Montée vers Odoo $version (OpenUpgrade ${!commit_var})"
+            if ! docker run --rm --network host -e HOST=127.0.0.1 \
+                 -v "$PWD/openupgrade-$version:/mnt/openupgrade:ro" \
+                 "odoo-openupgrade:$version" -- -d "$ODOO_BASE" \
+                 --addons-path=/usr/lib/python3/dist-packages/odoo/addons,/mnt/openupgrade \
+                 --upgrade-path=/mnt/openupgrade/openupgrade_scripts/scripts \
+                 --load=base,web,openupgrade_framework \
+                 --update=all --stop-after-init \
+                 > "montee-$version.log" 2>&1; then
+              awk '/ERROR|Error|Traceback/' "montee-$version.log" | tail -n 6 \
+                | sed "s/^/::error::Odoo $version : /"
+              tail -n 4 "montee-$version.log" | sed "s/^/::error::Odoo $version : /"
+              exit 1
+            fi
+            erreurs=$(awk '/ ERROR /{n++} END{print n+0}' "montee-$version.log")
+            echo "Odoo $version : montée terminée, $erreurs ligne(s) ERROR."
+            awk '/ ERROR / && n < 5 {print; n++}' "montee-$version.log" \
+              | sed "s/^/::warning::Odoo $version : /"
+          done
+      - name: Photo après (Odoo 17) et comparaison (zéro écart)
+        run: |
+          python -m scripts.concorde_montee photo "$ODOO_BASE" apres.json
+          if ! python -m scripts.concorde_montee comparer avant.json apres.json \
+               > comparaison.txt; then
+            awk '/^ÉCART/ && n < 40 {print; n++}' comparaison.txt \
+              | sed 's/^/::error::/'
+            tail -n 1 comparaison.txt
+            exit 1
+          fi
+          cat comparaison.txt

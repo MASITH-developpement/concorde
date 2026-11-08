@@ -6,7 +6,12 @@ d'un Odoo 18 (code par société dans code_store). La vérification sur de
 vrais Odoo 14 à 18 est faite par la CI (tests/integration/verifier_photo).
 """
 
+import contextlib
+import io
+import json
+import os
 import sys
+import tempfile
 import unittest
 from decimal import Decimal
 from typing import Any
@@ -19,6 +24,7 @@ from core.odoo_source import (
     connexion_lecture_seule,
     proxys_xmlrpc,
 )
+from scripts import concorde_montee
 
 
 class CurseurPhoto:
@@ -223,6 +229,76 @@ class TestComparer(unittest.TestCase):
         self.assertEqual(ecarts[0]["avant"], "12000 0")
         self.assertEqual(ecarts[0]["apres"], "12001 0")
         self.assertEqual(ecarts[1]["apres"], "")
+
+
+class TestCommandeMontee(unittest.TestCase):
+    """charger_photo et scripts/concorde_montee (photo, comparer)."""
+
+    def setUp(self) -> None:
+        """Dossier temporaire et photo de référence enregistrée."""
+        self.dossier = tempfile.TemporaryDirectory()
+        self.addCleanup(self.dossier.cleanup)
+        self.avant = os.path.join(self.dossier.name, "avant.json")
+        self.base = BasePhoto(reponses_odoo(COMPTES_CODE_COMMUN))
+        with mock.patch.object(
+            concorde_montee, "connexion_lecture_seule", return_value=self.base
+        ):
+            self.assertEqual(self.lancer("photo", "demo", self.avant), 0)
+
+    def lancer(self, *arguments: str) -> int:
+        """Lance la commande avec ces arguments ; rend le code de sortie."""
+        argv = ["concorde_montee", *arguments]
+        with mock.patch.object(sys, "argv", argv):
+            with contextlib.redirect_stdout(io.StringIO()) as sortie:
+                with contextlib.redirect_stderr(sortie):
+                    code = concorde_montee.main()
+        self.sortie = sortie.getvalue()
+        return code
+
+    def test_photo_relue(self) -> None:
+        """La photo écrite se relit à l'identique."""
+        relue = photo.charger_photo(self.avant)
+        self.assertEqual(relue["base"], "demo")
+        self.assertEqual(
+            relue["empreinte"], photo.empreinte_sections(relue["sections"])
+        )
+
+    def test_comparer_sans_ecart(self) -> None:
+        """Même photo des deux côtés : code 0, zéro écart."""
+        self.assertEqual(self.lancer("comparer", self.avant, self.avant), 0)
+        self.assertIn("0 écart(s)", self.sortie)
+
+    def test_comparer_avec_ecart(self) -> None:
+        """Un montant changé : ligne ÉCART et code 1."""
+        reponses = reponses_odoo(COMPTES_CODE_COMMUN)
+        reponses[photo._SQL_ANALYTIQUE_PHOTO] = [(4, 1, Decimal("99.00"))]
+        apres = os.path.join(self.dossier.name, "apres.json")
+        with mock.patch.object(
+            concorde_montee,
+            "connexion_lecture_seule",
+            return_value=BasePhoto(reponses),
+        ):
+            self.lancer("photo", "demo", apres)
+        self.assertEqual(self.lancer("comparer", self.avant, apres), 1)
+        self.assertIn("ÉCART analytique a4", self.sortie)
+
+    def test_photo_modifiee(self) -> None:
+        """Photo retouchée à la main : empreinte fausse, refus (code 2)."""
+        with open(self.avant, encoding="utf-8") as fichier:
+            donnees = json.load(fichier)
+        donnees["sections"]["balance"]["s1|2023|411000"] = "1 0"
+        with open(self.avant, "w", encoding="utf-8") as fichier:
+            json.dump(donnees, fichier)
+        self.assertEqual(self.lancer("comparer", self.avant, self.avant), 2)
+        self.assertIn("empreinte fausse", self.sortie)
+
+    def test_pas_une_photo(self) -> None:
+        """Un JSON sans sections : refus nommé."""
+        autre = os.path.join(self.dossier.name, "autre.json")
+        with open(autre, "w", encoding="utf-8") as fichier:
+            json.dump([1, 2], fichier)
+        self.assertEqual(self.lancer("comparer", autre, self.avant), 2)
+        self.assertIn("pas une photo", self.sortie)
 
 
 class TestOuvertures(unittest.TestCase):

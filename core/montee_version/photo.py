@@ -269,6 +269,36 @@ def prendre_photo(connexion: ConnexionSql, base: str) -> PhotoComptable:
     }
 
 
+def charger_photo(chemin: str) -> PhotoComptable:
+    """Relit une photo enregistrée et vérifie son empreinte.
+
+    Rôle : comparer des photos prises à des moments différents, sans
+    risque qu'un fichier modifié à la main passe inaperçu.
+    Paramètres : chemin — fichier JSON écrit par la commande `photo`.
+    Retour : PhotoComptable.
+    Erreurs : ErreurPhoto (forme inattendue, empreinte fausse) ; OSError ;
+    ValueError (JSON illisible).
+    Usages : scripts/concorde_montee (comparer), tests.
+    """
+    with open(chemin, encoding="utf-8") as fichier:
+        donnees = json.load(fichier)
+    if not isinstance(donnees, dict) or not isinstance(
+        donnees.get("sections"), dict
+    ):
+        raise ErreurPhoto("%s : ce n'est pas une photo CONCORDE." % chemin)
+    lue: PhotoComptable = {
+        "base": str(donnees.get("base", "")),
+        "version": str(donnees.get("version", "")),
+        "sections": donnees["sections"],
+        "empreinte": str(donnees.get("empreinte", "")),
+    }
+    if empreinte_sections(lue["sections"]) != lue["empreinte"]:
+        raise ErreurPhoto(
+            "%s : empreinte fausse, la photo a été modifiée." % chemin
+        )
+    return lue
+
+
 def comparer_photos(
     avant: PhotoComptable, apres: PhotoComptable
 ) -> list[EcartPhoto]:

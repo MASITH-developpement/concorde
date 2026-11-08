@@ -1278,3 +1278,13 @@ Avant d'en créer une, vérifier (casse ignorée) qu'elle n'existe pas déjà.
 | `vente` | `tests/integration/verifier_photo.py` | Lignes de l'écriture de vente 2023 |
 | `vente_partielle` | `tests/integration/verifier_photo.py` | Lignes de la vente 2024 réglée en partie |
 | `verrous` | `core/montee_version/photo.py`, `tests/integration/verifier_photo.py` | Dates de verrouillage d'une photo |
+| `_comparer` | `scripts/concorde_montee.py` | Sous-commande comparer : écarts entre deux photos |
+| `_photo` | `scripts/concorde_montee.py` | Sous-commande photo : prend et enregistre la photo d'une base |
+| `charger_photo` | `core/montee_version/photo.py` | Routine : relit une photo et vérifie son empreinte |
+| `chemin_apres` | `scripts/concorde_montee.py` | Fichier de la photo prise après la montée |
+| `chemin_avant` | `scripts/concorde_montee.py` | Fichier de la photo prise avant la montée |
+| `comparer` | `scripts/concorde_montee.py` | Analyseur de la sous-commande comparer |
+| `lue` | `core/montee_version/photo.py` | Photo relue depuis un fichier |
+| `photo` | `scripts/concorde_montee.py`, `tests/test_montee_version.py` | Photo comptable (ou analyseur de la sous-commande photo) |
+| `relue` | `tests/test_montee_version.py` | Photo relue dans un test |
+| `TestCommandeMontee` | `tests/test_montee_version.py` | Tests de charger_photo et de la commande concorde_montee |

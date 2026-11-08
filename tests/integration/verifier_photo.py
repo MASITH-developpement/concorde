@@ -102,7 +102,26 @@ def _ident(valeur: Any) -> int | None:
 
 
 def _compte_analytique(odoo: OdooVerif) -> int:
-    """Crée un compte analytique (avec un plan à partir de 16)."""
+    """Crée un compte analytique (avec un plan à partir de 16).
+
+    L'utilisateur reçoit d'abord le groupe « Comptabilité analytique »,
+    absent par défaut d'une base neuve.
+    """
+    groupe = odoo.lire(
+        "ir.model.data",
+        [
+            ("module", "=", "analytic"),
+            ("name", "=", "group_analytic_accounting"),
+        ],
+        ["res_id"],
+    )
+    if not groupe:
+        raise RuntimeError("Groupe analytic.group_analytic_accounting absent")
+    odoo.appel(
+        "res.users",
+        "write",
+        [[odoo.uid], {"groups_id": [(4, groupe[0]["res_id"])]}],
+    )
     valeurs: dict[str, Any] = {"name": "Concorde analytique"}
     if "plan_id" in odoo.champs("account.analytic.account"):
         plans = odoo.lire("account.analytic.plan", [], ["id"])

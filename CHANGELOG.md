@@ -11,6 +11,11 @@ Le module Odoo porte la même version au format `17.0.X.Y.Z` (`deploy/addons/con
   verrouillage, en centimes, avec empreinte ; `comparer_photos` liste chaque
   écart (tolérance zéro). Les différences de schéma entre versions sont lues
   dans la base, jamais déduites du numéro de version.
+- Commande `scripts/concorde_montee.py` : `photo` (photo d'une base, en JSON
+  avec empreinte) et `comparer` (chaque écart affiché, code 1 s'il y en a un ;
+  une photo retouchée à la main est refusée).
+- CI : job `montee-odoo`, montée 14 -> 15 -> 16 -> 17 par OpenUpgrade (OCA),
+  lancé tel quel à un commit figé, photo avant / après, zéro écart exigé.
 - CI : job `photo-odoo`, sur un vrai Odoo 14, 15, 16, 17 et 18 (base jetable).
   Il crée des écritures connues, prend la photo en SQL, la recalcule par l'ORM
   d'Odoo et exige zéro écart (`tests/integration/verifier_photo.py`).

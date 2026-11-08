@@ -3,6 +3,18 @@
 Format : [Keep a Changelog](https://keepachangelog.com/fr/1.1.0/), versions sémantiques.
 Le module Odoo porte la même version au format `17.0.X.Y.Z` (`deploy/addons/concorde/__manifest__.py`).
 
+## [1.5.2] — 2026-11-08
+### Ajouté
+- 157 tests : `xlsx_vers_fec` (30 % → 99 %), `mapping` (25 % → 99 %),
+  `plan_comptable` (17 % → 99 %), `yaml_min` (0 % → 98 %). Couverture de
+  `core` + `interface` : 72 % → 82 %.
+- CI : couverture mesurée (`coverage`), plancher 82 % (`pyproject.toml`) ;
+  `pragma: no cover` ajouté aux motifs interdits.
+- `tests/classeurs_xlsx.py` : fabrication commune des classeurs .xlsx de test.
+### Modifié
+- `xlsx_vers_fec` : retrait du seul `pragma: no cover` ; le repli sans
+  openpyxl est maintenant testé.
+
 ## [1.5.1] — 2026-11-08
 ### Corrigé
 - Assistant d'import (Odoo 17) : un FEC texte (.txt) échouait toujours

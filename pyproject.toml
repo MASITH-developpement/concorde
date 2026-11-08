@@ -17,3 +17,12 @@ testpaths = ["tests"]
 # __manifest__.py n'est pas un module Python : Odoo le lit comme une donnée
 # (ast.literal_eval) et une docstring le rendrait illisible.
 ignore-patterns = ["__manifest__\\.py"]
+
+[tool.coverage.run]
+# Couverture mesurée sur le cœur et l'interface de Concorde (hors module Odoo,
+# injecteurs Odoo et surveillance du serveur).
+source = ["core", "interface"]
+
+[tool.coverage.report]
+# Plancher = couverture mesurée le 08/11/2026 (82,4 %) : ne jamais le baisser.
+fail_under = 82

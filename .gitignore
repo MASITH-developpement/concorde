@@ -17,3 +17,4 @@ deploy/addons/om_*/
 deploy/addons/accounting_pdf_reports/
 deploy/clamav/
 deploy/*.backup-*
+.coverage

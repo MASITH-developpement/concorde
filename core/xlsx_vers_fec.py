@@ -27,7 +27,7 @@ from .canonical import vers_centimes
 
 try:
     import openpyxl
-except ImportError:  # pragma: no cover
+except ImportError:
     _OPENPYXL_DISPONIBLE = False
 else:
     _OPENPYXL_DISPONIBLE = True

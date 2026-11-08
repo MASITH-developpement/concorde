@@ -14,7 +14,7 @@ Passerelle de liaison comptable : migration Quadra → Odoo, et passerelle de do
 | `scripts/` | Commandes. `concorde_odoo.py` : `telecharger` et `analyser` (voir README). `concorde_interface_mdp.py` : changer le mot de passe de l'interface. |
 | `tests/` | `python3 -m pytest` (399 tests, aucun sauté) ; contrôles qualité : voir `.github/workflows/qualite.yml`. |
 | `deploy/` | Docker (Odoo 17 + PostgreSQL), modules Odoo 17 à 20, webhook de déploiement, service `concorde-interface.service`. |
-| `docs/adr/` | Décisions d'architecture. ADR-0001 : passerelle de données Odoo 17. ADR-0002 : interface web. ADR-0003 : comptes, alertes, journal. ADR-0004 : migration ERP → Odoo. ADR-0005 : suppression de bases (local seulement). ADR-0006 : alignement prod sur test. ADR-0007 : sécurité du serveur. |
+| `docs/adr/` | Décisions d'architecture. ADR-0001 : passerelle de données Odoo 17. ADR-0002 : interface web. ADR-0003 : comptes, alertes, journal. ADR-0004 : migration ERP → Odoo. ADR-0005 : suppression de bases (local seulement). ADR-0006 : alignement prod sur test. ADR-0007 : sécurité du serveur. ADR-0008 (proposée) : transferts entre logiciels (Sage, Cegid, Pennylane, AzalPlus, Odoo), un pivot et un connecteur par logiciel. |
 | `samples/` | FEC synthétique de test. |
 
 ## À lire en premier
@@ -37,3 +37,4 @@ Passerelle de liaison comptable : migration Quadra → Odoo, et passerelle de do
 13. **Clés API de la base `concorde`** : trois clés admin à accès complet (`concorde`, `vibe`, `chatgpt`). À révoquer si elles ne servent plus (écran Bases > Clés API).
 14. **`testalbhade` restaurée le 06/11/2026** depuis sa sauvegarde Concorde ; date de copie (14/10/2026 18 h 01 UTC) enregistrée dans `/var/lib/concorde-interface/bases_test.json`.
 15. **Vitesse de l'étape 6** : environ 8 minutes pour 2 674 écritures (validation et lettrage un par un). À accélérer avant de traiter 45 000 écritures.
+16. **ADR-0008 à valider** (transferts entre logiciels) : trancher ses 3 points à arbitrer, puis construire le socle `connecteurs/` sur la branche `docs/adr-0008-transferts-multi-logiciels`. Jetons Pennylane et AzalPlus à ranger dans `/etc/concorde/connecteurs.env` (hors git).

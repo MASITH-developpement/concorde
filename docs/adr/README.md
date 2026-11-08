@@ -11,3 +11,4 @@ Modèle : `0000-modele.md`. Une ADR acceptée ne se modifie pas : on en écrit u
 | [0005](0005-suppression-bases.md) | Suppression de bases et de clés API : seulement en local, jamais chez un client | Acceptée (06/11/2026) |
 | [0006](0006-alignement-prod-sur-test.md) | Aligner la production sur la base de test, sur une période (comparer, puis appliquer) | Acceptée (06/11/2026) |
 | [0007](0007-securite-antivirus-mineur-rancongiciel.md) | Surveillance de sécurité : ClamAV de nuit, contrôle mineur / rançongiciel toutes les 15 min | Acceptée (07/11/2026) |
+| [0008](0008-transferts-entre-logiciels.md) | Transferts entre logiciels comptables : un pivot, un connecteur par logiciel, plusieurs connexions à la fois | Proposée (08/11/2026) |

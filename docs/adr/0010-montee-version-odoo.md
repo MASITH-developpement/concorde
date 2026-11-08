@@ -1,6 +1,6 @@
 # ADR-0010 — Montée de version Odoo : OpenUpgrade fait la migration, CONCORDE certifie la comptabilité
 
-- **Statut** : Proposée — à arbitrer par Stéphane Moreau (points « À arbitrer »)
+- **Statut** : Acceptée — arbitrages de Stéphane Moreau du 08/11/2026
 - **Date** : 08/11/2026
 - **Décideur** : Stéphane Moreau
 
@@ -83,19 +83,19 @@ plusieurs versions n'y tient pas.
 5. **Code** : nouveau dossier `core/montee_version/` (inventaire, photo multi-version,
    pilotage des conteneurs, rapport) et une commande `scripts/concorde_montee.py`. L'écran
    viendra après le premier cas réel.
-6. **Données du client** : copies chiffrées sur disque, droits 600, supprimées après la
-   livraison (délai à arbitrer). Mots de passe dans le fichier de secrets (ADR-0008).
+6. **Données du client** : copies chiffrées sur disque, droits 600, supprimées 30 jours après
+   la livraison. Mots de passe dans le fichier de secrets (ADR-0008).
 
-## À arbitrer
-1. **Versions** : de 14 à 18 pour commencer (proposé) ? 19 dès que la branche OCA est
-   publiée et testée ?
-2. **Machine** : un serveur de travail dédié, loué le temps d'une montée (proposé), ou un
-   agrandissement du serveur CONCORDE ?
-3. **Conservation des copies du client** après livraison : 30 jours (proposé) ?
-4. **Tolérance** : zéro écart au centime (proposé), sans exception ?
-5. **Modules sur mesure** : toujours hors périmètre (proposé), ou proposés en option ?
-6. **Juriste** : faire valider le montage « OpenUpgrade non modifié, lancé comme
-   programme séparé » avant la première vente.
+## Arbitrages (Stéphane Moreau, 08/11/2026)
+1. **Versions** : de 14 à 18 ; 19 dès que la branche OCA est publiée et testée.
+2. **Machine** : un serveur de travail dédié, loué le temps d'une montée ; jamais le
+   serveur CONCORDE.
+3. **Copies du client** : supprimées 30 jours après la livraison.
+4. **Tolérance** : zéro écart au centime, sans exception.
+5. **Modules sur mesure** : hors périmètre ; migrés par le développeur du client ou
+   désinstallés avant la montée.
+6. **Juriste** : le montage « OpenUpgrade non modifié, lancé comme programme séparé »
+   est validé par un juriste avant la première vente.
 
 ## Conséquences
 - **Ce qu'on vend** : une montée de version Odoo avec une comptabilité **certifiée
@@ -119,5 +119,5 @@ plusieurs versions n'y tient pas.
   utile pour un simple transfert de comptabilité entre deux Odoo.
 - **Monter directement la base de production** : aucun retour arrière possible ; contraire
   à la règle « rien en production sans accord ».
-- **Faire tourner les montées sur le serveur CONCORDE actuel** : pas assez de disque ni
+- **Faire tourner les montées sur le serveur CONCORDE** : pas assez de disque ni
   de mémoire ; une montée qui sature le disque arrêterait aussi le site.

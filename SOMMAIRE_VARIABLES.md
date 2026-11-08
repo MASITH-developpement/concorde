@@ -17,7 +17,9 @@ Avant d'en créer une, vérifier (casse ignorée) qu'elle n'existe pas déjà.
 | `_centimes_ou_rien` | `core/migration/filtres.py` | Routine : montant en euros -> centimes, ou None |
 | `_CHAMPS_TEXTE_LIGNE` | `core/odoo_source.py` | Champs texte d'une ligne SQL ramenés de NULL à '' |
 | `_chemin_executable` | `core/bases_locales.py` | Routine partagée : chemin absolu de pg_dump / pg_restore (FileNotFoundError si absent) |
+| `_chemins_cible_feuille` | `core/mapping.py` | Routine : chemins candidats d'une cible de relation (absolue ou relative) |
 | `_codes_html` | `deploy/addons/concorde/wizard/concorde_import_wizard.py` | Routine : liste de codes de comptes échappée (au plus 30) |
+| `_colonne_entete_unique` | `core/mapping.py` | Routine : colonne unique d'un intitulé d'en-tête, ErreurMapping si ambiguë |
 | `_colonnes_reconnues` | `core/xlsx_vers_fec.py` | Reconnaît les colonnes (synonymes) d'une ligne candidate à l'en-tête |
 | `_comptes_de_cle` | `core/odoo_source.py` | Routine : clé de répartition analytique -> codes/noms de comptes |
 | `_comptes_des_lignes` | `deploy/addons/concorde/wizard/concorde_import_wizard.py` | Routine : parcourt les lignes FEC portant un numéro de compte |
@@ -27,10 +29,12 @@ Avant d'en créer une, vérifier (casse ignorée) qu'elle n'existe pas déjà.
 | `_ConnexionHttp` | `core/odoo_source.py` | TypeVar (HTTPConnection ou HTTPSConnection) de `_avec_delai` |
 | `_constat_explique` | `interface/serveur.py` | Routine : constat allégé (sans éléments) et expliqué |
 | `_construire_ligne_fec` | `core/xlsx_vers_fec.py` | Construit une ligne FEC complète (CHAMPS_FEC) |
+| `_continue_le_bloc` | `core/yaml_min.py` | Routine : la ligne continue-t-elle le bloc (erreur si trop indentée) |
 | `_cookie_session` | `interface/serveur.py` | Routine : en-tête Set-Cookie de session (None = effacement) |
 | `_couche_superflue` | `deploy/addons/concorde/wizard/concorde_import_wizard.py` | Compteur (non utilisé) des couches base64 en trop retirées par `_lire_binaire`, 3 au maximum |
 | `_creer_fiche_erreur` | `deploy/addons/concorde/wizard/concorde_import_wizard.py` | Routine : crée la fiche d'import en erreur et rend son action |
 | `_date_ou_rien` | `core/migration/filtres.py` | Routine : date ISO -> date, ou None |
+| `_decouper_liste_en_ligne` | `core/yaml_min.py` | Routine : éléments d'une liste en ligne [a, b] |
 | `_derniere_empreinte_valide` | `core/guardian.py` | Méthode partagée : recalcule la chaîne d'audit, None si un maillon est altéré |
 | `_description_sql` | `interface/serveur.py` | Méthode de Bases : fiche d'une base du serveur |
 | `_disposition_piece_jointe` | `interface/serveur.py` | Routine : valeur de l'en-tête Content-Disposition |
@@ -44,12 +48,15 @@ Avant d'en créer une, vérifier (casse ignorée) qu'elle n'existe pas déjà.
 | `_enregistrer_rapport` | `interface/serveur.py` | Méthode de Gestionnaire : POST /api/rapport |
 | `_ENTETE_XML` | `core/xlsx_ecrire.py` | Déclaration XML commune aux parties du classeur |
 | `_erreur_fichier` | `core/mapping.py` | Routine partagée : lève l'erreur « Fichier <quoi> <nom> : <message> » |
+| `_erreur_sans_ecriture` | `core/xlsx_vers_fec.py` | Routine : erreur « aucune ligne d'écriture exploitable » (standard et Quadra) |
+| `_est_tiret` | `core/yaml_min.py` | Routine : la ligne est-elle un élément de liste |
 | `_ETATS_TEXTE` | `core/odoo_source.py` | Libellé français des états d'écriture (journal) |
 | `_evenement_info` | `interface/serveur.py` | Routine : constat INFO pour le centre d'alertes |
 | `_executer_pipeline` | `deploy/addons/concorde/wizard/concorde_import_wizard.py` | Routine : prépare mapping et plan puis exécute le moteur |
 | `_explication` | `interface/serveur.py` | Routine : explication Marceau d'un constat |
 | `_feuille` | `tests/test_mapping.py` | Paramètre ignoré d'un lecteur de feuille simulé |
 | `_fichier_instantane` | `interface/serveur.py` | Routine : chemin de la photo de surveillance d'une base |
+| `_groupes_date` | `core/xlsx_vers_fec.py` | Routine : découpe une date texte en groupes selon ses séparateurs |
 | `_identifiant_sql` | `core/bases_locales.py` | Routine : vérifie un nom de base (`_NOM_VALIDE`) et le rend entre guillemets pour le SQL |
 | `_identifiants` | `tests/outils.py` | Paramètres ignorés de `FauxCommun.authenticate` |
 | `_ids_par_code` | `injectors/socle_odoo.py` | {code: id} d'un modèle Odoo pour une liste de codes |
@@ -59,18 +66,26 @@ Avant d'en créer une, vérifier (casse ignorée) qu'elle n'existe pas déjà.
 | `_lignes_a_retirer` | `core/migration/filtres.py` | Lignes retirées par un filtre selon sa portée |
 | `_lignes_problemes` | `core/migration/circuit.py` | Lignes de problemes.xlsx (explication calculée une fois par constat) |
 | `_lignes_seulement` | `core/comparaison.py` | Routine : décrit les lignes présentes d'un seul côté (A ou B) |
+| `_lignes_utiles` | `core/yaml_min.py` | Routine : lignes non vides avec numéro d'origine et retrait |
+| `_lire_bloc` | `core/yaml_min.py` | Routine : lit un bloc (table ou liste) à un retrait donné |
+| `_lire_enfant` | `core/yaml_min.py` | Routine : bloc indenté sous un parent, ou None |
 | `_lire_json` | `interface/serveur.py` | Routine : contenu d'un fichier JSON UTF-8 |
+| `_lire_liste` | `core/yaml_min.py` | Routine : lit une liste YAML |
 | `_lire_par_lots` | `core/odoo_source.py` | Routine : `read` XML-RPC par lots de TAILLE_LOT |
+| `_lire_partie` | `core/mapping.py` | Routine : lit une partie XML de l'archive, ErreurMapping si illisible |
 | `_lire_rangs` | `core/migration/injection.py` | Routine : requête SQL de relecture du lot |
 | `_lire_societe` | `core/odoo_source.py` | Routine : lecture XML-RPC de champs de la société (societe_info, verrous) |
+| `_lire_table` | `core/yaml_min.py` | Routine : lit une table YAML |
 | `_liste_textes` | `core/migration/filtres.py` | Routine : critère liste ou texte à virgules -> liste de textes |
-| `_mapping_depuis_lignes` | `core/mapping.py` | Routine partagée : lignes JSON {quadra, odoo} → dict de correspondances |
+| `_mapping_depuis_json` | `core/mapping.py` | Routine : JSON décodé (objet ou liste) -> mapping validé |
 | `_Methode` | `stubs/odoo/api.pyi` | Type d'une méthode décorée par api.model (stub) |
 | `_motif_erreur` | `interface/serveur.py` | Routine : texte « Type : message » d'une exception |
 | `_noms_bases_locales` | `interface/serveur.py` | Routine : noms des bases du serveur (SQL) |
 | `_OPENPYXL_DISPONIBLE` | `core/xlsx_vers_fec.py` | Vrai si openpyxl est importable |
 | `_options` | `tests/test_assistant_import.py` | Paramètres ignorés de `champ_bouchon` |
+| `_ouvre_guillemet` | `core/yaml_min.py` | Routine : ce caractère ouvre-t-il une chaîne entre guillemets |
 | `_ouvreur_https` | `core/marceau.py` | Ouvreur d'URL limité au schéma https |
+| `_paire_mapping` | `core/mapping.py` | Routine : paire (compte Quadra, compte Odoo) validée |
 | `_Parametres` | `core/guardian.py` | ParamSpec des arguments de l'étape enveloppée |
 | `_parties` | `deploy/addons/concorde/wizard/concorde_import_wizard.py` | Colonnes de la ligne FEC, inutilisées lors des correspondances |
 | `_plan` | `deploy/addons/concorde/wizard/concorde_import_wizard.py` | Plan comptable rendu par `_executer_pipeline`, inutile à l'export |
@@ -78,15 +93,19 @@ Avant d'en créer une, vérifier (casse ignorée) qu'elle n'existe pas déjà.
 | `_racine` | `tests/test_mapping.py` | Paramètre ignoré (racine XML) d'un lecteur simulé |
 | `_requete` | `tests/test_injection.py` | Paramètres ignorés de `CurseurRelecture.execute` |
 | `_Resultat` | `core/guardian.py` | TypeVar du résultat de l'étape enveloppée |
+| `_retirer_commentaire` | `core/yaml_min.py` | Routine : retire le commentaire de fin de ligne (hors guillemets) |
 | `_revoquer_cle` | `interface/serveur.py` | Méthode de Gestionnaire : POST /api/cles/revoquer |
 | `_SCHEMAS_OPENXML` | `core/xlsx_ecrire.py` | Préfixe d'URL des espaces de noms Office Open XML |
+| `_separer_cle` | `core/yaml_min.py` | Routine : sépare la clé et la valeur d'une ligne de table |
 | `_serveur_xmlrpc` | `core/migration/injection.py` | Routine : client XML-RPC (allow_none) |
 | `_telecharger` | `interface/serveur.py` | Méthode de Taches : exécution d'un export |
+| `_texte_compte_mapping` | `core/mapping.py` | Routine : compte JSON validé et mis en texte |
 | `_TransportDelai` | `core/odoo_source.py` | Transport XML-RPC HTTP avec délai |
 | `_TransportSurDelai` | `core/odoo_source.py` | Transport XML-RPC HTTPS avec délai |
 | `_TYPE_OFFICE` | `core/xlsx_ecrire.py` | Préfixe des types de contenu officedocument |
 | `_Valeur` | `stubs/odoo/fields.pyi` | Type de la valeur d'un champ (paramètre générique du stub Field) |
 | `_valeur_colonne` | `core/xlsx_vers_fec.py` | Lit la cellule d'un champ dans une ligne (None si absente) |
+| `_valeur_en_ligne` | `core/yaml_min.py` | Routine : scalaire ou liste en ligne |
 | `_valeurs_fichier_fec` | `deploy/addons/concorde/wizard/concorde_import_wizard.py` | Routine : valeurs name / fec_filename / fec_file d'une fiche d'import |
 | `_verifier_version` | `core/export_odoo.py` | Routine partagée : refuse une version Odoo inconnue |
 | `_verrous_texte` | `core/odoo_source.py` | Routine : dates de verrouillage -> texte ISO (instantanés SQL et XML-RPC) |
@@ -97,6 +116,8 @@ Avant d'en créer une, vérifier (casse ignorée) qu'elle n'existe pas déjà.
 | `AlerteEnregistree` | `core/surveillance.py` | Type : alerte mémorisée dans le fichier JSON du centre |
 | `analytique` | `core/migration/filtres.py` | Critères du filtre en cours de normalisation |
 | `analytiques_choisis` | `core/comparaison.py` | Ensemble des comptes analytiques du filtre |
+| `ANNEE_MAX` | `core/xlsx_vers_fec.py` | Année maximale plausible d'une date (2100) |
+| `ANNEE_MIN` | `core/xlsx_vers_fec.py` | Année minimale plausible d'une date (1900) |
 | `annoncer_constats` | `core/migration/lot.py` | Routine partagée : écrit les constats d'un rapport dans le journal |
 | `Anomalie` | `core/demat.py` | TypedDict : anomalie regroupée par code |
 | `appliquer_cascade` | `core/xlsx_vers_fec.py` | Regroupe les lignes Quadra non rattachées et rattache les groupes soldés |
@@ -117,6 +138,7 @@ Avant d'en créer une, vérifier (casse ignorée) qu'elle n'existe pas déjà.
 | `attribut_type` | `tests/classeurs_xlsx.py` | Attribut t="..." d'une cellule (vide si absent) |
 | `attributs` | `tests/test_assistant_import.py` | Paramètre : noms et valeurs exposés par un module simulé |
 | `automatique` | `interface/serveur.py` | Rapport du jour construit automatiquement |
+| `autre` | `core/plan_comptable.py` | Clé de correspondance comparée aux autres clés trouvées |
 | `avertir_si_non_chiffre` | `scripts/outils_cli.py` | Avertit si l'URL Odoo est en http hors machine locale |
 | `bases_ignorees` | `interface/serveur.py` | Attribut de Bases : {nom : motif} des bases du serveur écartées au dernier passage |
 | `bilan` | `deploy/addons/concorde/wizard/concorde_import_wizard.py` | Résultat brut d'une étape lu par _bilan_etape |
@@ -127,6 +149,7 @@ Avant d'en créer une, vérifier (casse ignorée) qu'elle n'existe pas déjà.
 | `candidats` | `core/comparaison.py` | Écritures de B candidates au rapprochement par contenu (ex-`cands` réaffecté) |
 | `canon` | `tests/test_assistant_import.py` | Journal canonique de test (FEC synthétique) |
 | `canon_trouve` | `core/canonical.py` | Canonique lu dans le dict de pipeline par `extraire_canon` |
+| `canon_vide` | `tests/test_mapping.py` | Canonique vide fourni à extraire_canon |
 | `caractere` | `core/xlsx_ecrire.py` | Couple (caractère, entité) de `entites` |
 | `cas_acceptes` | `tests/test_xlsx_vers_fec.py` | Entrées acceptées et sortie attendue |
 | `cas_de_test` | `tests/test_xlsx_vers_fec.py` | Paramètre : TestCase qui vérifie le refus |
@@ -145,6 +168,7 @@ Avant d'en créer une, vérifier (casse ignorée) qu'elle n'existe pas déjà.
 | `champs_ligne` | `core/migration/filtres.py` | Vue {champ: valeur} d'une ligne pour une condition libre |
 | `charger_assistant_import` | `tests/test_assistant_import.py` | Charge l'assistant d'import hors d'Odoo |
 | `chemin` | `tests/classeurs_xlsx.py`, `tests/test_plan_comptable.py` | Chemin d'un fichier ou d'une partie de classeur |
+| `chemin_absent` | `tests/test_mapping.py` | Chemin d'un fichier de mapping inexistant |
 | `chemin_assistant` | `tests/test_assistant_import.py` | Chemin du fichier de l'assistant |
 | `chemin_classeur` | `tests/test_mapping.py` | Chemin du classeur de mapping temporaire |
 | `CHEMIN_CONFIGURATION` | `tests/test_yaml_min.py` | Chemin du vrai concorde.yaml du dépôt |
@@ -156,7 +180,7 @@ Avant d'en créer une, vérifier (casse ignorée) qu'elle n'existe pas déjà.
 | `chemin_rapport` | `interface/serveur.py` | Chemin du rapport.json d'une tâche |
 | `chemin_ss` | `securite/concorde_securite.py` | Chemin absolu de `ss` lancé via nsenter |
 | `chemins_paquet` | `tests/test_assistant_import.py` | Paramètre : dossiers d'un paquet simulé |
-| `chiffre` | `tests/classeurs_xlsx.py` | Rang d'une lettre de colonne (0 = A) |
+| `chiffre` | `core/xlsx_ecrire.py` | Rang d'une lettre de colonne (0 = A) |
 | `choix` | `interface/serveur.py` | Format ou objet demandé |
 | `cible` | `tests/classeurs_xlsx.py`, `tests/test_mapping.py` | Cible d'une relation de classeur |
 | `cibles_feuilles` | `tests/test_mapping.py` | Paramètre : cibles des feuilles déclarées |
@@ -174,17 +198,23 @@ Avant d'en créer une, vérifier (casse ignorée) qu'elle n'existe pas déjà.
 | `classeur_xlsx` | `tests/test_xlsx_vers_fec.py` | Routine : construit un .xlsx minimal avec les styles donnés |
 | `classeur_xml` | `tests/test_xlsx_vers_fec.py` | Paramètre : contenu de xl/workbook.xml |
 | `cle` | `tests/test_yaml_min.py` | Paramètre : clé de la section à extraire |
+| `cle_et_reste` | `core/yaml_min.py` | Résultat de _separer_cle (clé, valeur brute) |
 | `cle_texte` | `core/migration/lot.py` | Routine partagée : clé d'écriture -> « journal/numéro » |
 | `CleApi` | `core/bases_locales.py` | TypedDict d'une clé API listée (jamais sa valeur) |
 | `CleEcriture` | `core/migration/lot.py` | Type de la clé d'écriture (journal_code, ecriture) |
 | `cles` | `tests/test_bases_locales.py` | Clés API de la base simulée (`FausseBaseCles.cles`) |
+| `cles_trouvees` | `core/plan_comptable.py` | Clés de correspondance contenues dans le texte du type |
 | `CleSolde` | `core/comparaison.py` | Clé d'agrégation des soldes : compte, journal ou (compte, tiers) |
 | `CleTotaux` | `core/migration/lot.py` | Clés littérales de `TotauxLot` |
 | `code` | `tests/test_plan_comptable.py` | Code de compte lu |
+| `code_sans_zeros` | `core/plan_comptable.py` | Code de compte sans zéros de tête (remplace `c`) |
 | `code_trace` | `injectors/socle_odoo.py` | Étape inscrite dans le journal Guardian (ex. « odoo17 ») |
 | `codes` | `deploy/addons/concorde/wizard/concorde_import_wizard.py` | Paramètre de _codes_html : codes de comptes à citer |
 | `codes_affiches` | `deploy/addons/concorde/wizard/concorde_import_wizard.py` | Texte HTML des codes cités par _codes_html |
+| `colonne` | `core/yaml_min.py` | Colonne du contenu après le tiret |
 | `colonnes` | `tests/test_xlsx_vers_fec.py` | Colonnes reconnues d'un en-tête |
+| `cols_numero` | `core/mapping.py` | Colonnes « Numéro » trouvées sur la ligne d'en-tête |
+| `cols_odoo` | `core/mapping.py` | Colonnes « Odoo Acct » trouvées sur la ligne d'en-tête |
 | `compte` | `core/migration/lot.py` | Compte (source ou cible) dans `balance_par_compte` |
 | `compte_a_arbitrer` | `core/migration/correspondance.py` | Cumul d'un compte à arbitrer (remplace `a`) |
 | `compte_attendu` | `tests/test_plan_comptable.py` | Routine : compte attendu {code, nom, type} |
@@ -220,6 +250,7 @@ Avant d'en créer une, vérifier (casse ignorée) qu'elle n'existe pas déjà.
 | `Constat` | `core/analyser.py`, `core/migration/lot.py`, `interface/serveur.py` | Alias `dict[str, Any]` : constat d'un Rapport (JSON) |
 | `ConstatLu` | `core/surveillance.py` | Type : constat produit par Rapport ou relu d'un JSON de sécurité |
 | `contenu` | `core/marceau.py`, `core/xml_sur.py` | Texte de la réponse Mistral, vérifié avant retour |
+| `contenu_element` | `core/yaml_min.py` | Texte d'un élément de liste après le tiret |
 | `contenu_feuille` | `tests/test_xlsx_vers_fec.py` | Paramètre : XML de la feuille du classeur de test |
 | `contenu_journal` | `securite/concorde_securite.py` | Texte du journal clamscan.log |
 | `contenu_json` | `core/migration/correspondance.py` | Contenu JSON décodé de la table (remplace `d`) |
@@ -227,6 +258,7 @@ Avant d'en créer une, vérifier (casse ignorée) qu'elle n'existe pas déjà.
 | `contenu_lu` | `tests/test_assistant_import.py` | Octets rendus par `_lire_binaire` |
 | `contenu_xls` | `tests/test_mapping.py` | Octets d'un vieux .xls (OLE2) |
 | `contenu_zip` | `tests/test_assistant_import.py` | Octets du zip exporté |
+| `contenus_illisibles` | `tests/test_mapping.py` | Contenus de cellule illisibles testés |
 | `contexte` | `tests/test_plan_comptable.py` | Contexte assertRaises |
 | `contexte_erreur` | `tests/test_mapping.py`, `tests/test_xlsx_vers_fec.py` | Contexte assertRaises |
 | `contexte_rapport` | `deploy/addons/concorde/wizard/concorde_import_wizard.py` | Données du rapport HTML de l'import (ContexteRapport) |
@@ -237,6 +269,7 @@ Avant d'en créer une, vérifier (casse ignorée) qu'elle n'existe pas déjà.
 | `convertir_lignes` | `tests/test_xlsx_vers_fec.py` | Routine : lignes -> classeur -> xlsx_vers_fec |
 | `cookies` | `interface/serveur.py` | Cookies de la requête |
 | `copie_texte` | `core/comparaison.py` | `date_copie` normalisée « AAAA-MM-JJ HH:MM:SS » (ex-réaffectation) |
+| `CORRESP_TYPE_NORMALISE` | `core/plan_comptable.py` | Texte normalisé -> account_type : types Odoo tels quels puis libellés |
 | `correspondance` | `interface/serveur.py` | Résultat d'une expression régulière sur le chemin |
 | `correspondance_version` | `deploy/addons/concorde/wizard/concorde_import_wizard.py` | Résultat de la recherche du numéro majeur dans le texte de version |
 | `correspondances` | `tests/test_moteur.py` | Lignes {quadra, odoo} du mapping synthétique écrit en JSON |
@@ -259,13 +292,16 @@ Avant d'en créer une, vérifier (casse ignorée) qu'elle n'existe pas déjà.
 | `date_ecriture` | `core/migration/connecteur_fec.py` | EcritureDate convertie |
 | `date_facture` | `core/demat.py` | Date de facture lue une fois par facture en émission |
 | `date_lettrage` | `core/migration/connecteur_fec.py` | DateLet convertie |
+| `date_lue` | `core/xlsx_vers_fec.py` | Date validée par _date_fec |
 | `date_piece` | `core/migration/connecteur_fec.py` | PieceDate convertie |
 | `date_validation` | `core/migration/connecteur_fec.py` | ValidDate convertie |
 | `debit` | `core/migration/connecteur_fec.py` | Montants de la ligne en centimes |
 | `debut` | `core/migration/injection.py` | Résultat et bornes d'un paquet dans `decouper` |
 | `debut_donnees` | `core/fec_parser.py`, `core/mapping.py`, `core/migration/connecteur_fec.py`, `core/plan_comptable.py`, `core/xlsx_vers_fec.py` | Index de la première ligne de données (après l'en-tête) |
+| `debut_element` | `core/yaml_min.py` | Position de début d'un élément de liste en ligne |
 | `debut_lot` | `core/demat.py`, `core/odoo_source.py` | Indice de début d'une tranche dans `_lots` (ex-`i`) |
 | `debut_periode` | `core/migration/filtres.py` | Bornes `du` / `au` converties |
+| `debut_valeur` | `core/yaml_min.py` | Position du début de la valeur après la clé |
 | `decalage` | `interface/serveur.py` | Décalage de page du grand livre |
 | `declarations` | `tests/test_xlsx_vers_fec.py` | Déclarations de types de contenu |
 | `declarations_feuilles` | `tests/classeurs_xlsx.py` | Éléments <sheet> du classeur |
@@ -296,18 +332,23 @@ Avant d'en créer une, vérifier (casse ignorée) qu'elle n'existe pas déjà.
 | `EcritureRegroupee` | `injectors/socle_odoo.py` | Type d'une écriture regroupée : ref_ext, journal, numero, date, libelle, lignes, total (centimes) |
 | `ecrivain` | `interface/serveur.py` | Écrivain CSV |
 | `element` | `core/migration/circuit.py`, `interface/serveur.py` | Explication Marceau d'un constat / élément du constat |
+| `element_brut` | `core/yaml_min.py` | Élément brut d'une liste en ligne |
 | `elements` | `core/migration/filtres.py`, `injection.py` | Valeur du critère liste / éléments à traiter |
-| `elements_liste` | `core/yaml_min.py` | Éléments d'une liste YAML en cours de lecture dans `_bloc` |
+| `elements_bruts` | `core/yaml_min.py` | Éléments bruts d'une liste en ligne |
+| `elements_liste` | `core/yaml_min.py` | Éléments d'une liste YAML en cours de lecture dans `_lire_liste` |
 | `ElementTraite` | `core/migration/injection.py` | Variables de type de `en_parallele` / `decouper` |
 | `ElementXml` | `core/xml_sur.py` | Élément XML lu (protocole : find, iter, get, text) |
 | `empreinte_brute` | `interface/auth.py` | Empreinte scrypt (octets) |
 | `EN_TETE_FEC_TEXTE` | `tests/test_assistant_import.py` | En-tête de FEC texte (octets) pour les tests de `_lire_binaire` |
+| `enfant` | `core/yaml_min.py` | Bloc enfant lu, ou None |
 | `Enregistrement` | `core/comptes.py`, `core/odoo_source.py`, `injectors/socle_odoo.py`, `tests/outils.py` | Alias `dict[str, Any]` : enregistrement rendu par une source (ligne, compte, journal, tiers, facture) |
 | `EnregistrementLu` | `core/telecharger.py` | Alias `Mapping[str, Any]` : enregistrement reçu d'une source |
 | `EnregistrementOdoo` | `core/demat.py` | Type : enregistrement Odoo lu (XML-RPC ou ORM) |
 | `enregistrements` | `core/demat.py` | Résultat de search_read dans `SourceXmlRpc.lire` |
 | `entete` | `core/xlsx_vers_fec.py` | En-tête FEC standard trouvé (index, colonnes) ou None |
+| `entete_code` | `tests/test_plan_comptable.py` | Intitulé de la colonne code testé |
 | `ENTETE_FEC_ATTENDUE` | `tests/test_xlsx_vers_fec.py` | En-tête FEC attendu (18 champs) |
+| `entete_intitule` | `tests/test_plan_comptable.py` | Intitulé de la colonne intitulé testé |
 | `ENTETE_MAPPING_CLIENT` | `tests/test_mapping.py` | En-tête (Numéro, Intitulé, Odoo Acct) du fichier client |
 | `ENTETE_MINIMALE` | `tests/test_xlsx_vers_fec.py` | Les 5 colonnes obligatoires d'un FEC standard |
 | `entete_obligatoire` | `tests/test_interface.py` | Valeur d'un en-tête HTTP qui doit être présent (échec sinon) |
@@ -328,6 +369,7 @@ Avant d'en créer une, vérifier (casse ignorée) qu'elle n'existe pas déjà.
 | `ERREURS_MISTRAL` | `core/marceau.py` | Exceptions d'un appel Mistral qui déclenchent le repli à règles |
 | `ErreurUtilisateurBouchon` | `tests/test_assistant_import.py` | Remplace `odoo.exceptions.UserError` |
 | `ErreurXmlRpc` | `core/xml_sur.py` | Base des erreurs XML-RPC |
+| `ErreurYaml` | `core/yaml_min.py` | Exception : construction YAML non gérée (ligne citée) |
 | `ESPACE_PAQUET` | `tests/classeurs_xlsx.py` | Racine des espaces de noms du paquet OPC |
 | `ESPACE_RELATIONS` | `tests/test_xlsx_vers_fec.py` | Espace de noms des relations Office |
 | `ESPACE_RELATIONS_PAQUET` | `tests/classeurs_xlsx.py` | Espace de noms des fichiers .rels |
@@ -368,17 +410,22 @@ Avant d'en créer une, vérifier (casse ignorée) qu'elle n'existe pas déjà.
 | `filtre_brut` | `core/migration/filtres.py` | Filtre normalisé / filtre fourni / copie modifiable du filtre fourni |
 | `FiltreNormalise` | `core/migration/filtres.py` | Type d'un filtre validé |
 | `fin` | `core/migration/injection.py`, `interface/serveur.py`, `tests/test_demat.py` | Résultat et bornes d'un paquet dans `decouper` |
+| `fin_attendue` | `tests/test_xlsx_vers_fec.py` | Fin de message d'erreur attendue |
 | `fin_lot` | `core/demat.py`, `core/odoo_source.py` | Indice de fin d'une tranche dans `_lots` |
 | `fin_page` | `core/comptes.py` | Rang de fin (exclu) de la page du grand livre |
 | `fin_periode` | `core/migration/filtres.py` | Bornes `du` / `au` converties |
 | `fonction_interne` | `core/moteur.py` | Fonction d'étape interne au moteur (`_<fonction>`) |
 | `fonction_module` | `core/moteur.py` | Fonction d'étape résolue dans un module |
 | `FonctionSauvegarde` | `core/bases_locales.py` | Protocol de la fonction de sauvegarde injectable |
+| `format_inconnu` | `tests/test_xlsx_vers_fec.py` | Fin du message pour un format de date inconnu |
 | `gestionnaire` | `core/marceau.py` | Gestionnaire urllib ajouté à l'ouvreur https |
 | `GestionnaireConcorde` | `interface/serveur.py` | Sous-classe de Gestionnaire liée à une application (creer_serveur) |
 | `groupe` | `core/xlsx_vers_fec.py` | Lignes Quadra d'un même groupe / d'une même écriture |
 | `groupes` | `core/xlsx_vers_fec.py` | Groupes de lignes Quadra par clé de cascade |
 | `guardian` | `tests/test_yaml_min.py` | Section noyau.guardian de concorde.yaml |
+| `guillemet_fermant` | `core/yaml_min.py` | Position du guillemet fermant d'une clé |
+| `guillemet_ouvert` | `core/yaml_min.py` | Guillemet actuellement ouvert |
+| `GUILLEMETS_YAML` | `core/yaml_min.py` | Guillemets reconnus par le lecteur YAML |
 | `HoteXmlRpc` | `core/odoo_source.py` | Type de l'hôte reçu par `Transport.make_connection` |
 | `ident` | `core/demat.py` | Id de partenaire dans la compréhension de `_lire_partenaires` |
 | `ident_partenaire` | `core/demat.py` | Id du partenaire commercial d'une facture |
@@ -391,7 +438,7 @@ Avant d'en créer une, vérifier (casse ignorée) qu'elle n'existe pas déjà.
 | `index` | `tests/classeurs_xlsx.py` | Rang d'une feuille ou d'une colonne |
 | `index_attendu` | `tests/test_mapping.py` | Index de colonne attendu |
 | `index_champs` | `core/migration/connecteur_fec.py` | {nom de colonne FEC: position} (remplace `idx`) |
-| `index_colonne` | `tests/classeurs_xlsx.py` | Paramètre : index de colonne à partir de 0 |
+| `index_colonne` | `core/xlsx_ecrire.py`, `core/mapping.py` | Paramètre : index de colonne à partir de 0 |
 | `infos` | `interface/serveur.py` | Informations d'un contrôle de sécurité |
 | `infos_securite` | `interface/serveur.py` | Derniers contrôles de sécurité par nature |
 | `infos_version` | `core/demat.py`, `injectors/socle_odoo.py` | Réponse de version() du serveur (même sens que dans `injectors/socle_odoo.py`) |
@@ -402,6 +449,8 @@ Avant d'en créer une, vérifier (casse ignorée) qu'elle n'existe pas déjà.
 | `instant` | `interface/auth.py` | Horodatage d'un échec de connexion |
 | `instant_cache` | `interface/serveur.py` | Instant de la dernière lecture des bases SQL |
 | `Instantane` | `core/surveillance.py` | TypedDict : photo légère d'une base (écritures, comptes, verrous) |
+| `interieur` | `core/yaml_min.py` | Contenu entre crochets d'une liste en ligne |
+| `intitule` | `core/mapping.py` | Paramètre : intitulé d'en-tête cherché |
 | `jour` | `tests/test_xlsx_vers_fec.py` | Paramètre : jour d'une ligne Quadra |
 | `journal` | `tests/test_xlsx_vers_fec.py` | Paramètre : code journal d'une ligne FEC attendue |
 | `journal_canonique` | `core/lettrage.py` | Journal canonique à lettrer (extrait par `extraire_canon`) |
@@ -417,8 +466,9 @@ Avant d'en créer une, vérifier (casse ignorée) qu'elle n'existe pas déjà.
 | `lecteur_valeur` | `tests/test_mapping.py` | Lecteur de valeur de cellule testé |
 | `lecteurs` | `core/passerelle.py` | {objet: fonction de lecture de la source} |
 | `LecteurValeur` | `core/mapping.py` | Type du lecteur de valeur d'une cellule rendu par `lire_feuille_xlsx` |
-| `lettre_colonne` | `tests/classeurs_xlsx.py` | Routine : index de colonne -> lettres Excel |
+| `lecture` | `core/xlsx_vers_fec.py` | Ordre de lecture retenu pour une date |
 | `lettres` | `tests/classeurs_xlsx.py`, `tests/test_mapping.py` | Lettres d'une colonne Excel |
+| `lettres_colonne` | `core/xlsx_ecrire.py` | Routine partagée : index de colonne -> lettres Excel (remplace `_col`, `_lettres_colonne`, `lettre_colonne`) |
 | `libelle` | `core/migration/filtres.py`, `core/odoo_source.py` | Code ou nom d'un compte analytique (dans `analytique_comptes`) |
 | `libelle_ligne` | `deploy/addons/concorde/wizard/concorde_import_wizard.py` | Libellé d'une ligne d'écriture Odoo (200 caractères au plus) |
 | `libelle_mapping` | `deploy/addons/concorde/wizard/concorde_import_wizard.py` | Libellé du mapping connu au moment de l'échec |
@@ -426,6 +476,7 @@ Avant d'en créer une, vérifier (casse ignorée) qu'elle n'existe pas déjà.
 | `libelles_totaux` | `core/migration/export.py`, `injection.py` | (clé de totaux, libellé) comparés entrée / sortie |
 | `ligne` | `core/analyser.py`, `core/comparaison.py`, `core/comptes.py`, `core/migration/*.py`, `core/odoo_source.py`, `core/telecharger.py`, `tests/test_surveillance.py` | Ligne d'écriture (ex-`l`) |
 | `ligne_base` | `tests/test_comparaison.py` | Ligne de la base de test parcourue/modifiée dans un test |
+| `ligne_brute` | `core/yaml_min.py` | Ligne d'origine du document |
 | `ligne_canon` | `tests/test_moteur.py` | Ligne de journal canonique parcourue |
 | `ligne_canonique` | `tests/test_mapping.py` | Routine : LigneEcriture de test |
 | `ligne_construite` | `tests/test_comparaison.py` | Ligne d'écriture en cours de construction dans `ligne` |
@@ -436,6 +487,7 @@ Avant d'en créer une, vérifier (casse ignorée) qu'elle n'existe pas déjà.
 | `ligne_fec_attendue` | `tests/test_xlsx_vers_fec.py` | Routine : ligne FEC attendue (oracle indépendant) |
 | `ligne_lot` | `tests/test_injection.py` | Ligne du lot parcourue pour construire les rangs relus |
 | `ligne_lue` | `tests/test_odoo_donnees.py` | Ligne de texte du FEC relu dans `TestFec.lire` (remplace `l`) |
+| `ligne_nettoyee` | `core/yaml_min.py` | Ligne sans commentaire |
 | `ligne_odoo` | `tests/test_injection.py` | Ligne `account.move.line` du faux Odoo parcourue |
 | `ligne_quadra` | `tests/test_xlsx_vers_fec.py` | Routine : ligne d'export Quadra |
 | `ligne_quadra_attendue` | `tests/test_xlsx_vers_fec.py` | Routine : ligne FEC attendue pour une ligne Quadra |
@@ -461,6 +513,7 @@ Avant d'en créer une, vérifier (casse ignorée) qu'elle n'existe pas déjà.
 | `lignes_yaml` | `tests/test_yaml_min.py` | Paramètre : lignes du document YAML |
 | `LigneSortie` | `core/migration/export.py` | Type d'une ligne au format de core/telecharger |
 | `LigneXlsx` | `core/xlsx_vers_fec.py` | Type : ligne de cellules du classeur (None toléré) |
+| `LigneYaml` | `core/yaml_min.py` | Ligne utile (numéro, retrait, contenu) |
 | `LIMITE_CODES_AFFICHES` | `deploy/addons/concorde/wizard/concorde_import_wizard.py` | Nombre maximal de codes de comptes cités (30) |
 | `lire_feuille` | `tests/test_xlsx_vers_fec.py` | Méthode : lit une feuille faite de lignes <row> |
 | `lire_feuille_deplacee` | `tests/test_xlsx_vers_fec.py` | Méthode : lit un classeur dont la feuille est rangée ailleurs |
@@ -497,6 +550,7 @@ Avant d'en créer une, vérifier (casse ignorée) qu'elle n'existe pas déjà.
 | `montant_devise` | `core/migration/connecteur_fec.py` | Montantdevise en centimes ou None |
 | `montant_max` | `core/migration/filtres.py` | Critères du filtre en cours de normalisation |
 | `montant_min` | `core/migration/filtres.py` | Critères du filtre en cours de normalisation |
+| `motif` | `core/yaml_min.py` | Paramètre : raison de l'ErreurYaml |
 | `nature` | `securite/concorde_securite.py` | Résultat de `classer_connexion` |
 | `niveau_cascade` | `core/xlsx_vers_fec.py` | Clé de LigneQuadra : cascade qui a rattaché la ligne (0 = aucune) |
 | `nom` | `tests/test_interface.py` | Paramètre de `entete_obligatoire` : nom de l'en-tête |
@@ -506,6 +560,7 @@ Avant d'en créer une, vérifier (casse ignorée) qu'elle n'existe pas déjà.
 | `NOM_FICHIER_ESSAI` | `tests/test_xlsx_vers_fec.py` | Nom de fichier des essais (essai.xlsx) |
 | `nom_minuscule` | `core/migration/correspondance.py` | Nom de la table en minuscules (remplace `n`) |
 | `nom_module` | `tests/test_assistant_import.py` | Paramètre : nom pointé du module simulé |
+| `nom_vu` | `core/plan_comptable.py` | Intitulé déjà lu pour un code répété |
 | `nombre` | `core/journal.py` | Paramètre de `nombre_texte` (ex-`n`) : nombre à formater |
 | `nombre_anomalies` | `interface/serveur.py` | Anomalies BLOQUANT/ALERTE d'une balance |
 | `nombres` | `tests/test_surveillance.py` | Nombre de cas par code d'alerte |
@@ -513,6 +568,7 @@ Avant d'en créer une, vérifier (casse ignorée) qu'elle n'existe pas déjà.
 | `noms_feuilles` | `tests/classeurs_xlsx.py` | Paramètre : noms des feuilles du classeur |
 | `nouvelle` | `core/bases_locales.py`, `interface/serveur.py` | Connexion ouverte par `_connexion_ou_nouvelle` |
 | `numero` | `interface/serveur.py` | Numéro d'un fichier produit dans une tâche |
+| `numero_attendu` | `tests/test_yaml_min.py` | Numéro de ligne attendu dans l'ErreurYaml |
 | `numero_ligne` | `tests/classeurs_xlsx.py` | Numéro de ligne Excel (à partir de 1) |
 | `numuniq` | `tests/test_xlsx_vers_fec.py` | Paramètre : numéro unique Quadra d'une ligne |
 | `objet_fil` | `core/migration/injection.py` | Client « object » du fil courant |
@@ -524,8 +580,12 @@ Avant d'en créer une, vérifier (casse ignorée) qu'elle n'existe pas déjà.
 | `operations` | `core/migration/filtres.py` | {opérateur: test} d'une condition libre |
 | `options` | `injectors/socle_odoo.py` | Arguments nommés de la méthode ORM (omis si None) |
 | `options_clamscan` | `securite/concorde_securite.py` | Options de la ligne de commande clamscan |
+| `ORDRES_DATE` | `core/xlsx_vers_fec.py` | Longueurs des groupes -> (ordre, rangs année/mois/jour) |
+| `origine` | `core/mapping.py` | Source citée dans les messages d'erreur |
 | `outils_cli` | `scripts/outils_cli.py` | Module des routines communes aux scripts en ligne de commande |
+| `OUVRANTS_GUILLEMET` | `core/yaml_min.py` | Caractères après lesquels un guillemet ouvre une chaîne |
 | `ouvreur` | `core/marceau.py` | OpenerDirector construit par `_ouvreur_https` |
+| `paire` | `core/mapping.py` | Paramètre : paire de comptes à valider |
 | `PaireLettrage` | `core/lettrage.py` | TypedDict d'une paire lettrée (code, compte, montant, ligne_debit, ligne_credit) |
 | `paquet_ids` | `core/migration/injection.py` | Paquet de références / d'identifiants lus ou envoyés |
 | `paquet_refs` | `core/migration/injection.py` | Paquet de références / d'identifiants lus ou envoyés |
@@ -548,6 +608,7 @@ Avant d'en créer une, vérifier (casse ignorée) qu'elle n'existe pas déjà.
 | `PlanComptes` | `deploy/addons/concorde/wizard/concorde_import_wizard.py` | Type du plan comptable uploadé {code: (intitulé, type ou None)} |
 | `portee` | `core/migration/filtres.py` | Critères du filtre en cours de normalisation |
 | `portes` | `core/migration/circuit.py` | Raccourci vers `rapport["portes"]` |
+| `position` | `core/yaml_min.py` | Indice de ligne ou de caractère courant (remplace `i`) |
 | `prefixe` | `interface/serveur.py` | Préfixe « base — » des lignes de journal |
 | `prefixer_ref` | `injectors/socle_odoo.py` | Vrai : référence « CONCORDE/<journal>/<numéro> » ; faux : numéro seul |
 | `prefixes_prives` | `securite/concorde_securite.py` | Débuts d'adresses privées exclus du contrôle des ports de minage |
@@ -555,6 +616,7 @@ Avant d'en créer une, vérifier (casse ignorée) qu'elle n'existe pas déjà.
 | `PREFIXES_TEMP` | `securite/concorde_securite.py` | Dossiers temporaires suivis de « / » (test de préfixe) |
 | `premiere_ligne` | `scripts/outils_cli.py` | Première ligne d'un texte (description argparse depuis `__doc__`) |
 | `Preparation` | `core/migration/injection.py` | Type du bilan de `preparer` |
+| `presents` | `core/mapping.py` | Chemins présents dans l'archive |
 | `produit` | `interface/serveur.py` | Fichier ou format produit par une tâche |
 | `ProxyCommun` | `core/migration/injection.py` | Protocoles des services XML-RPC « common » et « object » |
 | `ProxyObjet` | `core/migration/injection.py` | Protocoles des services XML-RPC « common » et « object » |
@@ -563,7 +625,10 @@ Avant d'en créer une, vérifier (casse ignorée) qu'elle n'existe pas déjà.
 | `racine` | `tests/test_xml_sur.py` | Racine lue ; lecteur de réponses XML-RPC |
 | `RACINE_DEPOT` | `tests/outils.py` | Dossier racine du dépôt |
 | `rang` | `tests/test_moteur.py` | Paramètre : rang de l'étape dans le pipeline |
+| `rang_annee` | `core/xlsx_vers_fec.py` | Rang du groupe année |
 | `rang_etape` | `deploy/addons/concorde/wizard/concorde_import_wizard.py` | Paramètre de _bilan_etape : rang de l'étape (2 mapping, 4 rapport) |
+| `rang_jour` | `core/xlsx_vers_fec.py` | Rang du groupe jour |
+| `rang_mois` | `core/xlsx_vers_fec.py` | Rang du groupe mois |
 | `rangees` | `core/export_odoo.py` | Lignes de valeurs à écrire dans un CSV d'export |
 | `RangRelu` | `tests/test_injection.py` | Alias : rang SQL relu dans la base de test |
 | `rapport` | `tests/test_odoo_donnees.py` | Rapport d'analyse en dict dans `TestAnalyse.analyse` |
@@ -592,7 +657,7 @@ Avant d'en créer une, vérifier (casse ignorée) qu'elle n'existe pas déjà.
 | `requete` | `core/bases_locales.py`, `interface/serveur.py`, `tests/test_bases_locales.py` | Paramètre : ordre SQL de `CurseurPg.execute` |
 | `resolue` | `interface/serveur.py` | Libellé « alerte résolue » |
 | `restantes` | `core/xlsx_vers_fec.py` | Lignes Quadra des groupes non soldés après une cascade |
-| `reste` | `tests/classeurs_xlsx.py` | Reste de la conversion en lettres de colonne |
+| `reste` | `core/xlsx_ecrire.py`, `core/yaml_min.py` | Reste de la conversion en lettres de colonne ; valeur brute après « clé: » (YAML) |
 | `resultat` | `interface/serveur.py` | Résultat d'une comparaison |
 | `resultat_etape` | `deploy/addons/concorde/wizard/concorde_import_wizard.py`, `tests/test_moteur.py` | Rend le résultat d'une étape du pipeline, type vérifié |
 | `ResultatEnvoi` | `core/migration/injection.py` | Type du résultat de `envoyer` |
@@ -612,6 +677,8 @@ Avant d'en créer une, vérifier (casse ignorée) qu'elle n'existe pas déjà.
 | `ScalaireYaml` | `core/yaml_min.py` | Type d'un scalaire YAML (str, int, bool) |
 | `section` | `tests/test_yaml_min.py` | Routine : sous-table YAML vérifiée |
 | `securite` | `interface/serveur.py` | Constats ou fichiers de sécurité |
+| `separateur` | `tests/test_xlsx_vers_fec.py` | Séparateur de date testé |
+| `SEPARATEURS_DATE` | `core/xlsx_vers_fec.py` | Regex des séparateurs de date (/ . - espace) |
 | `session` | `interface/auth.py` | (création, dernière activité) d'une session |
 | `signature` | `core/migration/controles.py` | Signature de la ligne courante (remplace `k`) |
 | `SIGNATURE_OLE2` | `tests/test_xlsx_vers_fec.py` | Signature d'un vieux .xls |
@@ -643,11 +710,11 @@ Avant d'en créer une, vérifier (casse ignorée) qu'elle n'existe pas déjà.
 | `STYLES_SANS_CELLXFS` | `tests/test_xlsx_vers_fec.py` | Styles sans liste cellXfs |
 | `styles_xml` | `tests/test_xlsx_vers_fec.py` | Paramètre : contenu de xl/styles.xml |
 | `supprimee` | `interface/serveur.py` | Vrai si la tâche supprime la base (sinon réinitialise) |
+| `table` | `core/yaml_min.py` | Table en cours de lecture (remplace `resultat`/`obj`) |
 | `TABLE_PJ_PRESENTE` | `scripts/install_module.sh` | « t » si la table ir_attachment existe (sinon base neuve) |
 | `tache` | `interface/serveur.py` | Fiche d'une tâche |
 | `taille` | `interface/serveur.py` | Taille du corps de requête ou d'un fichier |
 | `tampon` | `interface/serveur.py` | Tampon mémoire (zip, CSV) |
-| `tampon_classeur` | `tests/test_xlsx_vers_fec.py` | Tampon mémoire du classeur construit |
 | `tampon_zip` | `deploy/addons/concorde/wizard/concorde_import_wizard.py` | Tampon mémoire du zip d'export |
 | `techniques` | `interface/serveur.py` | Rapport des contrôles techniques |
 | `temporaire` | `interface/serveur.py` | Chemin du fichier .tmp d'une écriture atomique |
@@ -655,6 +722,7 @@ Avant d'en créer une, vérifier (casse ignorée) qu'elle n'existe pas déjà.
 | `TestChargementFichier` | `tests/test_yaml_min.py` | Tests de chargement d'un fichier YAML |
 | `TestChargerMappingJson` | `tests/test_mapping.py` | Tests de charger_mapping (JSON) |
 | `TestChargerMappingXlsx` | `tests/test_mapping.py` | Tests du classeur Mapping Quadra Odoo |
+| `TestCommentairesEnFinDeLigne` | `tests/test_yaml_min.py` | Tests des commentaires de fin de ligne |
 | `TestCompteTexte` | `tests/test_mapping.py` | Tests de _compte_txt |
 | `TestConversionQuadra` | `tests/test_xlsx_vers_fec.py` | Tests de conversion d'un export Quadra |
 | `TestConversionStandard` | `tests/test_xlsx_vers_fec.py` | Tests de conversion d'un classeur standard |
@@ -662,6 +730,7 @@ Avant d'en créer une, vérifier (casse ignorée) qu'elle n'existe pas déjà.
 | `TestDateQuadra` | `tests/test_xlsx_vers_fec.py` | Tests de _date_quadra |
 | `TestDictionnairePlan` | `tests/test_plan_comptable.py` | Tests de dictionnaire_plan |
 | `TestEntete` | `tests/test_xlsx_vers_fec.py` | Tests de détection de l'en-tête |
+| `TestErreursExplicites` | `tests/test_yaml_min.py` | Tests des erreurs YAML explicites |
 | `TestErreursPlan` | `tests/test_plan_comptable.py` | Tests des refus du plan comptable |
 | `TestExporter` | `tests/test_assistant_import.py` | Tests de `action_exporter` |
 | `TestIndexColonne` | `tests/test_mapping.py` | Tests de _index_colonne |
@@ -670,6 +739,8 @@ Avant d'en créer une, vérifier (casse ignorée) qu'elle n'existe pas déjà.
 | `TestLectureStdlib` | `tests/test_xlsx_vers_fec.py` | Tests du lecteur xlsx interne |
 | `TestLectureXmlSure` | `tests/test_xml_sur.py` | Tests de la lecture XML protégée |
 | `TestLireFeuilleXlsx` | `tests/test_mapping.py` | Tests d'ouverture et de lecture des cellules |
+| `TestListesEnLigne` | `tests/test_yaml_min.py` | Tests des listes entre crochets |
+| `TestListesImbriquees` | `tests/test_yaml_min.py` | Tests des listes et tables imbriquées |
 | `TestMapperComptes` | `tests/test_mapping.py` | Tests de mapper_comptes |
 | `TestNormalisation` | `tests/test_xlsx_vers_fec.py` | Tests de mise en forme des textes et montants |
 | `TestNormalisationEntete` | `tests/test_mapping.py` | Tests de _norm_entete |
@@ -679,6 +750,9 @@ Avant d'en créer une, vérifier (casse ignorée) qu'elle n'existe pas déjà.
 | `TestTypesComptes` | `tests/test_plan_comptable.py` | Tests de déduction du type Odoo |
 | `TestVraieConfiguration` | `tests/test_yaml_min.py` | Tests du vrai concorde.yaml |
 | `texte` | `core/migration/connecteur_fec.py`, `interface/serveur.py` | Paramètre de `_date` (remplace `v`) |
+| `texte_normalise` | `core/plan_comptable.py` | Texte de type normalisé (remplace `t`) |
+| `texte_valeur` | `core/yaml_min.py`, `tests/test_mapping.py` | Texte d'une valeur lue |
+| `texte_yaml` | `tests/test_yaml_min.py` | Document YAML d'un sous-test |
 | `textes` | `tests/test_mapping.py` | Textes d'une ligne de test |
 | `tiers` | `core/migration/filtres.py` | Critères du filtre en cours de normalisation |
 | `tirage` | `samples/generateur_fec_test.py` | Générateur pseudo-aléatoire local à graine fixe (2026) |
@@ -689,6 +763,7 @@ Avant d'en créer une, vérifier (casse ignorée) qu'elle n'existe pas déjà.
 | `transport_xmlrpc` | `core/odoo_source.py` | Routine partagée : transport XML-RPC HTTP/HTTPS avec délai d'attente |
 | `TransportXmlRpc` | `core/xml_sur.py` | Transport XML-RPC HTTP |
 | `TransportXmlRpcSur` | `core/xml_sur.py` | Transport XML-RPC HTTPS |
+| `typ_vu` | `core/plan_comptable.py` | Type déjà lu pour un code répété |
 | `type_attendu` | `tests/test_moteur.py` | Paramètre : type que l'étape doit avoir produit |
 | `type_cellule` | `tests/classeurs_xlsx.py` | Paramètre : attribut t d'une cellule |
 | `type_champ` | `tests/test_assistant_import.py` | Élément de `TYPES_CHAMPS_ODOO` |
@@ -703,10 +778,14 @@ Avant d'en créer une, vérifier (casse ignorée) qu'elle n'existe pas déjà.
 | `TypeResultat` | `tests/test_moteur.py` | Variable de type : type attendu du résultat d'une étape |
 | `TYPES_CHAMPS_ODOO` | `tests/test_assistant_import.py` | Types de champs Odoo simulés par `champ_bouchon` |
 | `types_contenu` | `tests/test_xlsx_vers_fec.py` | Routine : [Content_Types].xml du classeur de test |
+| `TYPES_ODOO_MESURES` | `tests/test_plan_comptable.py` | Les 18 account_type mesurés dans Odoo 17/18 |
+| `types_specifiques` | `core/plan_comptable.py` | Types des clés les plus spécifiques trouvées |
 | `valeur` | `core/migration/circuit.py`, `filtres.py` | Paramètre de `_vers_json` / des routines de normalisation |
 | `valeur_champ` | `core/migration/connecteur_fec.py` | Fonction : valeur nettoyée d'une colonne (remplace `val`) ; dans `filtres._condition` : valeur brute du champ testé |
+| `valeur_element` | `core/yaml_min.py` | Valeur d'un élément de liste lu |
 | `valeur_entete` | `tests/test_interface.py` | Valeur lue de l'en-tête dans `entete_obligatoire` |
 | `valeur_lue` | `tests/test_yaml_min.py` | Valeur lue par parse_yaml |
+| `valeur_si_vide` | `core/yaml_min.py` | Paramètre : valeur d'une clé sans valeur ni bloc |
 | `ValeurBinaire` | `deploy/addons/concorde/wizard/concorde_import_wizard.py` | Type d'une valeur lue dans un champ Binary (toutes versions d'Odoo) |
 | `ValeurCellule` | `core/mapping.py` | Type d'une valeur de cellule .xlsx (str, int, float, bool) |
 | `ValeurParDefaut` | `core/xml_sur.py` | Type de la valeur par défaut de `ElementXml.get` |
@@ -722,6 +801,7 @@ Avant d'en créer une, vérifier (casse ignorée) qu'elle n'existe pas déjà.
 | `ValeurYaml` | `core/yaml_min.py` | Type récursif d'une valeur YAML (scalaire, liste, dict) |
 | `variable_docker` | `interface/serveur.py` | Nom de variable POSTGRES_* (docker) |
 | `variable_pg` | `interface/serveur.py` | Nom de variable PG* (libpq) |
+| `verifier_erreur` | `tests/test_yaml_min.py` | Routine : vérifie l'ErreurYaml et la ligne citée |
 | `verifier_refus` | `tests/test_plan_comptable.py` | Routine : refus avec le nom du fichier et la cause |
 | `version` | `core/odoo_source.py` | Version du module base lue en SQL (`_version`) |
 | `version_attendue` | `injectors/socle_odoo.py` | Préfixe de version Odoo attendu (ex. « 17 ») |

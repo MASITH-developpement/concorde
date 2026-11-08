@@ -5,15 +5,40 @@ Le module Odoo porte la même version au format `17.0.X.Y.Z` (`deploy/addons/con
 
 ## [1.5.2] — 2026-11-08
 ### Ajouté
-- 157 tests : `xlsx_vers_fec` (30 % → 99 %), `mapping` (25 % → 99 %),
-  `plan_comptable` (17 % → 99 %), `yaml_min` (0 % → 98 %). Couverture de
-  `core` + `interface` : 72 % → 82 %.
-- CI : couverture mesurée (`coverage`), plancher 82 % (`pyproject.toml`) ;
+- Tests : `xlsx_vers_fec` (30 % → 99 %), `mapping` (25 % → 100 %),
+  `plan_comptable` (17 % → 100 %), `yaml_min` (0 % → 100 %). Couverture de
+  `core` + `interface` : 72 % → 83 % ; 178 → 399 tests.
+- CI : couverture mesurée (`coverage`), plancher 83 % (`pyproject.toml`) ;
   `pragma: no cover` ajouté aux motifs interdits.
 - `tests/classeurs_xlsx.py` : fabrication commune des classeurs .xlsx de test.
+### Corrigé
+- Plan comptable : les types de compte produits sont tous des types Odoo valides
+  (17 à 20, mesurés dans les images) — « Banque »/« Caisse » donnaient `bank`/
+  `cash`, refusés par Odoo à la création du compte ; un type Odoo écrit tel quel
+  (`asset_fixed`, `liability_non_current`…) n'est plus remplacé par un type plus
+  général ; la correspondance la plus spécifique l'emporte ; un libellé ambigu
+  n'est plus deviné ; en-têtes « Numéro/Type de compte » reconnus ; un doublon
+  identique n'est rendu qu'une fois et un conflit de types est nommé.
+- Dates JJ/MM/AAAA dont le jour vaut 19 ou 20 (ex. 20/12/2020) : refusées à
+  tort, lues désormais selon la position des séparateurs. Les formats mal
+  construits lus par hasard (`05/0124`) sont refusés.
+- Mapping : toute entrée illisible (JSON invalide ou objet, fichier absent,
+  paire incomplète, cellule `#N/A` ou nombre illisible, XML invalide) donne une
+  ErreurMapping explicite au lieu d'une erreur Python ; le journal n'est plus
+  laissé à moitié renommé en cas d'erreur ; la feuille désignée par un chemin
+  absolu est la bonne ; un en-tête en double ou réparti sur deux lignes est
+  refusé ; un journal canonique vide fourni est reconnu.
+- Lecteur YAML : listes `[a, b]`, commentaires de fin de ligne, listes et tables
+  imbriquées dans une liste ; un retrait incohérent ou une construction non
+  gérée lève `ErreurYaml` (ligne citée) au lieu de perdre des données.
 ### Modifié
 - `xlsx_vers_fec` : retrait du seul `pragma: no cover` ; le repli sans
   openpyxl est maintenant testé.
+- Lecture des cellules (mapping et plan comptable) : une cellule en erreur Excel
+  ou illisible arrête la lecture avec la cellule citée, même dans une colonne
+  non utilisée.
+- `lettres_colonne` (`core/xlsx_ecrire.py`) : une seule routine pour les lettres
+  de colonne Excel (trois copies auparavant).
 
 ## [1.5.1] — 2026-11-08
 ### Corrigé

@@ -54,14 +54,22 @@ def echapper_xml(texte: str, entites: dict[str, str] | None = None) -> str:
     return texte
 
 
-def _col(n: int) -> str:
-    """Numéro de colonne 0-based -> lettres Excel (0 -> A, 26 -> AA)."""
-    s = ""
-    n += 1
-    while n:
-        n, r = divmod(n - 1, 26)
-        s = chr(65 + r) + s
-    return s
+def lettres_colonne(index_colonne: int) -> str:
+    """Lettres Excel d'une colonne : 0 -> 'A', 25 -> 'Z', 26 -> 'AA'.
+
+    Rôle : composer ou citer la référence d'une cellule.
+    Paramètres : index_colonne, index de colonne à partir de 0.
+    Retour : les lettres de la colonne.
+    Erreurs : aucune.
+    Usages : ecrire_xlsx, mapping (colonnes citées dans les erreurs),
+    tests/classeurs_xlsx.py.
+    """
+    lettres = ""
+    reste = index_colonne + 1
+    while reste:
+        reste, chiffre = divmod(reste - 1, 26)
+        lettres = chr(65 + chiffre) + lettres
+    return lettres
 
 
 def euros_texte(c: int, separateur: str = ".") -> str:
@@ -164,7 +172,7 @@ def ecrire_xlsx(
                 )
                 entete = "".join(
                     '<c r="%s1" s="3" t="inlineStr"><is><t>%s</t></is></c>'
-                    % (_col(j), echapper_xml(h))
+                    % (lettres_colonne(j), echapper_xml(h))
                     for j, h in enumerate(entetes)
                 )
                 f.write(('<row r="1">%s</row>' % entete).encode("utf-8"))
@@ -172,7 +180,7 @@ def ecrire_xlsx(
                 for n, ligne in enumerate(lignes, 1):
                     r = n + 1
                     cellules = "".join(
-                        _cellule("%s%d" % (_col(j), r), v)
+                        _cellule("%s%d" % (lettres_colonne(j), r), v)
                         for j, v in enumerate(ligne)
                     )
                     f.write(
@@ -183,7 +191,7 @@ def ecrire_xlsx(
                 comptes[nom] = n
                 filtre = (
                     '<autoFilter ref="A1:%s%d"/>'
-                    % (_col(len(entetes) - 1), n + 1)
+                    % (lettres_colonne(len(entetes) - 1), n + 1)
                     if entetes
                     else ""
                 )

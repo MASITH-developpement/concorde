@@ -850,6 +850,99 @@ class TestDateFec(unittest.TestCase):
                     str(contexte_erreur.exception), message_attendu
                 )
 
+    def test_chaque_jour_jj_mm_aaaa(self) -> None:
+        """Jours 01 à 31 : les séparateurs fixent l'ordre JJ/MM/AAAA.
+
+        Un jour 19 ou 20 ne doit jamais être lu comme un siècle.
+        """
+        for separateur in ("/", "-", ".", " "):
+            for jour in range(1, 32):
+                valeur = "%02d%s12%s2020" % (jour, separateur, separateur)
+                with self.subTest(valeur=valeur):
+                    self.assertEqual(
+                        _date_fec(valeur, "EcritureDate"), "202012%02d" % jour
+                    )
+
+    def test_chaque_jour_aaaa_mm_jj(self) -> None:
+        """Jours 01 à 31 : un premier groupe de 4 chiffres est l'année."""
+        for separateur in ("/", "-", ".", " "):
+            for jour in range(1, 32):
+                valeur = "2020%s12%s%02d" % (separateur, separateur, jour)
+                with self.subTest(valeur=valeur):
+                    self.assertEqual(
+                        _date_fec(valeur, "EcritureDate"), "202012%02d" % jour
+                    )
+
+    def test_dates_separees_acceptees(self) -> None:
+        """Jours 19 et 20, années bissextiles, JJ/MM/AA et bornes."""
+        cas_acceptes = [
+            ("20/12/2020", "20201220"),
+            ("19/05/2024", "20240519"),
+            ("18/05/2024", "20240518"),
+            ("20-01-1999", "19990120"),
+            ("19.12.2019", "20191219"),
+            ("29/02/2024", "20240229"),
+            ("2024/02/29", "20240229"),
+            ("20/12/20", "20201220"),
+            ("19/05/69", "20690519"),
+            ("19/05/70", "19700519"),
+            ("01/01/1900", "19000101"),
+            ("31/12/2100", "21001231"),
+            ("  20/12/2020  ", "20201220"),
+        ]
+        for valeur, attendu in cas_acceptes:
+            with self.subTest(valeur=valeur):
+                self.assertEqual(_date_fec(valeur, "EcritureDate"), attendu)
+
+    def test_dates_separees_refusees(self) -> None:
+        """Dates impossibles, années hors bornes, groupes irréguliers."""
+        format_inconnu = (
+            "(formats attendus : date Excel, AAAAMMJJ, JJ/MM/AAAA)"
+        )
+        cas_refuses = [
+            ("31/02/2024", "(ordre JJMMAAAA)"),
+            ("29/02/2023", "(ordre JJMMAAAA)"),
+            ("31/04/2024", "(ordre JJMMAAAA)"),
+            ("12/13/2024", "(ordre JJMMAAAA)"),
+            ("00/12/2020", "(ordre JJMMAAAA)"),
+            ("2024-02-30", "(ordre AAAAMMJJ)"),
+            ("2024-13-01", "(ordre AAAAMMJJ)"),
+            ("31/02/24", "(ordre JJMMAA)"),
+            ("01/01/1899", "(ordre JJMMAAAA)"),
+            ("01/01/2101", "(ordre JJMMAAAA)"),
+            ("1899-12-31", "(ordre AAAAMMJJ)"),
+            ("5/1/2024", format_inconnu),
+            ("2024-1-5", format_inconnu),
+            ("05/0124", format_inconnu),
+            ("2024-01-05 10:00", format_inconnu),
+            ("05/01/2024/01", format_inconnu),
+            ("/05/01/2024", format_inconnu),
+            ("05/01/2O24", format_inconnu),
+            ("20240105.0", format_inconnu),
+            ("2024010", format_inconnu),
+        ]
+        for valeur, fin_attendue in cas_refuses:
+            with self.subTest(valeur=valeur):
+                with self.assertRaises(ErreurFEC) as contexte_erreur:
+                    _date_fec(valeur, "EcritureDate")
+                self.assertEqual(
+                    str(contexte_erreur.exception),
+                    "Date invalide en colonne EcritureDate : %r %s"
+                    % (valeur, fin_attendue),
+                )
+
+    def test_suite_compacte_lue_aaaammjj(self) -> None:
+        """Huit chiffres sans séparateur : AAAAMMJJ (norme FEC) d'abord."""
+        self.assertEqual(_date_fec("20201220", "EcritureDate"), "20201220")
+        self.assertEqual(_date_fec("05012024", "EcritureDate"), "20240105")
+        with self.assertRaises(ErreurFEC) as contexte_erreur:
+            _date_fec("20122020", "EcritureDate")
+        self.assertEqual(
+            str(contexte_erreur.exception),
+            "Date invalide en colonne EcritureDate : '20122020' "
+            "(ordre AAAAMMJJ)",
+        )
+
 
 class TestCentimes(unittest.TestCase):
     """Montants en centimes : tolérance 0, aucun arrondi silencieux."""
@@ -897,6 +990,7 @@ class TestDateQuadra(unittest.TestCase):
         self.assertEqual(
             _date_quadra(datetime(2024, 2, 1), " 29 ", "N 7"), "20240229"
         )
+        self.assertEqual(_date_quadra("20/12/2020", 31, "N 7"), "20201231")
 
     def test_refus(self) -> None:
         """Jour hors 1-31, jour inexistant, période invalide."""
@@ -1160,16 +1254,10 @@ class TestConversionStandard(unittest.TestCase):
 
     def test_refus_classeur_sans_donnees(self) -> None:
         """En-tête sans ligne exploitable : erreur nommant le fichier."""
-        self.assertTrue(
-            message_erreur(
-                self,
-                ErreurFEC,
-                None,
-                [ENTETE_MINIMALE],
-            ).startswith(
-                "Aucune ligne d'ecriture exploitable dans 'essai.xlsx' "
-                "apres l'en-tete"
-            )
+        self.assertEqual(
+            message_erreur(self, ErreurFEC, None, [ENTETE_MINIMALE]),
+            "Aucune ligne d'ecriture exploitable dans 'essai.xlsx' apres "
+            "l'en-tete (ligne 1).",
         )
 
     def test_refus_entete_introuvable(self) -> None:

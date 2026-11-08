@@ -19,7 +19,7 @@ import re
 import unicodedata
 import zipfile
 from collections.abc import Callable, Iterable, Mapping, Sequence
-from datetime import date, datetime, timedelta
+from datetime import date, timedelta
 from typing import TypedDict
 from .xml_sur import lire_xml
 
@@ -44,6 +44,20 @@ LigneXlsx = Sequence[CelluleXlsx] | None
 
 class ErreurFEC(ValueError):
     """Classeur impossible à convertir en FEC : message explicite."""
+
+
+def _erreur_sans_ecriture(nom_fichier: str, idx: int) -> ErreurFEC:
+    """Erreur d'un classeur sans aucune ligne d'ecriture exploitable.
+
+    Parametres : nom_fichier, fichier cite ; idx, rang (base 0) de la
+    ligne d'en-tete.
+    Retour : l'ErreurFEC a lever, citant la ligne d'en-tete (base 1).
+    Usages : conversion standard (xlsx_vers_fec) et _convertir_quadra.
+    """
+    return ErreurFEC(
+        "Aucune ligne d'ecriture exploitable dans %r apres l'en-tete "
+        "(ligne %d)." % (nom_fichier, idx + 1)
+    )
 
 
 class LigneQuadra(TypedDict):
@@ -181,62 +195,88 @@ def _nettoyer_texte(v: object) -> str:
     return s
 
 
+# Separateurs de date admis (une suite de separateurs compte pour un seul).
+SEPARATEURS_DATE = re.compile(r"[/.\- ]+")
+
+# Longueurs des groupes de chiffres -> (ordre, rang annee, mois, jour).
+ORDRES_DATE: dict[tuple[int, ...], tuple[str, int, int, int]] = {
+    (4, 2, 2): ("AAAAMMJJ", 0, 1, 2),
+    (2, 2, 4): ("JJMMAAAA", 2, 1, 0),
+    (2, 2, 2): ("JJMMAA", 2, 1, 0),
+}
+
+ANNEE_MIN, ANNEE_MAX = 1900, 2100  # annees plausibles sur 4 chiffres
+
+
+def _groupes_date(texte: str, contexte: str, v: object) -> list[str]:
+    """Decoupe une date texte en groupes annee / mois / jour.
+
+    Avec separateurs, leur position fixe l'ordre. Sans separateur, huit
+    chiffres se lisent AAAAMMJJ (norme FEC), sinon JJMMAAAA si seule
+    cette lecture donne une annee plausible ; six chiffres = JJMMAA.
+    Parametres : texte, valeur nettoyee ; contexte, colonne citee ;
+    v, valeur d'origine citee dans le message.
+    Retour : groupes de chiffres dans l'ordre lu.
+    Erreurs : ErreurFEC si aucune lecture plausible (jamais devinee).
+    Usage : _date_fec.
+    """
+    groupes = SEPARATEURS_DATE.split(texte)
+    if len(groupes) != 1:
+        return groupes
+    if len(texte) == 6:
+        return [texte[:2], texte[2:4], texte[4:]]
+    if len(texte) != 8 or not texte.isascii() or not texte.isdigit():
+        return groupes
+    if ANNEE_MIN <= int(texte[:4]) <= ANNEE_MAX:
+        return [texte[:4], texte[4:6], texte[6:]]
+    if ANNEE_MIN <= int(texte[4:]) <= ANNEE_MAX:
+        return [texte[:2], texte[2:4], texte[4:]]
+    raise ErreurFEC(
+        "Date ambigue en colonne %s : %r (ni AAAAMMJJ ni JJMMAAAA "
+        "plausibles : re-exportez la colonne en date Excel)" % (contexte, v)
+    )
+
+
 def _date_fec(v: object, contexte: str) -> str:
-    """Convertit une cellule date en AAAAMMJJ. Jamais de date devinee."""
-    if isinstance(v, datetime):
-        return v.strftime("%Y%m%d")
+    """Convertit une cellule date en AAAAMMJJ. Jamais de date devinee.
+
+    Formats admis : date Excel, AAAAMMJJ, JJMMAA, et avec separateurs
+    (/ - . espace) AAAA/MM/JJ, JJ/MM/AAAA ou JJ/MM/AA.
+    Parametres : v, cellule lue ; contexte, colonne citee en erreur.
+    Retour : date AAAAMMJJ.
+    Erreurs : ErreurFEC si le format est inconnu, ambigu, l'annee hors
+    1900-2100 ou la date inexistante.
+    Usages : conversion standard, _date_quadra.
+    """
     if isinstance(v, date):
         return v.strftime("%Y%m%d")
-    s = _nettoyer_texte(v)
-    chiffres = (
-        s.replace("/", "").replace("-", "").replace(".", "").replace(" ", "")
-    )
-    if len(chiffres) == 8 and chiffres.isdigit():
-        # AAAAMMJJ ou JJMMAAAA : leve par plausibilite de l'annee,
-        # CONCORDE ne devine jamais une date ambigue.
-        if 1900 <= int(chiffres[:4]) <= 2100:
-            annee, mois, jour = (
-                int(chiffres[:4]),
-                int(chiffres[4:6]),
-                int(chiffres[6:8]),
-            )
-            ordre = "AAAAMMJJ"
-        elif 1900 <= int(chiffres[4:]) <= 2100:
-            jour, mois, annee = (
-                int(chiffres[:2]),
-                int(chiffres[2:4]),
-                int(chiffres[4:]),
-            )
-            ordre = "JJMMAAAA"
-        else:
-            raise ErreurFEC(
-                "Date ambigue en colonne %s : %r (ni AAAAMMJJ ni JJMMAAAA "
-                "plausibles : re-exportez la colonne en date Excel)"
-                % (contexte, v)
-            )
-    elif len(chiffres) == 6 and chiffres.isdigit():
-        # JJMMAA (Quadra) : annee 19xx/20xx selon le siecle plausible
-        jour, mois, annee = (
-            int(chiffres[:2]),
-            int(chiffres[2:4]),
-            int(chiffres[4:6]),
-        )
-        annee += 2000 if annee < 70 else 1900
-        ordre = "JJMMAA"
-    else:
+    texte = _nettoyer_texte(v)
+    groupes = _groupes_date(texte, contexte, v)
+    lecture = ORDRES_DATE.get(tuple(len(groupe) for groupe in groupes))
+    if lecture is None or not all(
+        groupe.isascii() and groupe.isdigit() for groupe in groupes
+    ):
         raise ErreurFEC(
             "Date invalide en colonne %s : %r "
             "(formats attendus : date Excel, AAAAMMJJ, JJ/MM/AAAA)"
             % (contexte, v)
         )
+    ordre, rang_annee, rang_mois, rang_jour = lecture
+    annee = int(groupes[rang_annee])
+    if len(groupes[rang_annee]) == 2:
+        annee += 2000 if annee < 70 else 1900
     try:
-        date(annee, mois, jour)
+        date_lue: date | None = date(
+            annee, int(groupes[rang_mois]), int(groupes[rang_jour])
+        )
     except ValueError:
+        date_lue = None
+    if date_lue is None or not ANNEE_MIN <= annee <= ANNEE_MAX:
         raise ErreurFEC(
             "Date invalide en colonne %s : %r (ordre %s)"
             % (contexte, v, ordre)
         )
-    return "%04d%02d%02d" % (annee, mois, jour)
+    return date_lue.strftime("%Y%m%d")
 
 
 def _centimes(v: object, contexte: str) -> int:
@@ -711,10 +751,7 @@ def _convertir_quadra(
         )
 
     if not lignes:
-        raise ErreurFEC(
-            "Aucune ligne d'ecriture exploitable dans %r apres l'en-tete "
-            "(ligne %d)." % (nom_fichier, idx + 1)
-        )
+        raise _erreur_sans_ecriture(nom_fichier, idx)
 
     # ---- cascades : regroupements explicites, du plus fin au plus large --
     # Un groupe = liste de lignes + cumuls. Soldé = debit == credit.
@@ -950,10 +987,7 @@ def xlsx_vers_fec(brut: bytes, nom_fichier: str = "") -> bytes:
         )
 
     if not lignes_fec:
-        raise ErreurFEC(
-            "Aucune ligne d'ecriture exploitable dans %r apres l'en-tete "
-            "(colonne %s)." % (nom_fichier, "ligne %d" % (idx + 1))
-        )
+        raise _erreur_sans_ecriture(nom_fichier, idx)
     return _encoder_fec(lignes_fec)
 
 

@@ -9,7 +9,7 @@ import os
 import tempfile
 import unittest
 
-from core.yaml_min import ValeurYaml, charger_yaml, parse_yaml
+from core.yaml_min import ErreurYaml, ValeurYaml, charger_yaml, parse_yaml
 from tests.outils import RACINE_DEPOT
 
 # Chemin du vrai fichier de configuration à la racine du dépôt.
@@ -243,6 +243,193 @@ class TestStructure(unittest.TestCase):
         )
 
 
+class TestCommentairesEnFinDeLigne(unittest.TestCase):
+    """Un ``#`` précédé d'un espace, hors guillemets, ouvre un commentaire."""
+
+    def test_commentaire_retire_de_la_valeur(self) -> None:
+        """Le commentaire en fin de ligne ne fait pas partie de la valeur."""
+        self.assertEqual(
+            lire_lignes("a: val # commentaire", "b: 3  # nombre"),
+            {"a": "val", "b": 3},
+        )
+
+    def test_diese_entre_guillemets_ou_colle_reste_texte(self) -> None:
+        """Un ``#`` entre guillemets ou collé au texte reste du texte."""
+        self.assertEqual(
+            lire_lignes(
+                "a: 'x # y' # note",
+                "b: c#d",
+                "c: l'arrondi # note",
+            ),
+            {"a": "x # y", "b": "c#d", "c": "l'arrondi"},
+        )
+
+    def test_commentaire_apres_tiret(self) -> None:
+        """Après un tiret, le commentaire n'est ni valeur ni clé."""
+        self.assertEqual(lire_lignes("- x # c: d", "- 2 # n"), ["x", 2])
+
+
+class TestListesEnLigne(unittest.TestCase):
+    """Listes de scalaires écrites entre crochets sur une seule ligne."""
+
+    def test_liste_de_scalaires(self) -> None:
+        """Chaque élément est converti ; les guillemets sont retirés."""
+        self.assertEqual(
+            lire_lignes('versions: ["14", "15", 16, odoo, true]'),
+            {"versions": ["14", "15", 16, "odoo", True]},
+        )
+
+    def test_liste_vide(self) -> None:
+        """``[]`` et ``[ ]`` donnent une liste vide."""
+        self.assertEqual(
+            lire_lignes("a: []", "b: [ ]  # vide"), {"a": [], "b": []}
+        )
+
+    def test_virgule_et_crochet_entre_guillemets(self) -> None:
+        """Virgule et crochet entre guillemets restent dans l'élément."""
+        self.assertEqual(
+            lire_lignes("a: [\"x, y\", '[z]', w]"),
+            {"a": ["x, y", "[z]", "w"]},
+        )
+
+    def test_liste_en_ligne_comme_element(self) -> None:
+        """Un élément de liste peut être une liste en ligne."""
+        self.assertEqual(lire_lignes("- [1, 2]", "- 3"), [[1, 2], 3])
+
+    def test_liste_entre_guillemets_reste_chaine(self) -> None:
+        """Des crochets entre guillemets forment une simple chaîne."""
+        self.assertEqual(lire_lignes('a: "[1, 2]"'), {"a": "[1, 2]"})
+
+    def test_constructions_non_gerees(self) -> None:
+        """Imbrication, table en ligne, crochet non fermé, élément vide."""
+        for texte_yaml in (
+            "a: [[1], 2]",
+            "a: [1, {b: 2}]",
+            "a: {b: 1}",
+            "a: [1, 2",
+            "a: [1, , 2]",
+            "a: [1, 2,]",
+        ):
+            with self.subTest(texte_yaml=texte_yaml):
+                with self.assertRaises(ErreurYaml):
+                    parse_yaml(texte_yaml)
+
+
+class TestListesImbriquees(unittest.TestCase):
+    """Blocs (liste, table) imbriqués sous un élément de liste."""
+
+    def test_liste_sous_un_element_de_liste(self) -> None:
+        """Une liste sous un attribut d'élément lui appartient."""
+        self.assertEqual(
+            lire_lignes(
+                "liste:",
+                "  - nom: a",
+                "    sous:",
+                "      - x",
+                "fin: 1",
+            ),
+            {"liste": [{"nom": "a", "sous": ["x"]}], "fin": 1},
+        )
+
+    def test_table_sous_un_element_de_liste(self) -> None:
+        """Une table sous un attribut d'élément n'est pas aplatie."""
+        self.assertEqual(
+            lire_lignes("- nom: a", "  opts:", "    x: 1", "- nom: b"),
+            [{"nom": "a", "opts": {"x": 1}}, {"nom": "b"}],
+        )
+
+    def test_liste_de_listes(self) -> None:
+        """Un tiret suivi d'un tiret ouvre une liste imbriquée."""
+        self.assertEqual(
+            lire_lignes("- - a", "  - b", "- c"), [["a", "b"], "c"]
+        )
+
+    def test_tiret_seul(self) -> None:
+        """Un tiret seul prend le bloc indenté qui suit, sinon ""."""
+        self.assertEqual(
+            lire_lignes("-", "  a: 1", "  b: 2", "-"), [{"a": 1, "b": 2}, ""]
+        )
+
+    def test_url_en_element_reste_scalaire(self) -> None:
+        """Un ``:`` non suivi d'un espace ne fait pas une clé."""
+        self.assertEqual(
+            lire_lignes("- http://127.0.0.1:8069"), ["http://127.0.0.1:8069"]
+        )
+
+    def test_cle_entre_guillemets_avec_deux_points(self) -> None:
+        """Le ``: `` d'une clé entre guillemets reste dans la clé."""
+        self.assertEqual(lire_lignes("'a: b': 1"), {"a: b": 1})
+
+
+class TestErreursExplicites(unittest.TestCase):
+    """Une construction non gérée lève ``ErreurYaml``, ligne citée."""
+
+    def verifier_erreur(self, numero_attendu: int, *lignes_yaml: str) -> None:
+        """Vérifie que la lecture échoue en citant la bonne ligne.
+
+        Rôle : contrôler à la fois le type d'erreur, l'attribut
+        ``numero_ligne`` et sa présence dans le message.
+        Paramètres : ``numero_attendu``, numéro (à partir de 1) de la ligne
+        fautive ; ``lignes_yaml``, les lignes du document.
+        Retour : aucun.
+        Erreurs : échec du test si aucune ``ErreurYaml`` n'est levée ou si
+        la ligne citée diffère.
+        Usages : tous les tests de ``TestErreursExplicites``.
+        """
+        with self.assertRaises(ErreurYaml) as contexte_erreur:
+            lire_lignes(*lignes_yaml)
+        self.assertEqual(
+            contexte_erreur.exception.numero_ligne, numero_attendu
+        )
+        self.assertIn(
+            f"ligne {numero_attendu}", str(contexte_erreur.exception)
+        )
+
+    def test_erreur_est_une_value_error(self) -> None:
+        """``ErreurYaml`` hérite de ``ValueError``."""
+        self.assertTrue(issubclass(ErreurYaml, ValueError))
+
+    def test_retrait_incoherent(self) -> None:
+        """Une ligne plus indentée sous une valeur déjà donnée."""
+        self.verifier_erreur(2, "a: 1", "  b: 2", "c: 3")
+
+    def test_retrait_entre_deux_niveaux(self) -> None:
+        """Une ligne revenant à un retrait jamais ouvert."""
+        self.verifier_erreur(4, "a:", "    b: 1", "    c: 2", "  d: 3")
+
+    def test_retrait_inferieur_au_premier(self) -> None:
+        """Une ligne moins indentée que la première ligne du document."""
+        self.verifier_erreur(3, "  a: 1", "", "b: 2")
+
+    def test_liste_apres_cle_au_meme_niveau(self) -> None:
+        """Un tiret là où une clé de la table est attendue."""
+        self.verifier_erreur(2, "a: 1", "- x")
+
+    def test_cle_apres_liste_racine(self) -> None:
+        """Une clé au niveau d'une liste racine."""
+        self.verifier_erreur(3, "- x", "# note", "b: 1")
+
+    def test_cle_apres_liste_indentee(self) -> None:
+        """Une clé au retrait d'une liste qui n'est pas une table."""
+        self.verifier_erreur(3, "a:", "  - x", "  b: 1")
+
+    def test_contenu_sous_un_scalaire_de_liste(self) -> None:
+        """Un bloc indenté sous un élément scalaire de liste."""
+        self.verifier_erreur(2, "- x", "  y: 1")
+
+    def test_ligne_sans_cle(self) -> None:
+        """Une ligne de table sans ``clé:`` n'est pas devinée."""
+        self.verifier_erreur(2, "a: 1", "texte libre")
+
+    def test_cle_entre_guillemets_non_fermee(self) -> None:
+        """Une clé dont le guillemet n'est pas fermé n'est pas devinée."""
+        self.verifier_erreur(1, "'a: 1")
+
+    def test_numero_compte_lignes_vides_et_commentaires(self) -> None:
+        """Le numéro cité est celui du texte d'origine."""
+        self.verifier_erreur(3, "# titre", "", "a: [1", "b: {c: 1}")
+
+
 class TestChargementFichier(unittest.TestCase):
     """Lecture d'un fichier YAML depuis le disque."""
 
@@ -325,6 +512,16 @@ class TestVraieConfiguration(unittest.TestCase):
         self.assertEqual(regles["tolerance_concordance"], 0)
         self.assertIs(regles["jamais_float"], True)
         self.assertEqual(regles["montants"], "centimes_entier")
+
+    def test_cible(self) -> None:
+        """La section ``cible`` : versions en liste, chaînes exactes."""
+        cible = section(self.configuration, "cible")
+        self.assertEqual(
+            cible["versions"], ["14", "15", "16", "17", "18", "19"]
+        )
+        self.assertEqual(cible["version_native"], "17")
+        self.assertEqual(cible["conversion_chainee"], "14->15->16->17->18->19")
+        self.assertEqual(cible["mode_defaut"], "dry-run")
 
 
 if __name__ == "__main__":

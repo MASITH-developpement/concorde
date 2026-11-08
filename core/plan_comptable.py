@@ -8,11 +8,13 @@ du fichier reste bloquant (tolérance 0, aucun compte inventé).
 
 Colonnes détectées automatiquement (en-têtes normalisés, indépendants de
 la casse/accents/séparateurs) :
-- code    : « Code », « Numéro », « Compte », « Account Code »...
+- code    : « Code », « Numéro », « Numéro de compte », « Compte »,
+             « Account Code »...
 - intitulé : « Intitulé », « Libellé », « Nom », « Name »,
              « Description », « Account Name »...
-- type    : « Type », « Type de compte »... (optionnel, heuristique
-             receivable/payable sinon non renseigné)
+- type    : « Type », « Type de compte », « Nature »... (optionnel ;
+             sans type lisible, seules les classes PCG client /
+             fournisseur évidentes sont typées, sinon non renseigné)
 Erreurs explicites à la moindre ambiguïté (Marceau : jamais muet).
 """
 
@@ -35,7 +37,9 @@ CLES_CODE = (
     "compte",
     "accountcode",
     "codecompte",
+    "codedecompte",
     "numerocompte",
+    "numerodecompte",
     "ncompte",
     "comptenum",
     "num",
@@ -48,64 +52,93 @@ CLES_INTITULE = (
     "description",
     "accountname",
     "nomcompte",
+    "nomdecompte",
     "intitulecompte",
+    "intituledecompte",
     "libellecompte",
+    "libelledecompte",
 )
-CLES_TYPE = ("type", "typecompte", "accounttype", "account_type", "nature")
+CLES_TYPE = (
+    "type",
+    "typecompte",
+    "typedecompte",
+    "accounttype",
+    "nature",
+)
 
-# types Odoo account.account.account_type (17.0)
-TYPES_ACCOUNT = {
-    "receivable",
-    "payable",
-    "bank",
-    "cash",
-    "credit_card",
-    "asset_current",
-    "asset_non_current",
-    "asset_cash",
-    "asset_fixed",
-    "asset_receivable",
-    "liability_current",
-    "liability_payable",
-    "liability_non_current",
-    "equity",
-    "equity_unallocated",
-    "income",
-    "income_other",
-    "expense",
-    "expense_depreciation",
-    "expense_direct_cost",
-    "off_sheet",
-    "unaffected",
-}
+# account_type Odoo valides (champ account.account.account_type, mesuré
+# dans odoo:17 et odoo:18) : seuls types communs aux versions 17 à 20.
+TYPES_ACCOUNT = frozenset(
+    {
+        "asset_receivable",
+        "asset_cash",
+        "asset_current",
+        "asset_non_current",
+        "asset_prepayments",
+        "asset_fixed",
+        "liability_payable",
+        "liability_credit_card",
+        "liability_current",
+        "liability_non_current",
+        "equity",
+        "equity_unaffected",
+        "income",
+        "income_other",
+        "expense",
+        "expense_depreciation",
+        "expense_direct_cost",
+        "off_balance",
+    }
+)
 
-# libellés humains -> account_type Odoo
+# libellés humains (normalisés par _norm_entete) -> account_type Odoo
 CORRESP_TYPE = {
     "client": "asset_receivable",
     "fournisseur": "liability_payable",
     "receivable": "asset_receivable",
     "payable": "liability_payable",
-    "banque": "bank",
-    "bank": "bank",
-    "caisse": "cash",
-    "cash": "cash",
+    "banque": "asset_cash",
+    "bank": "asset_cash",
+    "caisse": "asset_cash",
+    "cash": "asset_cash",
+    "cartedecredit": "liability_credit_card",
+    "creditcard": "liability_credit_card",
     "actif": "asset_current",
     "asset": "asset_current",
     "actifcirculant": "asset_current",
+    "actifcourant": "asset_current",
     "immobilisation": "asset_fixed",
-    "actifnoncirculant": "asset_fixed",
+    "actifnoncirculant": "asset_non_current",
+    "actifnoncourant": "asset_non_current",
+    "chargesconstateesdavance": "asset_prepayments",
     "passif": "liability_current",
     "liability": "liability_current",
     "passifcirculant": "liability_current",
+    "passifcourant": "liability_current",
+    "passifnoncourant": "liability_non_current",
     "capitauxpropres": "equity",
     "equity": "equity",
+    "nonaffecte": "equity_unaffected",
+    "unaffected": "equity_unaffected",
     "produit": "income",
     "income": "income",
     "revenu": "income",
+    "autresproduits": "income_other",
     "charge": "expense",
     "expense": "expense",
     "depense": "expense",
-    "nonaffecte": "unaffected",
+    "amortissement": "expense_depreciation",
+    "dotation": "expense_depreciation",
+    "coutdirect": "expense_direct_cost",
+    "horsbilan": "off_balance",
+    "offsheet": "off_balance",
+}
+
+# texte normalisé -> account_type : types Odoo écrits tels quels (« _ »
+# retiré par _norm_entete) puis libellés humains.
+CORRESP_TYPE_NORMALISE = {
+    **{_norm_entete(type_odoo): type_odoo for type_odoo in TYPES_ACCOUNT},
+    **CORRESP_TYPE,
 }
 
 
@@ -129,7 +162,8 @@ def charger_plan_xlsx(
     Retourne une liste ordonnée de dicts {code, nom, type} :
     - code  : texte non vide (jamais '10130000.0') ;
     - nom   : texte non vide ;
-    - type  : account_type Odoo 17 si déterminé SINON None (explicite :
+    - type  : account_type Odoo (TYPES_ACCOUNT) si déterminé SINON None
+              (explicite :
               le wizard créera le compte sans type forcé, Odoo applique
               le type par défaut de la séquence).
     """
@@ -195,11 +229,19 @@ def charger_plan_xlsx(
                 "un libellé de compte." % code
             )
         typ = _resoudre_type(type_txt, code)
-        if code in vus and vus[code] != (nom, typ):
-            _err(
-                "compte %s défini plusieurs fois avec des intitulés "
-                "différents (%r / %r)." % (code, vus[code][0], nom)
-            )
+        if code in vus:
+            nom_vu, typ_vu = vus[code]
+            if nom_vu != nom:
+                _err(
+                    "compte %s défini plusieurs fois avec des intitulés "
+                    "différents (%r / %r)." % (code, nom_vu, nom)
+                )
+            if typ_vu != typ:
+                _err(
+                    "compte %s défini plusieurs fois avec des types "
+                    "différents (%r / %r)." % (code, typ_vu, typ)
+                )
+            continue  # doublon strictement identique : déjà rendu
         vus[code] = (nom, typ)
         comptes.append({"code": code, "nom": nom, "type": typ})
     if not comptes:
@@ -208,24 +250,36 @@ def charger_plan_xlsx(
 
 
 def _resoudre_type(type_txt: str, code: str) -> Optional[str]:
-    """Texte de type -> account_type Odoo 17, sinon None (jamais deviné).
+    """Texte de type -> account_type Odoo (TYPES_ACCOUNT), sinon None.
 
-    Heuristique EXPLICITE et conservatrice : sans colonne type lisible,
-    on se limite aux classes PCG évidentes (411 -> receivable, 401 ->
-    payable). Tout le reste -> None : Odoo applique son défaut, aucun
-    type inventé.
+    Rôle : traduire la colonne type du client sans jamais deviner.
+    Paramètres : type_txt, texte de la colonne type (vide si absente) ;
+    code, numéro du compte.
+    Retour : un type Odoo valide écrit tel quel est rendu tel quel ;
+    sinon le libellé est cherché dans CORRESP_TYPE_NORMALISE, la clé la
+    plus spécifique gagnant (une clé contenue dans une autre clé trouvée
+    est écartée) ; si les clés restantes désignent des types différents,
+    le libellé est ambigu. Sans type lisible : classes PCG évidentes
+    (411 / 416 / 419 -> asset_receivable, 401 / 408 / 409 ->
+    liability_payable), sinon None (Odoo applique son défaut).
+    Erreurs : aucune.
+    Usages : charger_plan_xlsx.
     """
-    t = _norm_entete(type_txt)
-    if t:
-        for cle, acct in CORRESP_TYPE.items():
-            if cle in t:
-                return acct
-        if t in TYPES_ACCOUNT:
-            return t
-    c = (code or "").lstrip("0")
-    if c.startswith(("411", "416", "419")):
+    texte_normalise = _norm_entete(type_txt)
+    cles_trouvees = [
+        cle for cle in CORRESP_TYPE_NORMALISE if cle in texte_normalise
+    ]
+    types_specifiques = {
+        CORRESP_TYPE_NORMALISE[cle]
+        for cle in cles_trouvees
+        if not any(cle != autre and cle in autre for autre in cles_trouvees)
+    }
+    if len(types_specifiques) == 1:
+        return types_specifiques.pop()
+    code_sans_zeros = (code or "").lstrip("0")
+    if code_sans_zeros.startswith(("411", "416", "419")):
         return "asset_receivable"
-    if c.startswith(("401", "408", "409")):
+    if code_sans_zeros.startswith(("401", "408", "409")):
         return "liability_payable"
     return None
 

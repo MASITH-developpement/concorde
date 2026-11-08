@@ -12,6 +12,8 @@ import io
 import zipfile
 from collections.abc import Mapping, Sequence
 
+from core.xlsx_ecrire import lettres_colonne
+
 # Espace de noms principal d'un classeur SpreadsheetML.
 ESPACE_TABLEUR = "http://schemas.openxmlformats.org/spreadsheetml/2006/main"
 # Espace de noms des relations Office (attribut r:id, type des relations).
@@ -27,23 +29,6 @@ CHEMIN_PREMIERE_FEUILLE = "xl/worksheets/sheet1.xml"
 
 # Valeur que les classeurs de test savent écrire dans une cellule.
 ValeurCellule = str | int | float | None
-
-
-def lettre_colonne(index_colonne: int) -> str:
-    """Rend la lettre Excel d'une colonne (0 -> « A », 26 -> « AA »).
-
-    Rôle : composer la référence d'une cellule.
-    Paramètres : index_colonne, index de colonne à partir de 0.
-    Retour : les lettres de la colonne.
-    Erreurs : aucune.
-    Usages : ligne_valeurs.
-    """
-    lettres = ""
-    reste = index_colonne + 1
-    while reste:
-        reste, chiffre = divmod(reste - 1, 26)
-        lettres = chr(65 + chiffre) + lettres
-    return lettres
 
 
 def cellule_texte(reference: str, texte: str) -> str:
@@ -122,7 +107,7 @@ def ligne_valeurs(numero: int, valeurs: Sequence[ValeurCellule]) -> str:
     return ligne_xml(
         numero,
         [
-            cellule_xml("%s%d" % (lettre_colonne(index), numero), valeur)
+            cellule_xml("%s%d" % (lettres_colonne(index), numero), valeur)
             for index, valeur in enumerate(valeurs)
         ],
     )

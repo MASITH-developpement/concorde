@@ -15,6 +15,8 @@ from typing import Optional
 
 from core.mapping import ErreurMapping
 from core.plan_comptable import (
+    CORRESP_TYPE,
+    TYPES_ACCOUNT,
     CompteLu,
     ErreurPlanComptable,
     charger_plan_xlsx,
@@ -24,6 +26,31 @@ from core.xlsx_ecrire import ecrire_xlsx
 
 # En-têtes usuels d'un plan comptable client (code, intitulé, type).
 ENTETES_PLAN = ("Numéro", "Libellé", "Type")
+
+# account_type valides, mesurés dans les images odoo:17 et odoo:18
+# (champ account.account.account_type) ; communs aux versions 17 à 20.
+TYPES_ODOO_MESURES = frozenset(
+    {
+        "asset_receivable",
+        "asset_cash",
+        "asset_current",
+        "asset_non_current",
+        "asset_prepayments",
+        "asset_fixed",
+        "liability_payable",
+        "liability_credit_card",
+        "liability_current",
+        "liability_non_current",
+        "equity",
+        "equity_unaffected",
+        "income",
+        "income_other",
+        "expense",
+        "expense_depreciation",
+        "expense_direct_cost",
+        "off_balance",
+    }
+)
 
 
 def classeur_plan(
@@ -173,6 +200,48 @@ class TestLecturePlan(unittest.TestCase):
             dictionnaire_plan(comptes), {"706000": ("Prestations", None)}
         )
 
+    def test_doublon_identique_rendu_une_seule_fois(self) -> None:
+        """Un compte répété à l'identique n'est rendu qu'une fois."""
+        comptes = lire_plan(
+            ("Code", "Libellé"),
+            [
+                ("706000", "Prestations"),
+                ("411000", "Clients"),
+                ("706000", "Prestations"),
+            ],
+        )
+        self.assertEqual(
+            comptes,
+            [
+                compte_attendu("706000", "Prestations", None),
+                compte_attendu("411000", "Clients", "asset_receivable"),
+            ],
+        )
+
+    def test_en_tetes_avec_de_compte(self) -> None:
+        """« Numéro de compte », « Intitulé de compte », « Type de compte »."""
+        comptes = lire_plan(
+            ("Numéro de compte", "Intitulé de compte", "Type de compte"),
+            [("706000", "Ventes", "Produit")],
+        )
+        self.assertEqual(
+            comptes, [compte_attendu("706000", "Ventes", "income")]
+        )
+
+    def test_synonymes_de_compte(self) -> None:
+        """« Code de compte », « Libellé de compte », « Nom de compte »."""
+        for entete_code, entete_intitule in (
+            ("Code de compte", "Libellé de compte"),
+            ("Numéro de compte", "Nom de compte"),
+        ):
+            with self.subTest(entete_code=entete_code):
+                comptes = lire_plan(
+                    (entete_code, entete_intitule), [("706000", "Ventes")]
+                )
+                self.assertEqual(
+                    comptes, [compte_attendu("706000", "Ventes", None)]
+                )
+
 
 class TestTypesComptes(unittest.TestCase):
     """Type Odoo : colonne type du client, sinon classe PCG évidente."""
@@ -210,6 +279,64 @@ class TestTypesComptes(unittest.TestCase):
         ):
             with self.subTest(type_odoo=type_odoo):
                 self.assertEqual(type_lu(type_odoo), type_odoo)
+
+    def test_tous_types_odoo_ecrits_tels_quels(self) -> None:
+        """Chaque account_type Odoo valide (avec « _ ») est rendu tel quel."""
+        for type_odoo in sorted(TYPES_ODOO_MESURES):
+            with self.subTest(type_odoo=type_odoo):
+                self.assertEqual(type_lu(type_odoo), type_odoo)
+
+    def test_types_odoo_exactement_la_liste_mesuree(self) -> None:
+        """TYPES_ACCOUNT est exactement la liste mesurée dans Odoo."""
+        self.assertEqual(set(TYPES_ACCOUNT), set(TYPES_ODOO_MESURES))
+
+    def test_correspondances_vers_types_odoo_valides(self) -> None:
+        """Chaque correspondance de libellé rend un account_type valide."""
+        for libelle, type_odoo in CORRESP_TYPE.items():
+            with self.subTest(libelle=libelle):
+                self.assertIn(type_odoo, TYPES_ODOO_MESURES)
+
+    def test_libelles_specifiques(self) -> None:
+        """Le libellé le plus spécifique gagne sur une clé plus courte."""
+        attendus = {
+            "Banque": "asset_cash",
+            "Caisse": "asset_cash",
+            "Carte de crédit": "liability_credit_card",
+            "Hors bilan": "off_balance",
+            "Non affecté": "equity_unaffected",
+            "Résultat non affecté": "equity_unaffected",
+            "Immobilisations": "asset_fixed",
+            "Actif non courant": "asset_non_current",
+            "Actif non circulant": "asset_non_current",
+            "Passif non courant": "liability_non_current",
+            "Charges constatées d'avance": "asset_prepayments",
+            "Amortissement": "expense_depreciation",
+            "Dotation aux amortissements": "expense_depreciation",
+            "Coût direct": "expense_direct_cost",
+            "Autres produits": "income_other",
+        }
+        for type_texte, type_odoo in attendus.items():
+            with self.subTest(type_texte=type_texte):
+                self.assertEqual(type_lu(type_texte), type_odoo)
+
+    def test_anciens_alias_anglais(self) -> None:
+        """Les anciens alias anglais donnent un account_type valide."""
+        attendus = {
+            "receivable": "asset_receivable",
+            "payable": "liability_payable",
+            "bank": "asset_cash",
+            "cash": "asset_cash",
+            "credit_card": "liability_credit_card",
+            "off_sheet": "off_balance",
+            "unaffected": "equity_unaffected",
+        }
+        for type_texte, type_odoo in attendus.items():
+            with self.subTest(type_texte=type_texte):
+                self.assertEqual(type_lu(type_texte), type_odoo)
+
+    def test_libelle_ambigu_non_devine(self) -> None:
+        """Deux correspondances de types différents : None, jamais deviné."""
+        self.assertIsNone(type_lu("Charges et produits", code="471000"))
 
     def test_type_inconnu_sans_classe_evidente(self) -> None:
         """Type illisible et classe non évidente : None, jamais deviné."""
@@ -308,6 +435,15 @@ class TestErreursPlan(unittest.TestCase):
             ("Code", "Intitulé"),
             [("512000", "Banque A"), ("512000", "Banque B")],
             "compte 512000 défini plusieurs fois",
+        )
+
+    def test_doublon_types_differents(self) -> None:
+        """Même code et intitulé, types différents : les types sont cités."""
+        self.verifier_refus(
+            ("Code", "Intitulé", "Type"),
+            [("512000", "Banque", "Banque"), ("512000", "Banque", "Actif")],
+            "compte 512000 défini plusieurs fois avec des types différents "
+            "('asset_cash' / 'asset_current')",
         )
 
     def test_aucun_compte_sous_l_en_tete(self) -> None:

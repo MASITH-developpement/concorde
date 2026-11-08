@@ -15,13 +15,18 @@ Règles :
 
 import io
 import json
+import math
+import posixpath
 import re
 import unicodedata
 import zipfile
+import zlib
 from typing import Any, Callable, NoReturn, Optional, TypedDict, Union
-from .xml_sur import ElementXml, lire_xml
+
+from .xml_sur import ElementXml, ErreurLectureXml, lire_xml
 
 from .canonical import Canonique, extraire_canon
+from .xlsx_ecrire import lettres_colonne
 
 
 class ErreurMapping(RuntimeError):
@@ -85,43 +90,132 @@ def _norm_entete(texte: object) -> str:
     return s
 
 
-def _mapping_depuis_lignes(rows: list[dict[str, Any]]) -> dict[str, str]:
-    """Lignes JSON {quadra, odoo} -> {compte Quadra: compte Odoo}.
+def _texte_compte_mapping(valeur: object, origine: str) -> str:
+    """Compte lu dans un mapping JSON ou une paire -> texte nettoyé.
+
+    Rôle : refuser tout compte qui n'est ni un texte ni un nombre.
+    Paramètres : valeur, compte lu (contenu dynamique) ; origine, source
+    citée dans le message d'erreur.
+    Retour : le compte en texte (strip, jamais '411000.0').
+    Erreurs : ErreurMapping si valeur est un booléen, None, un objet, une
+    liste ou un nombre non fini (NaN, Infinity).
+    Usages : _paire_mapping, _mapping_depuis_json.
+    """
+    if (
+        isinstance(valeur, bool)
+        or not isinstance(valeur, (str, int, float))
+        or (isinstance(valeur, float) and not math.isfinite(valeur))
+    ):
+        raise ErreurMapping(
+            "%s : compte illisible %r — attendu un numéro de compte (texte "
+            "ou nombre)." % (origine, valeur)
+        )
+    return _compte_txt(valeur)
+
+
+def _paire_mapping(paire: object, origine: str) -> tuple[str, str]:
+    """Paire (compte Quadra, compte Odoo) validée.
+
+    Rôle : lecture commune d'une correspondance donnée en paire.
+    Paramètres : paire, liste ou tuple attendu de deux comptes ; origine,
+    source citée dans le message d'erreur.
+    Retour : (compte Quadra, compte Odoo) en texte nettoyé.
+    Erreurs : ErreurMapping si ce n'est pas une paire de deux comptes.
+    Usages : charger_mapping (paires Python), _mapping_depuis_json (objet
+    JSON et lignes JSON [quadra, odoo]).
+    """
+    if not isinstance(paire, (list, tuple)) or len(paire) != 2:
+        raise ErreurMapping(
+            "%s : correspondance illisible %r — attendu une paire (compte "
+            "Quadra, compte Odoo) ou un objet {quadra, odoo}."
+            % (origine, paire)
+        )
+    return (
+        _texte_compte_mapping(paire[0], origine),
+        _texte_compte_mapping(paire[1], origine),
+    )
+
+
+def _mapping_depuis_json(contenu: Any, origine: str) -> dict[str, str]:
+    """Contenu JSON décodé -> {compte Quadra: compte Odoo}.
 
     Rôle : lecture commune des mappings JSON (chaîne ou fichier).
-    Paramètres : rows, lignes JSON (contenu dynamique, d'où Any) ; une
-    ligne sans 'quadra' ou sans 'odoo' est ignorée.
-    Retour : dict des correspondances, comptes nettoyés (strip).
-    Erreurs : aucune propre.
+    Paramètres : contenu, JSON décodé (dynamique, d'où Any) : objet
+    {quadra: odoo}, ou liste de lignes {quadra, odoo} ou [quadra, odoo] ;
+    une ligne objet sans 'quadra' ou sans 'odoo' est ignorée ; origine,
+    source citée dans les messages d'erreur.
+    Retour : dict des correspondances, comptes nettoyés.
+    Erreurs : ErreurMapping si le contenu n'est ni liste ni objet, si une
+    ligne n'est ni objet ni paire, ou si un compte est illisible.
     Usages : charger_mapping (chaîne JSON et chemin de fichier).
     """
-    return {
-        str(r["quadra"]).strip(): str(r["odoo"]).strip()
-        for r in rows
-        if r.get("quadra") and r.get("odoo")
-    }
+    if isinstance(contenu, dict):
+        return dict(
+            _paire_mapping(paire, origine) for paire in contenu.items()
+        )
+    if not isinstance(contenu, list):
+        raise ErreurMapping(
+            "%s : attendu une liste ou un objet JSON, reçu %s."
+            % (origine, type(contenu).__name__)
+        )
+    mapping: dict[str, str] = {}
+    for ligne in contenu:
+        if not isinstance(ligne, dict):
+            compte_quadra, compte_odoo = _paire_mapping(ligne, origine)
+            mapping[compte_quadra] = compte_odoo
+        elif ligne.get("quadra") and ligne.get("odoo"):
+            compte_quadra = _texte_compte_mapping(ligne["quadra"], origine)
+            mapping[compte_quadra] = _texte_compte_mapping(
+                ligne["odoo"], origine
+            )
+    return mapping
 
 
 def charger_mapping(source: SourceMapping) -> dict[str, str]:
-    """Charge un mapping : chemin JSON, chaîne JSON, dict ou paires."""
+    """Charge un mapping : chemin JSON, chaîne JSON, dict ou paires.
+
+    Rôle : point d'entrée unique du mapping hors classeur .xlsx.
+    Paramètres : source, chaîne JSON (commence par '[' ou '{'), chemin
+    d'un fichier JSON UTF-8, dict {quadra: odoo} ou paires.
+    Retour : {compte Quadra: compte Odoo}.
+    Erreurs : ErreurMapping explicite si le JSON est mal formé, si le
+    fichier est absent ou illisible (chemin cité), ou si une
+    correspondance n'est pas une paire de comptes.
+    Usages : mapper_comptes, tests.
+    """
     if isinstance(source, str) and (
         source.lstrip().startswith("[") or source.lstrip().startswith("{")
     ):
-        return _mapping_depuis_lignes(json.loads(source))
+        try:
+            contenu = json.loads(source)
+        except json.JSONDecodeError as exc:
+            raise ErreurMapping(
+                "mapping illisible : JSON mal formé (%s)." % exc
+            ) from exc
+        return _mapping_depuis_json(contenu, "mapping JSON")
     if isinstance(source, str):
-        with open(source, "r", encoding="utf-8") as f:
-            return _mapping_depuis_lignes(json.load(f))
+        origine = "fichier de mapping %r" % source
+        try:
+            with open(source, "r", encoding="utf-8") as fichier:
+                contenu = json.load(fichier)
+        except FileNotFoundError as exc:
+            raise ErreurMapping("%s introuvable." % origine) from exc
+        except (OSError, UnicodeDecodeError, json.JSONDecodeError) as exc:
+            raise ErreurMapping(
+                "%s illisible : JSON UTF-8 attendu (%s)." % (origine, exc)
+            ) from exc
+        return _mapping_depuis_json(contenu, origine)
     if isinstance(source, dict):
         return dict(source)
     if isinstance(source, (list, tuple)):
-        return {str(q).strip(): str(o).strip() for q, o in source}
+        return dict(_paire_mapping(paire, "mapping") for paire in source)
     raise ErreurMapping(
         "Source de mapping non supportée (JSON, chemin, dict, tuples)."
     )
 
 
 def _index_colonne(lettres: str) -> int:
-    """'A' -> 0, 'B' -> 1, 'AA' -> 27 (base 26).'' -> erreur."""
+    """'A' -> 0, 'B' -> 1, 'Z' -> 25, 'AA' -> 26 (base 26) ; '' -> erreur."""
     n = 0
     if not lettres:
         raise ErreurMapping("Référence de cellule sans colonne.")
@@ -130,6 +224,28 @@ def _index_colonne(lettres: str) -> int:
             raise ErreurMapping("Référence de cellule invalide : %r" % lettres)
         n = n * 26 + (ord(ch) - 64)
     return n - 1
+
+
+def _chemins_cible_feuille(cible: str) -> list[str]:
+    """Chemins candidats, dans l'archive, d'une cible de relation.
+
+    Rôle : résoudre l'attribut Target de xl/_rels/workbook.xml.rels :
+    absolue ('/xl/…') depuis la racine du paquet, relative depuis 'xl/'
+    ('./' et '../' résolus) ; une cible relative déjà préfixée 'xl/'
+    (écart fréquent des producteurs) est aussi essayée telle quelle.
+    Paramètres : cible, valeur de Target.
+    Retour : chemins à essayer dans l'ordre (vide si la cible sort de
+    l'archive).
+    Erreurs : aucune.
+    Usages : lire_feuille_xlsx.
+    """
+    if cible.startswith("/"):
+        candidats = [posixpath.normpath(cible).lstrip("/")]
+    else:
+        candidats = [posixpath.normpath(posixpath.join("xl", cible))]
+        if cible.startswith("xl/"):
+            candidats.append(posixpath.normpath(cible))
+    return [chemin for chemin in candidats if not chemin.startswith("..")]
 
 
 def lire_feuille_xlsx(
@@ -145,7 +261,9 @@ def lire_feuille_xlsx(
     Retour : (chemin de la feuille dans l'archive, élément <worksheet>,
     lecteur de valeur d'une cellule <c>).
     Erreurs : ErreurMapping explicite (Marceau : jamais muet) si le
-    contenu n'est pas un .xlsx lisible.
+    contenu n'est pas un .xlsx lisible (type reçu, archive, XML d'une
+    partie) ; le lecteur de valeur lève aussi ErreurMapping, cellule
+    citée, pour un nombre ou un booléen illisible et une erreur Excel.
     Usages : charger_mapping_xlsx, plan_comptable.charger_plan_xlsx.
     """
 
@@ -153,24 +271,34 @@ def lire_feuille_xlsx(
         """Erreur ErreurMapping pour ce fichier."""
         _erreur_fichier(ErreurMapping, quoi, nom_fichier, message)
 
-    if not isinstance(brut, (bytes, bytearray)) or not bytes(brut).startswith(
-        b"PK"
-    ):
+    def _lire_partie(chemin: str) -> ElementXml:
+        """Racine XML d'une partie de l'archive ; ErreurMapping sinon."""
+        try:
+            return lire_xml(zf.read(chemin))
+        except (
+            ErreurLectureXml,
+            ValueError,
+            zipfile.BadZipFile,
+            zlib.error,
+        ) as exc:
+            _err("partie %r illisible (%s)." % (chemin, exc))
+
+    if brut is not None and not isinstance(brut, (bytes, bytearray)):
+        _err(
+            "contenu de type %s reçu au lieu d'octets — le fichier doit "
+            "être lu en binaire." % type(brut).__name__
+        )
+    if not bytes(brut or b"").startswith(b"PK"):
         # Diagnostic explicite : dire ce qui a été reçu, pas juste le refus.
         # (Marceau : jamais muet — un .xlsx EST une archive zip ; un contenu
         # non-zip signifie un .xls binaire, un CSV renommé ou un fichier
-        # corrompu/téléchargé incomplètement.)
+        # vide.)
         tete = bytes(brut or b"")[:8]
         if tete.startswith(b"\xd0\xcf\x11\xe0"):
             cause = (
                 "vieux format .xls (Excel 97-2003, signature OLE2) détecté — "
                 "réexportez le fichier depuis Excel au format "
                 "« Classeur Excel (*.xlsx) »."
-            )
-        elif tete.startswith(b"PK"):
-            cause = (
-                "archive zip invalide ou incomplète — retéléchargez/"
-                "recopiez le fichier, il est tronqué."
             )
         elif not tete:
             cause = "fichier vide (0 octet) — vérifiez le fichier joint."
@@ -186,13 +314,13 @@ def lire_feuille_xlsx(
             )
         _err(cause)
     try:
-        zf = zipfile.ZipFile(io.BytesIO(bytes(brut)))
+        zf = zipfile.ZipFile(io.BytesIO(bytes(brut or b"")))
     except Exception as exc:
         _err("archive illisible (%s)." % exc)
 
     sst: list[str] = []
     if "xl/sharedStrings.xml" in zf.namelist():
-        racine_sst = lire_xml(zf.read("xl/sharedStrings.xml"))
+        racine_sst = _lire_partie("xl/sharedStrings.xml")
         for si in racine_sst.iter(NS_MAIN + "si"):
             sst.append("".join(t.text or "" for t in si.iter(NS_MAIN + "t")))
 
@@ -201,18 +329,20 @@ def lire_feuille_xlsx(
         "xl/workbook.xml" in zf.namelist()
         and "xl/_rels/workbook.xml.rels" in zf.namelist()
     ):
-        wb = lire_xml(zf.read("xl/workbook.xml"))
-        rels = lire_xml(zf.read("xl/_rels/workbook.xml.rels"))
+        wb = _lire_partie("xl/workbook.xml")
+        rels = _lire_partie("xl/_rels/workbook.xml.rels")
         cibles = {r.get("Id"): r.get("Target") for r in rels}
         for sheet in wb.iter(NS_MAIN + "sheet"):
             cible = cibles.get(sheet.get(NS_REL + "id"))
             if not cible:
                 continue
-            nom = (
-                cible if cible.startswith("xl/") else "xl/" + cible.lstrip("/")
-            )
-            if nom in zf.namelist():
-                feuille = nom
+            presents = [
+                chemin
+                for chemin in _chemins_cible_feuille(cible)
+                if chemin in zf.namelist()
+            ]
+            if presents:
+                feuille = presents[0]
                 break
     if feuille is None:
         cand = sorted(
@@ -224,10 +354,15 @@ def lire_feuille_xlsx(
             _err("aucune feuille de calcul trouvée.")
         feuille = cand[0]
 
-    racine = lire_xml(zf.read(feuille))
+    racine = _lire_partie(feuille)
 
     def _valeur(c: ElementXml) -> Optional[ValeurCellule]:
-        """Valeur typée d'une cellule <c> ; None si vide ou illisible."""
+        """Valeur typée d'une cellule <c>.
+
+        None si la cellule est vide ou si son index de chaîne partagée
+        est hors table ; ErreurMapping (cellule citée) si un nombre ou un
+        booléen est illisible, ou si la cellule est une erreur Excel.
+        """
         t = c.get("t")
         if t == "s":
             v = c.find(NS_MAIN + "v")
@@ -242,10 +377,29 @@ def lire_feuille_xlsx(
         v = c.find(NS_MAIN + "v")
         if v is None or v.text is None:
             return None
+        if t == "e":
+            _err(
+                "cellule %s : erreur Excel %r — corrigez la formule, une "
+                "erreur n'est jamais lue comme valeur."
+                % (c.get("r", "?"), v.text)
+            )
         if t == "b":
-            return bool(int(v.text))
+            if v.text not in ("0", "1"):
+                _err(
+                    "cellule %s : booléen illisible %r (0 ou 1 attendu)."
+                    % (c.get("r", "?"), v.text)
+                )
+            return v.text == "1"
         if t in (None, "n"):
-            f = float(v.text)
+            try:
+                f = float(v.text)
+            except ValueError:
+                f = math.nan
+            if not math.isfinite(f):
+                _err(
+                    "cellule %s : nombre illisible %r."
+                    % (c.get("r", "?"), v.text)
+                )
             return int(f) if f.is_integer() else f
         return v.text
 
@@ -315,25 +469,36 @@ def charger_mapping_xlsx(
 
     lignes = list(racine.iter(NS_MAIN + "row"))
 
-    # 1. détection de l'en-tête (parmi les 50 premières lignes) : colonnes
-    # et INDEX de la ligne d'en-tête (la lecture commence après elle).
+    def _colonne_entete_unique(colonnes: list[int], intitule: str) -> int:
+        """Unique colonne d'un intitulé ; ErreurMapping si plusieurs."""
+        if len(colonnes) > 1:
+            _err(
+                "colonne « %s » ambiguë (%s) — une seule colonne de ce nom "
+                "est attendue sur la ligne d'en-tête."
+                % (intitule, ", ".join(map(lettres_colonne, colonnes)))
+            )
+        return colonnes[0]
+
+    # 1. détection de l'en-tête (parmi les 50 premières lignes) : les deux
+    # colonnes sur UNE même ligne, et l'INDEX de cette ligne (la lecture
+    # commence après elle).
     col_quadra: Optional[int] = None
     col_odoo: Optional[int] = None
     idx_entete = 0  # fixé dès que l'en-tête est trouvé (sinon _err)
     for idx, row in enumerate(lignes[:50]):
-        entetes: dict[str, int] = {}
-        for col, val in valeurs_cellules_ligne(row, _valeur).items():
-            entetes[_norm_entete(val)] = col
-        for texte, col in entetes.items():
-            if texte == "numero" and col_quadra is None:
-                col_quadra = col
-            if (
-                texte.startswith("odoo")
-                and ("acct" in texte or "compte" in texte)
-                and col_odoo is None
+        cols_numero: list[int] = []
+        cols_odoo: list[int] = []
+        for col, val in sorted(valeurs_cellules_ligne(row, _valeur).items()):
+            texte = _norm_entete(val)
+            if texte == "numero":
+                cols_numero.append(col)
+            if texte.startswith("odoo") and (
+                "acct" in texte or "compte" in texte
             ):
-                col_odoo = col
-        if col_quadra is not None and col_odoo is not None:
+                cols_odoo.append(col)
+        if cols_numero and cols_odoo:
+            col_quadra = _colonne_entete_unique(cols_numero, "Numéro")
+            col_odoo = _colonne_entete_unique(cols_odoo, "Odoo Acct")
             idx_entete = idx
             break
     if col_quadra is None or col_odoo is None:
@@ -376,7 +541,14 @@ def mapper_comptes(
 ) -> BilanMapping:
     """Étape pipeline : mappe les comptes Quadra vers Odoo (toutes lignes).
 
-    donnees : Canonique ou dict de pipeline portant 'canon' (dynamique).
+    Rôle : remplacer chaque compte Quadra par sa cible Odoo, tout ou rien.
+    Paramètres : donnees, Canonique ou dict de pipeline portant 'canon'
+    (dynamique) ; mapping, source acceptée par charger_mapping ou dict.
+    Retour : BilanMapping (le canonique est modifié en place).
+    Erreurs : ErreurMapping si le mapping ou le journal manque, ou si un
+    compte est absent du mapping : TOUS les comptes sont vérifiés avant
+    la moindre modification, le canonique reste alors intact.
+    Usages : moteur (étape « mapper_comptes »), tests.
     """
     if mapping is None:
         raise ErreurMapping(
@@ -391,11 +563,8 @@ def mapper_comptes(
 
     inconnus: dict[str, int] = {}
     for ligne in canon.lignes:
-        cible = mapping.get(ligne.compte)
-        if cible is None:
+        if ligne.compte not in mapping:
             inconnus[ligne.compte] = inconnus.get(ligne.compte, 0) + 1
-        else:
-            ligne.compte = cible
     if inconnus:
         detail = ", ".join(
             "%s (x%s)" % (c, n) for c, n in sorted(inconnus.items())
@@ -404,6 +573,8 @@ def mapper_comptes(
             "Comptes Quadra absents du mapping Odoo — aucun compte "
             "deviné : %s" % detail
         )
+    for ligne in canon.lignes:
+        ligne.compte = mapping[ligne.compte]
     return {
         "nb_lignes": len(canon),
         "nb_mappees": len(canon),

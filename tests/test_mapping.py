@@ -39,6 +39,7 @@ from tests.classeurs_xlsx import (
     classeur_feuilles_xml,
     feuille_depuis_lignes,
     feuille_xml,
+    ligne_valeurs,
     ligne_xml,
     relations_classeur_xml,
 )
@@ -313,6 +314,95 @@ class TestChargerMappingJson(unittest.TestCase):
         """Vérifie qu'une liste vide donne un mapping vide."""
         self.assertEqual(charger_mapping([]), {})
 
+    def test_objet_json_quadra_odoo(self) -> None:
+        """Vérifie qu'un objet JSON {quadra: odoo} est lu comme mapping."""
+        self.assertEqual(
+            charger_mapping('{"41100000": " 411000 ", "70600000": 706000}'),
+            {"41100000": "411000", "70600000": "706000"},
+        )
+
+    def test_liste_json_de_paires(self) -> None:
+        """Vérifie qu'une ligne JSON [quadra, odoo] est lue comme paire."""
+        self.assertEqual(
+            charger_mapping('[["41100000", "411000"]]'),
+            {"41100000": "411000"},
+        )
+
+    def test_ligne_json_ni_objet_ni_paire(self) -> None:
+        """Vérifie qu'une ligne JSON ni objet ni paire est refusée."""
+        for source in ('[["41100000"]]', "[42]", '["41100000"]'):
+            with self.subTest(source=source):
+                with self.assertRaisesRegex(
+                    ErreurMapping, "correspondance illisible"
+                ):
+                    charger_mapping(source)
+
+    def test_compte_json_non_scalaire(self) -> None:
+        """Vérifie qu'un compte JSON objet, liste ou booléen est refusé."""
+        for source in (
+            '{"41100000": {"compte": "411000"}}',
+            '[{"quadra": "41100000", "odoo": ["411000"]}]',
+            '[{"quadra": true, "odoo": "411000"}]',
+            '{"41100000": NaN}',
+        ):
+            with self.subTest(source=source):
+                with self.assertRaisesRegex(ErreurMapping, "compte illisible"):
+                    charger_mapping(source)
+
+    def test_json_invalide(self) -> None:
+        """Vérifie qu'un JSON mal formé donne une erreur explicite."""
+        with self.assertRaisesRegex(ErreurMapping, "^mapping illisible"):
+            charger_mapping('[{"quadra": ')
+
+    def test_fichier_absent(self) -> None:
+        """Vérifie que le chemin d'un fichier absent est cité."""
+        with tempfile.TemporaryDirectory() as dossier_temporaire:
+            chemin_absent = os.path.join(dossier_temporaire, "absent.json")
+            with self.assertRaises(ErreurMapping) as contexte_erreur:
+                charger_mapping(chemin_absent)
+        self.assertIn(repr(chemin_absent), str(contexte_erreur.exception))
+        self.assertIn("introuvable", str(contexte_erreur.exception))
+
+    def test_fichier_json_invalide_ou_non_utf8(self) -> None:
+        """Vérifie un fichier JSON mal formé ou non UTF-8, chemin cité."""
+        contenus_illisibles = (
+            b'{"41100000": ',
+            '{"411é": "411000"}'.encode("latin-1"),
+        )
+        for contenu in contenus_illisibles:
+            with self.subTest(contenu=contenu):
+                with tempfile.TemporaryDirectory() as dossier_temporaire:
+                    chemin_mapping = os.path.join(
+                        dossier_temporaire, "mapping.json"
+                    )
+                    with open(chemin_mapping, "wb") as fichier:
+                        fichier.write(contenu)
+                    with self.assertRaises(ErreurMapping) as contexte_erreur:
+                        charger_mapping(chemin_mapping)
+                self.assertIn(
+                    repr(chemin_mapping), str(contexte_erreur.exception)
+                )
+
+    def test_fichier_json_scalaire(self) -> None:
+        """Vérifie qu'un fichier JSON ni liste ni objet est refusé."""
+        with tempfile.TemporaryDirectory() as dossier_temporaire:
+            chemin_mapping = os.path.join(dossier_temporaire, "mapping.json")
+            with open(chemin_mapping, "w", encoding="utf-8") as fichier:
+                fichier.write("42")
+            with self.assertRaisesRegex(
+                ErreurMapping, "attendu une liste ou un objet JSON"
+            ):
+                charger_mapping(chemin_mapping)
+
+    def test_paire_de_mauvaise_longueur(self) -> None:
+        """Vérifie qu'une paire qui n'a pas deux comptes est refusée."""
+        for source in ([("411",)], [("411", "411000", "x")]):
+            with self.subTest(source=source):
+                with self.assertRaisesRegex(
+                    ErreurMapping, "correspondance illisible"
+                ):
+                    charger_mapping(cast(SourceMapping, source))
+
     def test_source_non_supportee(self) -> None:
         """Vérifie qu'un type de source inconnu lève ErreurMapping."""
         source_entiere = cast(SourceMapping, 41100000)
@@ -444,6 +534,83 @@ class TestLireFeuilleXlsx(unittest.TestCase):
                 7: "formule",
             },
         )
+
+    def test_cellule_numerique_illisible(self) -> None:
+        """Vérifie qu'un nombre illisible ou non fini cite la cellule."""
+        for texte_valeur in ("abc", "nan", "inf"):
+            with self.subTest(valeur=texte_valeur):
+                brut = classeur_lignes(
+                    [ligne_xml(1, [cellule_brute("B1", "n", texte_valeur)])],
+                    [],
+                )
+                with self.assertRaisesRegex(
+                    ErreurMapping, "cellule B1 : nombre illisible"
+                ):
+                    valeurs_premiere_ligne(brut)
+
+    def test_cellule_booleenne_illisible(self) -> None:
+        """Vérifie qu'un booléen autre que 0/1 cite la cellule."""
+        for texte_valeur in ("abc", "2"):
+            with self.subTest(valeur=texte_valeur):
+                brut = classeur_lignes(
+                    [ligne_xml(1, [cellule_brute("C1", "b", texte_valeur)])],
+                    [],
+                )
+                with self.assertRaisesRegex(
+                    ErreurMapping, "cellule C1 : booléen illisible"
+                ):
+                    valeurs_premiere_ligne(brut)
+
+    def test_cellule_en_erreur_excel(self) -> None:
+        """Vérifie qu'une cellule #N/A n'est jamais lue comme valeur."""
+        brut = classeur_lignes(
+            [ligne_xml(1, [cellule_brute("D1", "e", "#N/A")])], []
+        )
+        with self.assertRaisesRegex(
+            ErreurMapping, "cellule D1 : erreur Excel '#N/A'"
+        ):
+            valeurs_premiere_ligne(brut)
+
+    def test_cible_absolue(self) -> None:
+        """Vérifie qu'une cible absolue (/xl/...) désigne la bonne feuille."""
+        brut = classeur_feuilles(
+            ["/xl/worksheets/sheet2.xml"],
+            {
+                CHEMIN_PREMIERE_FEUILLE: feuille_tableau([("mauvaise",)]),
+                "xl/worksheets/sheet2.xml": feuille_tableau([("bonne",)]),
+            },
+        )
+        chemin_feuille, _racine, _lecteur = lire_feuille_xlsx(brut)
+        self.assertEqual(chemin_feuille, "xl/worksheets/sheet2.xml")
+        self.assertEqual(valeurs_premiere_ligne(brut), {0: "bonne"})
+
+    def test_cible_relative_avec_retour(self) -> None:
+        """Vérifie une cible relative à xl/ contenant « ./ » et « ../ »."""
+        brut = classeur_feuilles(
+            ["./feuilles/../worksheets/sheet2.xml"],
+            {
+                CHEMIN_PREMIERE_FEUILLE: feuille_tableau([("mauvaise",)]),
+                "xl/worksheets/sheet2.xml": feuille_tableau([("bonne",)]),
+            },
+        )
+        chemin_feuille, _racine, _lecteur = lire_feuille_xlsx(brut)
+        self.assertEqual(chemin_feuille, "xl/worksheets/sheet2.xml")
+
+    def test_xml_de_feuille_invalide(self) -> None:
+        """Vérifie qu'une feuille au XML mal formé est citée."""
+        brut = archive_xlsx({CHEMIN_PREMIERE_FEUILLE: "<worksheet><row>"})
+        with self.assertRaisesRegex(
+            ErreurMapping,
+            "partie 'xl/worksheets/sheet1.xml' illisible",
+        ):
+            lire_feuille_xlsx(brut, "mapping.xlsx")
+
+    def test_texte_au_lieu_d_octets(self) -> None:
+        """Vérifie qu'un str reçu à la place d'octets est refusé."""
+        with self.assertRaisesRegex(
+            ErreurMapping, "contenu de type str reçu au lieu d'octets"
+        ):
+            lire_feuille_xlsx(cast(bytes, "PK\x03\x04"), "mapping.xlsx")
 
     def test_cellules_sans_reference(self) -> None:
         """Vérifie qu'une cellule sans attribut r prend son rang en ligne."""
@@ -584,6 +751,59 @@ class TestChargerMappingXlsx(unittest.TestCase):
         ):
             charger_mapping_xlsx(brut)
 
+    def test_entete_numero_en_double(self) -> None:
+        """Vérifie qu'une colonne « Numéro » en double est ambiguë."""
+        brut = classeur_tableau(
+            [
+                ("Numéro", "Odoo Acct", "Numéro"),
+                ("41100000", "411000", "70600000"),
+            ]
+        )
+        with self.assertRaisesRegex(
+            ErreurMapping, "colonne « Numéro » ambiguë \\(A, C\\)"
+        ):
+            charger_mapping_xlsx(brut)
+
+    def test_entete_odoo_en_double(self) -> None:
+        """Vérifie qu'une colonne « Odoo Acct » en double est ambiguë."""
+        brut = classeur_tableau(
+            [("Numéro", "Odoo Acct", "Odoo compte"), ("411", "411000", "x")]
+        )
+        with self.assertRaisesRegex(
+            ErreurMapping, "colonne « Odoo Acct » ambiguë \\(B, C\\)"
+        ):
+            charger_mapping_xlsx(brut)
+
+    def test_entete_sur_deux_lignes_refuse(self) -> None:
+        """Vérifie que « Numéro » et « Odoo Acct » sont sur une même ligne."""
+        brut = classeur_tableau(
+            [
+                ("Numéro", "Intitulé"),
+                ("", "", "Odoo Acct"),
+                ("41100000", "Clients", "411000"),
+            ]
+        )
+        with self.assertRaisesRegex(ErreurMapping, "en-tête introuvable"):
+            charger_mapping_xlsx(brut)
+
+    def test_compte_en_erreur_excel(self) -> None:
+        """Vérifie qu'une cible #N/A n'est jamais prise pour un compte."""
+        lignes = [
+            ligne_valeurs(1, ["Numéro", "Odoo Acct"]),
+            ligne_xml(
+                2,
+                [
+                    cellule_texte("A2", "41100000"),
+                    cellule_brute("B2", "e", "#N/A"),
+                ],
+            ),
+        ]
+        with self.assertRaisesRegex(
+            ErreurMapping,
+            "^Fichier de mapping 'mapping.xlsx' : cellule B2 : erreur Excel",
+        ):
+            charger_mapping_xlsx(classeur_lignes(lignes, []), "mapping.xlsx")
+
     def test_entete_au_dela_de_cinquante_lignes(self) -> None:
         """Vérifie que l'en-tête n'est cherché que dans 50 lignes."""
         lignes_titre: list[tuple[str, ...]] = [("titre",)] * 50
@@ -707,6 +927,23 @@ class TestMapperComptes(unittest.TestCase):
                 "aucun compte deviné : 41100000 (x1), 44571000 (x2)"
             )
         )
+
+    def test_echec_sans_modification(self) -> None:
+        """Vérifie qu'un mapping incomplet laisse le canonique intact."""
+        canon = journal_vente()
+        with self.assertRaisesRegex(ErreurMapping, "70600000"):
+            mapper_comptes(canon, {"41100000": "411000"})
+        self.assertEqual(
+            [ligne.compte for ligne in canon.lignes],
+            ["41100000", "70600000", "44571000"],
+        )
+
+    def test_canonique_vide_dans_dict(self) -> None:
+        """Vérifie qu'un Canonique vide porté par 'canon' est reconnu."""
+        canon_vide = Canonique()
+        bilan = mapper_comptes({"canon": canon_vide}, {})
+        self.assertIs(bilan["canon"], canon_vide)
+        self.assertEqual(bilan["nb_lignes"], 0)
 
     def test_mapping_absent(self) -> None:
         """Vérifie qu'aucun mapping fourni est une erreur bloquante."""

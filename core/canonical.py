@@ -134,7 +134,8 @@ def extraire_canon(
     """
     if not isinstance(donnees, dict):
         return donnees
-    canon_trouve: Optional[Canonique] = donnees.get("canon") or donnees.get(
-        "resultat", {}
-    ).get("canon")
+    # Test « is None » et non de vérité : un Canonique vide est présent.
+    canon_trouve: Optional[Canonique] = donnees.get("canon")
+    if canon_trouve is None:
+        canon_trouve = donnees.get("resultat", {}).get("canon")
     return canon_trouve

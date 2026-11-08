@@ -13,10 +13,10 @@ Option --generer : tire un mot de passe aléatoire et l'affiche UNE fois.
 
 import argparse
 import getpass
-import os
 import secrets
 import sys
 
+from core.connecteurs.secrets import ecrire_variable
 from interface.auth import hacher
 from scripts.outils_cli import premiere_ligne
 
@@ -41,23 +41,7 @@ def main() -> int:
         if getpass.getpass("Confirmez : ") != mdp:
             print("Les deux saisies diffèrent.", file=sys.stderr)
             return 1
-    lignes: list[str] = []
-    if os.path.exists(args.fichier):
-        with open(args.fichier, encoding="utf-8") as f:
-            lignes = [
-                ligne
-                for ligne in f
-                if not ligne.startswith("CONCORDE_UI_MDP=")
-            ]
-    lignes.append("CONCORDE_UI_MDP=%s\n" % hacher(mdp))
-    os.makedirs(os.path.dirname(args.fichier), exist_ok=True)
-    ancien = os.umask(0o077)
-    try:
-        with open(args.fichier, "w", encoding="utf-8") as f:
-            f.writelines(lignes)
-    finally:
-        os.umask(ancien)
-    os.chmod(args.fichier, 0o600)
+    ecrire_variable(args.fichier, "CONCORDE_UI_MDP", hacher(mdp))
     print("Empreinte enregistrée dans %s." % args.fichier)
     if args.generer:
         print("Mot de passe (affiché une seule fois) : %s" % mdp)

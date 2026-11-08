@@ -19,7 +19,7 @@ from typing import TypedDict
 
 from ..analyser import Rapport
 from ..journal import Journal, nombre_texte, ou_muet
-from ..telecharger import csv_ecritures, generer_fec
+from ..telecharger import RapportFec, csv_ecritures, generer_fec
 from ..xlsx_ecrire import Centimes, ecrire_xlsx, euros_texte
 from .connecteur_fec import lire_fec
 from .lot import (
@@ -59,8 +59,16 @@ class LigneSortie(TypedDict):
     devise: str
 
 
-def _vers_format_sortie(lot: Lot) -> Iterator[LigneSortie]:
-    """Lignes du lot -> format attendu par core/telecharger (FEC et CSV)."""
+def lignes_sortie(lot: Lot) -> Iterator[LigneSortie]:
+    """Lignes du lot au format attendu par core/telecharger (FEC et CSV).
+
+    Rôle : un seul endroit qui traduit le Lot vers les sorties fichier.
+    Paramètres : lot — lignes au format commun ; le compte cible est pris
+    s'il est renseigné, sinon le compte source.
+    Retour : itérateur de LigneSortie, dans l'ordre du lot.
+    Erreurs : aucune.
+    Usages : ecrire_fec_lot, exporter (CSV Odoo).
+    """
     ids: dict[CleEcriture, int] = {}
     for ligne in lot.lignes:
         eid = ids.setdefault(cle_ecriture(ligne), len(ids) + 1)
@@ -90,6 +98,21 @@ def _vers_format_sortie(lot: Lot) -> Iterator[LigneSortie]:
         }
 
 
+def ecrire_fec_lot(lot: Lot, chemin: str) -> RapportFec:
+    """Écrit le lot en FEC DGFiP (UTF-8, séparateur « | »).
+
+    Rôle : produire un FEC à partir du pivot, pour l'export de contrôle,
+    la photo d'une source lue par API et les destinations fichier.
+    Paramètres : lot ; chemin — fichier à écrire.
+    Retour : RapportFec (lignes, écritures, totaux).
+    Erreurs : ErreurFec (déséquilibre : aucun fichier n'est laissé) ;
+    OSError en écriture.
+    Usages : exporter, connecteurs.fec.ConnecteurFec.ecrire,
+    connecteurs.transfert (photo de la source).
+    """
+    return generer_fec(lignes_sortie(lot), chemin, encodage="utf-8")
+
+
 def exporter(
     lot: Lot, dossier: str, journal: Journal | None = None
 ) -> tuple[Rapport, dict[str, str]]:
@@ -102,12 +125,12 @@ def exporter(
     fichiers: dict[str, str] = {}
     fec = os.path.join(dossier, "controle_FEC_comptes_odoo.txt")
     with j.etape("Export du FEC de contrôle (comptes Odoo)") as e:
-        r_fec = generer_fec(_vers_format_sortie(lot), fec, encodage="utf-8")
+        r_fec = ecrire_fec_lot(lot, fec)
         e.conclure("%s lignes" % nombre_texte(r_fec["lignes"]))
     fichiers["fec"] = fec
     chemin_csv = os.path.join(dossier, "import_odoo_ecritures.csv")
     with open(chemin_csv, "w", encoding="utf-8", newline="") as f:
-        f.write(csv_ecritures(list(_vers_format_sortie(lot))))
+        f.write(csv_ecritures(list(lignes_sortie(lot))))
     fichiers["csv"] = chemin_csv
     if lot.retirees:
         chemin = os.path.join(dossier, "lignes_retirees.xlsx")

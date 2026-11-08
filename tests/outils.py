@@ -85,3 +85,67 @@ class CurseurSimule:
         Usages : fin du bloc ``with connexion.cursor() as curseur``.
         """
         return False
+
+
+# --- FEC de test (tests/test_migration.py, tests/test_connecteurs.py) ---
+ENTETE = (
+    "JournalCode|JournalLib|EcritureNum|EcritureDate|CompteNum|CompteLib|"
+    "CompAuxNum|CompAuxLib|PieceRef|PieceDate|EcritureLib|Debit|Credit|"
+    "EcritureLet|DateLet|ValidDate|Montantdevise|Idevise"
+)
+
+
+def ligne_fec(
+    j: str,
+    num: str,
+    d: str,
+    compte: str,
+    debit: str = "0,00",
+    credit: str = "0,00",
+    aux: str = "",
+    lib: str = "lib",
+    let: str = "",
+) -> str:
+    """Construit une ligne FEC (séparateur « | ») avec les 18 colonnes."""
+    return "|".join(
+        [
+            j,
+            j + " lib",
+            num,
+            d,
+            compte,
+            "Compte " + compte,
+            aux,
+            ("Tiers " + aux) if aux else "",
+            "P" + num,
+            d,
+            lib,
+            debit,
+            credit,
+            let,
+            d if let else "",
+            d,
+            "",
+            "",
+        ]
+    )
+
+
+def fec(*lignes: str, entete: str = ENTETE) -> bytes:
+    """Assemble un fichier FEC complet (en-tête + lignes) en ISO-8859-15."""
+    return ("\n".join([entete] + list(lignes)) + "\n").encode("iso-8859-15")
+
+
+BASE = [
+    ligne_fec("AN", "1", "20250101", "512000", "1000,00"),
+    ligne_fec("AN", "1", "20250101", "101000", credit="1000,00"),
+    ligne_fec("VE", "2", "20250115", "411000", "120,00", aux="C1", let="A"),
+    ligne_fec("VE", "2", "20250115", "706000", credit="100,00"),
+    ligne_fec("VE", "2", "20250115", "445710", credit="20,00"),
+    ligne_fec("BQ", "3", "20250120", "512000", "120,00"),
+    ligne_fec(
+        "BQ", "3", "20250120", "411000", credit="120,00", aux="C1", let="A"
+    ),
+    ligne_fec("OD", "4", "20250131", "640000", "500,00"),
+    ligne_fec("OD", "4", "20250131", "421000", credit="500,00"),
+]

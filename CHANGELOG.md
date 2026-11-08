@@ -3,6 +3,37 @@
 Format : [Keep a Changelog](https://keepachangelog.com/fr/1.1.0/), versions sémantiques.
 Le module Odoo porte la même version au format `17.0.X.Y.Z` (`deploy/addons/concorde/__manifest__.py`).
 
+## [1.6.0] — 2026-11-08
+### Ajouté
+- Transferts entre logiciels (ADR-0008, acceptée le 08/11/2026) : socle
+  `core/connecteurs/`. Un pivot (le `Lot` en centimes), un connecteur par
+  logiciel (tester, lire, écrire, relire ; essai à blanc par défaut),
+  plusieurs connexions enregistrées à la fois.
+  - `connexions` : annuaire `connexions.json` sans aucun secret (un paramètre
+    au nom de secret est refusé) ; connexion d'environnement de test par
+    connexion.
+  - `secrets` : `/etc/concorde/connecteurs.env`, lu seulement en droits 600 ;
+    aucune valeur dans un message, un journal ou un rapport.
+  - `transfert` : procédure en 7 étapes par destination (données,
+    concordance, simulation, test, feu vert, nouveau test, transfert) ;
+    destinations indépendantes ; arrêt après la simulation sans environnement
+    de test ; feu vert avec nom de la destination retapé et date de
+    sauvegarde ; source relue et comparée à celle du rapport ; une seule
+    écriture à la fois par connexion.
+  - `fec` : premier connecteur — FEC déposé dans CONCORDE (Sage 100, Sage 50,
+    Quadra, Loop…) ou FEC produit ; une référence n'est jamais réécrite.
+- `scripts/concorde_connexion.py` : lister, ajouter, tester, retirer une
+  connexion ; saisie masquée d'un secret.
+- Code `TRF_ECART_CONCORDANCE` expliqué par Marceau.
+- 36 tests (`tests/test_connecteurs.py`) ; 399 → 435 tests.
+### Modifié
+- Routines partagées au lieu de copies : `core/fichier_json.ecrire_json_atomique`
+  (ex-`_ecrire_json_atomique` de l'interface, repris par `surveillance`),
+  `connecteurs.secrets.ecrire_variable` (repris par
+  `concorde_interface_mdp`), `migration.export.ecrire_fec_lot` et
+  `lignes_sortie`, `migration.circuit.statut_constats` et
+  `constats_expliques`. Fabriques de FEC de test dans `tests/outils.py`.
+
 ## [1.5.2] — 2026-11-08
 ### Ajouté
 - Tests : `xlsx_vers_fec` (30 % → 99 %), `mapping` (25 % → 100 %),

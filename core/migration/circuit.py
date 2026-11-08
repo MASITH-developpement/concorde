@@ -77,8 +77,15 @@ class RapportCircuit(RapportCircuitInitial, total=False):
     empreinte_guardian: str
 
 
-def _statut(constats: Sequence[Constat]) -> str:
-    """« bloquee » si un constat est BLOQUANT, sinon « verte »."""
+def statut_constats(constats: Sequence[Constat]) -> str:
+    """Statut d'une porte d'après ses constats.
+
+    Rôle : une seule règle pour dire si une porte bloque.
+    Paramètres : constats — constats de la porte.
+    Retour : « bloquee » si un constat est BLOQUANT, sinon « verte ».
+    Erreurs : aucune.
+    Usages : executer, connecteurs.transfert.
+    """
     return (
         "bloquee"
         if any(c["niveau"] == "BLOQUANT" for c in constats)
@@ -86,8 +93,17 @@ def _statut(constats: Sequence[Constat]) -> str:
     )
 
 
-def _constats_expliques(constats: Sequence[Constat]) -> list[dict[str, Any]]:
-    """Constats sans leur liste complète, avec l'explication de Marceau."""
+def constats_expliques(constats: Sequence[Constat]) -> list[dict[str, Any]]:
+    """Constats prêts pour un rapport, expliqués par Marceau.
+
+    Rôle : un seul format de constat dans les rapports de lot et de
+    transfert.
+    Paramètres : constats — constats d'une porte.
+    Retour : constats sans leur liste complète d'éléments, avec
+    l'explication de Marceau (pourquoi, que faire).
+    Erreurs : aucune.
+    Usages : executer, connecteurs.transfert.
+    """
     return [
         dict(
             {k: v for k, v in c.items() if k != "elements"},
@@ -233,9 +249,9 @@ def executer(
     j.dire("Porte 3 — Contrôles de migration", "etape")
     r_c = controles.controler(lot, aujourd_hui, journal=j)
     portes["controles"] = {
-        "statut": _statut(r_c.constats),
+        "statut": statut_constats(r_c.constats),
         "infos": r_c.infos,
-        "constats": _constats_expliques(r_c.constats),
+        "constats": constats_expliques(r_c.constats),
     }
     tous_constats += [("3 Contrôles", c) for c in r_c.constats]
 
@@ -253,9 +269,9 @@ def executer(
             "alerte",
         )
     portes["correspondance"] = {
-        "statut": _statut(r_m.constats),
+        "statut": statut_constats(r_m.constats),
         "infos": {k: v for k, v in r_m.infos.items() if k != "a_arbitrer"},
-        "constats": _constats_expliques(r_m.constats),
+        "constats": constats_expliques(r_m.constats),
     }
     tous_constats += [("4 Correspondance", c) for c in r_m.constats]
 
@@ -277,12 +293,12 @@ def executer(
         lot, os.path.join(dossier, "export"), journal=j
     )
     portes["export"] = {
-        "statut": _statut(r_e.constats),
+        "statut": statut_constats(r_e.constats),
         "infos": r_e.infos,
         "fichiers": {
             k: os.path.relpath(v, dossier) for k, v in fichiers.items()
         },
-        "constats": _constats_expliques(r_e.constats),
+        "constats": constats_expliques(r_e.constats),
     }
     tous_constats += [("5 Export", c) for c in r_e.constats]
     guardian.tracer("migration", "export", portes["export"]["statut"])
@@ -311,7 +327,7 @@ def executer(
         "statut": statut,
         "envoi": res,
         "relecture": r_t.infos,
-        "constats": _constats_expliques(r_t.constats),
+        "constats": constats_expliques(r_t.constats),
     }
     tous_constats += [("6 Test", c) for c in r_t.constats]
     guardian.tracer(

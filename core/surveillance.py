@@ -22,6 +22,7 @@ from datetime import date, datetime, timedelta
 from typing import Any, TypedDict
 
 from .analyser import Rapport
+from .fichier_json import ecrire_json_atomique
 from .marceau import Marceau
 
 EXEMPLES_MAX = 20
@@ -370,15 +371,12 @@ class CentreAlertes:
 
     def _sauver(self) -> None:
         """Écrit toutes les alertes dans le fichier (remplacement atomique)."""
-        tmp = self.chemin + ".tmp"
-        with open(tmp, "w", encoding="utf-8") as f:
-            json.dump(
-                list(self._alertes.values()),
-                f,
-                ensure_ascii=False,
-                default=str,
-            )
-        os.replace(tmp, self.chemin)
+        ecrire_json_atomique(
+            self.chemin,
+            list(self._alertes.values()),
+            ascii_seul=False,
+            conversion=str,
+        )
 
     @staticmethod
     def _nouvelle(

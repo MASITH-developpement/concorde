@@ -12,7 +12,7 @@ from core.migration.connecteur_fec import lire_fec
 from core.migration.correspondance import appliquer
 from core.migration.lot import Lot
 from tests.outils import CurseurSimule, Enregistrement, FauxCommun
-from tests.test_migration import BASE, fec
+from tests.outils import BASE, fec
 
 # Rang SQL relu dans la base de test (référence, état, compte, montants…).
 RangRelu = tuple[object, ...]

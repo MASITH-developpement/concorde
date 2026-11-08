@@ -375,6 +375,13 @@ CATALOGUE: dict[str, tuple[str, str, str]] = {
         "sortie.",
         "Ne rien envoyer ; signaler l'anomalie.",
     ),
+    # --- Transferts entre logiciels (ADR-0008) -------------------------------
+    "TRF_ECART_CONCORDANCE": (
+        "Source et lot différents",
+        "Les lignes gardées et les lignes retirées par les filtres ne "
+        "redonnent pas les totaux de la source : quelque chose s'est perdu.",
+        "Ne rien transférer ; signaler l'anomalie (bug de CONCORDE).",
+    ),
     # --- Techniques ----------------------------------------------------------
     "PG_INJOIGNABLE": (
         "Base PostgreSQL injoignable",

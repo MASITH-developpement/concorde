@@ -68,6 +68,7 @@ from core import bases_locales
 from core import rapport_jour
 from core.comparaison import comparer_bases
 from core.comptes import alertes_balance, grand_livre
+from core.fichier_json import ecrire_json_atomique
 from core.guardian import Guardian
 from core.journal import Journal, duree_texte, nombre_texte
 from core.marceau import Marceau
@@ -177,37 +178,6 @@ def _lire_json(chemin: str) -> Any:
     """
     with open(chemin, encoding="utf-8") as fichier:
         return json.load(fichier)
-
-
-def _ecrire_json_atomique(
-    chemin: str,
-    donnees: object,
-    ascii_seul: bool = True,
-    retrait: int | None = None,
-    conversion: Callable[[object], str] | None = None,
-) -> None:
-    """Écrit un fichier JSON d'un seul coup (fichier .tmp puis renommage).
-
-    Rôle : qu'un fichier de données ne soit jamais lu à moitié écrit.
-    Paramètres : chemin, le fichier final ; donnees, la valeur à écrire ;
-    ascii_seul, retrait et conversion sont passés à json.dump
-    (ensure_ascii, indent, default).
-    Retour : aucun.
-    Erreurs : OSError si l'écriture échoue, TypeError si une valeur n'est
-    pas convertible en JSON.
-    Usages : Bases.renommer, Taches._sauver, Surveillance._surveiller_base,
-    Gestionnaire.do_POST (/api/rapport).
-    """
-    temporaire = chemin + ".tmp"
-    with open(temporaire, "w", encoding="utf-8") as fichier:
-        json.dump(
-            donnees,
-            fichier,
-            ensure_ascii=ascii_seul,
-            indent=retrait,
-            default=conversion,
-        )
-    os.replace(temporaire, chemin)
 
 
 def _fichier_instantane(dossier: str, nom_base: str) -> str:
@@ -387,7 +357,7 @@ class Bases:
             else:
                 self._libelles.pop(ident, None)
             if self._fichier_libelles:
-                _ecrire_json_atomique(
+                ecrire_json_atomique(
                     self._fichier_libelles,
                     self._libelles,
                     ascii_seul=False,
@@ -669,7 +639,7 @@ class Taches:
     def _sauver(self, tache: ObjetJson) -> None:
         """Enregistre la fiche d'une tâche (écriture atomique)."""
         os.makedirs(os.path.join(self.dossier, tache["id"]), exist_ok=True)
-        _ecrire_json_atomique(
+        ecrire_json_atomique(
             self._meta(tache["id"]),
             tache,
             ascii_seul=False,
@@ -1390,7 +1360,7 @@ class Surveillance:
                     % base["nom"],
                     "detail",
                 )
-            _ecrire_json_atomique(chemin, nouveau)
+            ecrire_json_atomique(chemin, nouveau)
 
             rapport_balance, _ = alertes_balance(
                 source.balance(), source.balance_tiers()
@@ -1875,7 +1845,7 @@ class Gestionnaire(BaseHTTPRequestHandler):
         saisie = rapport_jour.nettoyer_saisie(corps)
         dossier = os.path.join(self.app.dossier, "rapports")
         os.makedirs(dossier, exist_ok=True)
-        _ecrire_json_atomique(
+        ecrire_json_atomique(
             os.path.join(dossier, jour + ".json"),
             saisie,
             ascii_seul=False,

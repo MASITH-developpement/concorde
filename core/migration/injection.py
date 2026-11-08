@@ -277,7 +277,7 @@ def decouper(
     d'un paquet.
     Retour : paquets successifs, dans l'ordre (dernier paquet plus court).
     Erreurs : ValueError si `taille` vaut 0.
-    Usages : preparer, envoyer, lettrer.
+    Usages : preparer, envoyer, lettrer, connecteurs.pennylane.
     """
     paquets: list[list[ElementTraite]] = []
     for debut in range(0, len(elements), taille):
@@ -460,7 +460,7 @@ def ref_ecriture(debut: str, cle: CleEcriture) -> str:
     cle — (journal, numéro).
     Retour : « <debut>/<journal>/<n°> ».
     Erreurs : aucune.
-    Usages : envoyer, connecteurs.odoo.ConnecteurOdoo.ecrire.
+    Usages : envoyer, connecteurs.odoo, connecteurs.pennylane.
     """
     return "%s/%s/%s" % (debut, cle[0], cle[1])
 

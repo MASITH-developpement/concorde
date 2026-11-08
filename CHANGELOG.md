@@ -31,6 +31,15 @@ Le module Odoo porte la même version au format `17.0.X.Y.Z` (`deploy/addons/con
     (ADR-0009) : entreprise et société filtrées, statuts VALIDEE / VALIDE,
     lignes sans société comptées et signalées, tiers retrouvés par leur nom
     (signalés) ou bloquants (introuvable, sans code, en double).
+  - `pennylane` : connecteur Pennylane par l'API v2 (lecture, écriture,
+    relecture). L'API n'empêchant pas les doublons, chaque écriture porte sa
+    référence CONCORDE dans `piece_number`, cherchée avant l'envoi. Refus
+    nommés : journal ou compte absent, compte sous plusieurs identifiants
+    (TVA), ligne en devise, avec tiers ou lettrage (non portés par
+    Pennylane sur la ligne, règle à arbitrer). Lecture : `statuts_lus`
+    exigé. Jeton d'entreprise = bac à sable ; OAuth 2.0 à brancher.
+  - `http_json` : client REST JSON commun (Python standard, certificat
+    vérifié, reprise après une limite d'appels 429, jeton jamais affiché).
 - `Lot.signalements` et alerte `MIG_SIGNALEMENT_SOURCE` dans les contrôles.
 - ADR-0009 (AzalPlus : lecture de la base maintenant, écriture par l'API v2
   une fois terminée).
@@ -43,7 +52,7 @@ Le module Odoo porte la même version au format `17.0.X.Y.Z` (`deploy/addons/con
 - `scripts/concorde_connexion.py` : lister, ajouter, tester, retirer une
   connexion ; saisie masquée d'un secret.
 - Code `TRF_ECART_CONCORDANCE` expliqué par Marceau.
-- 53 tests (`tests/test_connecteurs.py`) ; 399 → 452 tests.
+- 65 tests (`tests/test_connecteurs.py`) ; 399 → 464 tests.
 ### Modifié
 - Routines partagées au lieu de copies : `core/fichier_json.ecrire_json_atomique`
   (ex-`_ecrire_json_atomique` de l'interface, repris par `surveillance`),

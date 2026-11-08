@@ -9,6 +9,8 @@
   fec         FEC déposé dans CONCORDE (lecture) ou produit (écriture)
   odoo        Odoo 17 par l'API XML-RPC (lecture, écriture, relecture)
   azalplus    AzalPlus, source seulement : lecture seule de sa base (ADR-0009)
+  pennylane   Pennylane par l'API v2
+  http_json   client REST JSON commun aux connecteurs par API
 
 Tous les connecteurs rendent et reçoivent le même `Lot`
 (core/migration/lot.py), en centimes : c'est le pivot.

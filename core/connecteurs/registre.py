@@ -8,11 +8,13 @@ from .azalplus import ConnecteurAzalPlus
 from .base import Connecteur, ErreurConnexion
 from .fec import ConnecteurFec
 from .odoo import ConnecteurOdoo
+from .pennylane import ConnecteurPennylane
 
 REGISTRE: dict[str, type[Connecteur]] = {
     ConnecteurAzalPlus.logiciel: ConnecteurAzalPlus,
     ConnecteurFec.logiciel: ConnecteurFec,
     ConnecteurOdoo.logiciel: ConnecteurOdoo,
+    ConnecteurPennylane.logiciel: ConnecteurPennylane,
 }
 
 

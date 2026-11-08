@@ -13,6 +13,8 @@ Avant d'en créer une, vérifier (casse ignorée) qu'elle n'existe pas déjà.
 | `__exit__` | `core/connecteurs/azalplus.py`, `tests/test_connecteurs.py` | Méthode : fermeture d'un bloc with (curseurs) |
 | `_analyser` | `interface/serveur.py` | Méthode de Taches : exécution d'une analyse |
 | `_arguments` | `tests/test_assistant_import.py` | Paramètres ignorés de `champ_bouchon` |
+| `_attendre` | `core/connecteurs/http_json.py` | Fonction d'attente du client (time.sleep par défaut) |
+| `_attente` | `core/connecteurs/http_json.py` | Routine : secondes à attendre d'après Retry-After |
 | `_avec_delai` | `core/odoo_source.py` | Routine : applique le délai d'attente à une connexion HTTP |
 | `_bilan_etape` | `deploy/addons/concorde/wizard/concorde_import_wizard.py` | Routine : dict produit par une étape du pipeline |
 | `_bloquer` | `core/connecteurs/transfert.py` | Routine : arrête une destination à une étape, motif au journal |
@@ -27,6 +29,7 @@ Avant d'en créer une, vérifier (casse ignorée) qu'elle n'existe pas déjà.
 | `_colonne_entete_unique` | `core/mapping.py` | Routine : colonne unique d'un intitulé d'en-tête, ErreurMapping si ambiguë |
 | `_colonnes_reconnues` | `core/xlsx_vers_fec.py` | Reconnaît les colonnes (synonymes) d'une ligne candidate à l'en-tête |
 | `_compter` | `core/connecteurs/azalplus.py` | Méthode d'AzalPlus : compte les lignes lues et écartées, et signale |
+| `_comptes` | `core/connecteurs/pennylane.py` | Méthode Pennylane : identifiants actifs par numéro de compte |
 | `_comptes_de_cle` | `core/odoo_source.py` | Routine : clé de répartition analytique -> codes/noms de comptes |
 | `_comptes_des_lignes` | `deploy/addons/concorde/wizard/concorde_import_wizard.py` | Routine : parcourt les lignes FEC portant un numéro de compte |
 | `_connecter` | `core/connecteurs/azalplus.py` | Méthode d'AzalPlus : connexion PostgreSQL en lecture seule |
@@ -38,10 +41,14 @@ Avant d'en créer une, vérifier (casse ignorée) qu'elle n'existe pas déjà.
 | `_construire_ligne_fec` | `core/xlsx_vers_fec.py` | Construit une ligne FEC complète (CHAMPS_FEC) |
 | `_continue_le_bloc` | `core/yaml_min.py` | Routine : la ligne continue-t-elle le bloc (erreur si trop indentée) |
 | `_cookie_session` | `interface/serveur.py` | Routine : en-tête Set-Cookie de session (None = effacement) |
+| `_corps` | `tests/test_connecteurs.py` | Corps d'une réponse simulée |
 | `_couche_superflue` | `deploy/addons/concorde/wizard/concorde_import_wizard.py` | Compteur (non utilisé) des couches base64 en trop retirées par `_lire_binaire`, 3 au maximum |
+| `_creer` | `tests/test_connecteurs.py` | Méthode de test : création d'une écriture simulée |
 | `_creer_fiche_erreur` | `deploy/addons/concorde/wizard/concorde_import_wizard.py` | Routine : crée la fiche d'import en erreur et rend son action |
 | `_creer_manquants` | `core/connecteurs/odoo.py` | Méthode de ConnecteurOdoo : vrai pour une base de test vierge |
+| `_date` | `core/connecteurs/pennylane.py` | Routine Pennylane : date ISO -> date |
 | `_date_ou_rien` | `core/migration/filtres.py` | Routine : date ISO -> date, ou None |
+| `_decoder` | `core/connecteurs/http_json.py` | Routine : réponse HTTP -> JSON, ou erreur nommée sans jeton |
 | `_decouper_liste_en_ligne` | `core/yaml_min.py` | Routine : éléments d'une liste en ligne [a, b] |
 | `_derniere_empreinte_valide` | `core/guardian.py` | Méthode partagée : recalcule la chaîne d'audit, None si un maillon est altéré |
 | `_description_sql` | `interface/serveur.py` | Méthode de Bases : fiche d'une base du serveur |
@@ -50,11 +57,14 @@ Avant d'en créer une, vérifier (casse ignorée) qu'elle n'existe pas déjà.
 | `_Domaine` | `stubs/odoo/models.pyi` | Type d'un domaine de recherche Odoo (stub) |
 | `_dossier` | `core/connecteurs/transfert.py` | Routine : dossier d'un transfert |
 | `_ecrire_csv` | `core/export_odoo.py` | Routine partagée : CSV CRLF préfixé du BOM UTF-8 |
+| `_ecrites` | `core/connecteurs/pennylane.py` | Identifiants Pennylane écrits sous chaque référence |
+| `_ecritures_de` | `core/connecteurs/pennylane.py` | Méthode Pennylane : écritures répondant à des filtres |
 | `_Element` | `core/demat.py` | TypeVar : élément d'une liste découpée par `_lots` |
 | `_empreinte_maillon` | `core/guardian.py` | Routine partagée : empreinte SHA-256 d'un maillon chaînée à la précédente |
 | `_encoder_fec` | `core/xlsx_vers_fec.py` | Sérialise en-tête + lignes FEC en UTF-8 |
 | `_enregistrer_rapport` | `interface/serveur.py` | Méthode de Gestionnaire : POST /api/rapport |
 | `_ENTETE_XML` | `core/xlsx_ecrire.py` | Déclaration XML commune aux parties du classeur |
+| `_entetes` | `core/connecteurs/http_json.py`, `tests/test_connecteurs.py` | En-têtes HTTP ajoutés à chaque requête |
 | `_erreur_fichier` | `core/mapping.py` | Routine partagée : lève l'erreur « Fichier <quoi> <nom> : <message> » |
 | `_erreur_sans_ecriture` | `core/xlsx_vers_fec.py` | Routine : erreur « aucune ligne d'écriture exploitable » (standard et Quadra) |
 | `_est_tiret` | `core/yaml_min.py` | Routine : la ligne est-elle un élément de liste |
@@ -67,11 +77,15 @@ Avant d'en créer une, vérifier (casse ignorée) qu'elle n'existe pas déjà.
 | `_feuille` | `tests/test_mapping.py` | Paramètre ignoré d'un lecteur de feuille simulé |
 | `_fiches` | `core/connecteurs/connexions.py` | Connexions de l'annuaire, par identifiant |
 | `_fichier_instantane` | `interface/serveur.py` | Routine : chemin de la photo de surveillance d'une base |
+| `_garde` | `tests/test_connecteurs.py` | Méthode de test : un élément passe-t-il un filtre Pennylane |
 | `_groupes_date` | `core/xlsx_vers_fec.py` | Routine : découpe une date texte en groupes selon ses séparateurs |
 | `_identifiant_sql` | `core/bases_locales.py` | Routine : vérifie un nom de base (`_NOM_VALIDE`) et le rend entre guillemets pour le SQL |
 | `_identifiants` | `tests/outils.py` | Paramètres ignorés de `FauxCommun.authenticate` |
 | `_ids_par_code` | `injectors/socle_odoo.py` | {code: id} d'un modèle Odoo pour une liste de codes |
+| `_jeton` | `core/connecteurs/http_json.py` | Jeton Bearer, gardé en mémoire seulement |
 | `_jour_valide` | `interface/serveur.py` | Routine : vrai si le texte est une date AAAA-MM-JJ |
+| `_journaux` | `core/connecteurs/pennylane.py` | Méthode Pennylane : {id de journal: code} |
+| `_json` | `tests/test_connecteurs.py` | Méthode de test : réponse JSON simulée |
 | `_lecteur` | `tests/test_mapping.py` | Paramètre ignoré d'un lecteur de valeur simulé |
 | `_libelle_action` | `core/rapport_jour.py` | Libellé français d'une action de tâche |
 | `_lignes_a_retirer` | `core/migration/filtres.py` | Lignes retirées par un filtre selon sa portée |
@@ -90,7 +104,7 @@ Avant d'en créer une, vérifier (casse ignorée) qu'elle n'existe pas déjà.
 | `_lire_societe` | `core/odoo_source.py` | Routine : lecture XML-RPC de champs de la société (societe_info, verrous) |
 | `_lire_table` | `core/yaml_min.py` | Routine : lit une table YAML |
 | `_liste_textes` | `core/migration/filtres.py` | Routine : critère liste ou texte à virgules -> liste de textes |
-| `_lot` | `core/connecteurs/odoo.py` | Méthode de ConnecteurOdoo : lignes Odoo -> Lot |
+| `_lot` | `core/connecteurs/odoo.py`, `core/connecteurs/pennylane.py` | Méthode de ConnecteurOdoo : lignes Odoo -> Lot |
 | `_mapping_depuis_json` | `core/mapping.py` | Routine : JSON décodé (objet ou liste) -> mapping validé |
 | `_Methode` | `stubs/odoo/api.pyi` | Type d'une méthode décorée par api.model (stub) |
 | `_motif_erreur` | `interface/serveur.py` | Routine : texte « Type : message » d'une exception |
@@ -100,6 +114,7 @@ Avant d'en créer une, vérifier (casse ignorée) qu'elle n'existe pas déjà.
 | `_options` | `tests/test_assistant_import.py` | Paramètres ignorés de `champ_bouchon` |
 | `_ouvre_guillemet` | `core/yaml_min.py` | Routine : ce caractère ouvre-t-il une chaîne entre guillemets |
 | `_ouvreur_https` | `core/marceau.py` | Ouvreur d'URL limité au schéma https |
+| `_ouvrir` | `core/connecteurs/http_json.py` | Fabrique de connexion HTTP du client |
 | `_paire_mapping` | `core/mapping.py` | Routine : paire (compte Quadra, compte Odoo) validée |
 | `_Parametres` | `core/guardian.py` | ParamSpec des arguments de l'étape enveloppée |
 | `_parametres_sql` | `core/connecteurs/azalplus.py` | Méthode d'AzalPlus : entreprise, société et statuts des requêtes |
@@ -110,7 +125,8 @@ Avant d'en créer une, vérifier (casse ignorée) qu'elle n'existe pas déjà.
 | `_preparer_destination` | `core/connecteurs/transfert.py` | Routine partagée : étapes 1 à 4 d'une destination (rapport et nouveau test) |
 | `_quand_borne` | `core/rapport_jour.py` | Borne un horodatage ISO à la seconde (champ « quand ») |
 | `_racine` | `tests/test_mapping.py` | Paramètre ignoré (racine XML) d'un lecteur simulé |
-| `_requete` | `tests/test_injection.py` | Paramètres ignorés de `CurseurRelecture.execute` |
+| `_refus` | `core/connecteurs/pennylane.py` | Méthode Pennylane : motifs de refus et comptes uniques |
+| `_requete` | `tests/test_injection.py`, `tests/test_connecteurs.py` | Paramètres ignorés de `CurseurRelecture.execute` |
 | `_Resultat` | `core/guardian.py` | TypeVar du résultat de l'étape enveloppée |
 | `_retirer_commentaire` | `core/yaml_min.py` | Routine : retire le commentaire de fin de ligne (hors guillemets) |
 | `_revoquer_cle` | `interface/serveur.py` | Méthode de Gestionnaire : POST /api/cles/revoquer |
@@ -143,10 +159,11 @@ Avant d'en créer une, vérifier (casse ignorée) qu'elle n'existe pas déjà.
 | `_verrous_texte` | `core/odoo_source.py` | Routine : dates de verrouillage -> texte ISO (instantanés SQL et XML-RPC) |
 | `_vers_json` | `core/migration/circuit.py` | Valeur non JSON -> texte (remplace le lambda `default`) |
 | `a_arbitrer` | `core/connecteurs/transfert.py` | Comptes absents de la table, à faire traduire |
-| `absents` | `core/connecteurs/base.py`, `core/connecteurs/odoo.py`, `core/migration/injection.py` | Paramètres ou secrets manquants d'un connecteur ; aussi : Paramètres ou secrets manquants ; éléments absents d'Odoo |
+| `absents` | `core/connecteurs/base.py`, `core/connecteurs/odoo.py`, `core/migration/injection.py`, `core/connecteurs/pennylane.py` | Paramètres ou secrets manquants d'un connecteur ; aussi : Paramètres ou secrets manquants ; éléments absents d'Odoo |
 | `action` | `tests/test_xlsx_vers_fec.py`, `tests/test_connecteurs.py` | Action simulée levant une erreur de lecture |
 | `ActionOdoo` | `deploy/addons/concorde/wizard/concorde_import_wizard.py` | Type d'une action Odoo rendue au client web |
-| `adresse` | `core/migration/injection.py` | Paramètre : URL du service XML-RPC |
+| `adresse` | `core/migration/injection.py`, `core/connecteurs/http_json.py` | Paramètre : URL du service XML-RPC |
+| `ADRESSE_PENNYLANE` | `core/connecteurs/pennylane.py` | Adresse de l'API v2 de Pennylane |
 | `ajouter` | `core/connecteurs/connexions.py`, `scripts/concorde_connexion.py` | Méthode de l'annuaire : enregistre une connexion |
 | `AlerteEnregistree` | `core/surveillance.py` | Type : alerte mémorisée dans le fichier JSON du centre |
 | `analyseur` | `scripts/concorde_connexion.py` | Analyseur argparse de concorde_connexion |
@@ -175,9 +192,12 @@ Avant d'en créer une, vérifier (casse ignorée) qu'elle n'existe pas déjà.
 | `ascii_seul` | `core/fichier_json.py` | Paramètre de ecrire_json_atomique (ensure_ascii) |
 | `assistant` | `tests/test_assistant_import.py` | Assistant d'import chargé hors d'Odoo |
 | `AssistantImport` | `tests/test_assistant_import.py` | Protocole : partie de l'assistant d'import vérifiée (`_lire_binaire`) |
-| `attendu` | `core/migration/filtres.py` | Valeur attendue par une condition libre |
+| `attendre` | `core/connecteurs/http_json.py` | Paramètre : fonction d'attente |
+| `attendu` | `core/migration/filtres.py`, `tests/test_connecteurs.py` | Valeur attendue par une condition libre |
 | `attendus` | `tests/test_mapping.py`, `tests/test_plan_comptable.py`, `scripts/concorde_connexion.py` | Valeurs attendues d'un test ; aussi : secrets attendus par le connecteur ajouté (concorde_connexion) |
 | `ATTENTE` | `core/connecteurs/transfert.py` | Statut d'une destination : rapport prêt, en attente du feu vert |
+| `ATTENTE_MAX_S` | `core/connecteurs/http_json.py` | Attente maximale après une limite d'appels (secondes) |
+| `attentes` | `tests/test_connecteurs.py` | Attentes demandées, dans un test |
 | `attribut_reference` | `tests/classeurs_xlsx.py` | Attribut r="..." d'une cellule (vide si absent) |
 | `attribut_type` | `tests/classeurs_xlsx.py` | Attribut t="..." d'une cellule (vide si absent) |
 | `attributs` | `tests/test_assistant_import.py` | Paramètre : noms et valeurs exposés par un module simulé |
@@ -201,17 +221,19 @@ Avant d'en créer une, vérifier (casse ignorée) qu'elle n'existe pas déjà.
 | `BilanEquilibre` | `core/moteur.py` | TypedDict du résultat de `verifier_equilibre` |
 | `BilanMapping` | `core/mapping.py` | TypedDict du résultat de `mapper_comptes` |
 | `BLOQUEE` | `core/connecteurs/transfert.py` | Statut d'une destination ou d'une étape arrêtée |
+| `body` | `core/connecteurs/http_json.py`, `tests/test_connecteurs.py` | Paramètre : corps de la requête (http.client) |
 | `bon_test` | `tests/test_connecteurs.py` | Connexion de test qui accepte l'écriture, dans un test |
 | `bonne` | `tests/test_connecteurs.py` | Destination qui passe, dans un test |
-| `brut` | `core/migration/filtres.py`, `core/connecteurs/fec.py` | Filtre normalisé / filtre fourni / copie modifiable du filtre fourni ; aussi : contenu du FEC déposé (connecteurs/fec) |
+| `brut` | `core/migration/filtres.py`, `core/connecteurs/fec.py`, `core/connecteurs/http_json.py` | Filtre normalisé / filtre fourni / copie modifiable du filtre fourni ; aussi : contenu du FEC déposé (connecteurs/fec) |
 | `candidat` | `interface/serveur.py` | Constat examiné lors d'une recherche |
 | `candidats` | `core/comparaison.py` | Écritures de B candidates au rapprochement par contenu (ex-`cands` réaffecté) |
 | `canon` | `tests/test_assistant_import.py` | Journal canonique de test (FEC synthétique) |
 | `canon_trouve` | `core/canonical.py` | Canonique lu dans le dict de pipeline par `extraire_canon` |
 | `canon_vide` | `tests/test_mapping.py` | Canonique vide fourni à extraire_canon |
-| `capacites` | `core/connecteurs/base.py`, `core/connecteurs/fec.py`, `core/connecteurs/transfert.py`, `tests/test_connecteurs.py`, `core/connecteurs/odoo.py`, `core/connecteurs/azalplus.py` | Capacités d'un connecteur (classe ou instance) |
+| `capacites` | `core/connecteurs/base.py`, `core/connecteurs/fec.py`, `core/connecteurs/transfert.py`, `tests/test_connecteurs.py`, `core/connecteurs/odoo.py`, `core/connecteurs/azalplus.py`, `core/connecteurs/pennylane.py` | Capacités d'un connecteur (classe ou instance) |
 | `CapacitesConnecteur` | `core/connecteurs/base.py` | TypedDict : ce qu'un connecteur sait lire et écrire (api, fichier, None) |
 | `caractere` | `core/xlsx_ecrire.py` | Couple (caractère, entité) de `entites` |
+| `cas` | `tests/test_connecteurs.py` | Cas d'erreur testés |
 | `cas_acceptes` | `tests/test_xlsx_vers_fec.py` | Entrées acceptées et sortie attendue |
 | `cas_de_test` | `tests/test_xlsx_vers_fec.py` | Paramètre : TestCase qui vérifie le refus |
 | `cas_refuses` | `tests/test_xlsx_vers_fec.py` | Entrées qui doivent être refusées |
@@ -224,14 +246,14 @@ Avant d'en créer une, vérifier (casse ignorée) qu'elle n'existe pas déjà.
 | `CHAINES_PARTAGEES` | `tests/test_xlsx_vers_fec.py` | sharedStrings : « Compte » et un texte riche en deux morceaux |
 | `chaines_partagees_xml` | `tests/test_xlsx_vers_fec.py` | Paramètre : contenu de xl/sharedStrings.xml (None = absent) |
 | `chaines_presentes` | `tests/test_xlsx_vers_fec.py` | Vrai si le classeur de test a des sharedStrings |
-| `champ` | `core/connecteurs/secrets.py`, `scripts/concorde_connexion.py` | Nom d'un secret attendu par un connecteur |
+| `champ` | `core/connecteurs/secrets.py`, `scripts/concorde_connexion.py`, `tests/test_connecteurs.py` | Nom d'un secret attendu par un connecteur |
 | `champ_bouchon` | `tests/test_assistant_import.py` | Remplace un constructeur de champ Odoo |
 | `champ_entete` | `deploy/addons/concorde/wizard/concorde_import_wizard.py` | Colonne d'une ligne FEC lue pour trouver l'en-tête |
 | `champs` | `core/connecteurs/secrets.py` | Noms des secrets attendus par un connecteur |
 | `champs_ligne` | `core/migration/filtres.py` | Vue {champ: valeur} d'une ligne pour une condition libre |
 | `charger` | `core/connecteurs/transfert.py` | Routine : état d'un transfert enregistré |
 | `charger_assistant_import` | `tests/test_assistant_import.py` | Charge l'assistant d'import hors d'Odoo |
-| `chemin` | `tests/classeurs_xlsx.py`, `tests/test_plan_comptable.py`, `core/connecteurs/connexions.py`, `core/connecteurs/fec.py`, `core/connecteurs/secrets.py`, `core/connecteurs/transfert.py`, `core/fichier_json.py`, `tests/test_connecteurs.py` | Chemin d'un fichier ou d'une partie de classeur ; aussi : fichier FEC, annuaire ou secrets (connecteurs) |
+| `chemin` | `tests/classeurs_xlsx.py`, `tests/test_plan_comptable.py`, `core/connecteurs/connexions.py`, `core/connecteurs/fec.py`, `core/connecteurs/secrets.py`, `core/connecteurs/transfert.py`, `core/fichier_json.py`, `tests/test_connecteurs.py`, `core/connecteurs/http_json.py` | Chemin d'un fichier ou d'une partie de classeur ; aussi : fichier FEC, annuaire ou secrets (connecteurs) |
 | `chemin_absent` | `tests/test_mapping.py` | Chemin d'un fichier de mapping inexistant |
 | `chemin_assistant` | `tests/test_assistant_import.py` | Chemin du fichier de l'assistant |
 | `chemin_classeur` | `tests/test_mapping.py` | Chemin du classeur de mapping temporaire |
@@ -268,7 +290,7 @@ Avant d'en créer une, vérifier (casse ignorée) qu'elle n'existe pas déjà.
 | `CLASSEUR_UNE_FEUILLE` | `tests/test_xlsx_vers_fec.py` | workbook.xml à une feuille |
 | `classeur_xlsx` | `tests/test_xlsx_vers_fec.py` | Routine : construit un .xlsx minimal avec les styles donnés |
 | `classeur_xml` | `tests/test_xlsx_vers_fec.py` | Paramètre : contenu de xl/workbook.xml |
-| `cle` | `tests/test_yaml_min.py`, `core/connecteurs/transfert.py`, `core/connecteurs/odoo.py`, `tests/test_connecteurs.py` | Paramètre : clé de la section à extraire ; aussi : clé des totaux comparés (connecteurs/transfert) |
+| `cle` | `tests/test_yaml_min.py`, `core/connecteurs/transfert.py`, `core/connecteurs/odoo.py`, `tests/test_connecteurs.py`, `core/connecteurs/http_json.py`, `core/connecteurs/pennylane.py` | Paramètre : clé de la section à extraire ; aussi : clé des totaux comparés (connecteurs/transfert) |
 | `cle_et_reste` | `core/yaml_min.py` | Résultat de _separer_cle (clé, valeur brute) |
 | `cle_texte` | `core/migration/lot.py` | Routine partagée : clé d'écriture -> « journal/numéro » |
 | `CleApi` | `core/bases_locales.py` | TypedDict d'une clé API listée (jamais sa valeur) |
@@ -278,21 +300,24 @@ Avant d'en créer une, vérifier (casse ignorée) qu'elle n'existe pas déjà.
 | `cles_trouvees` | `core/plan_comptable.py` | Clés de correspondance contenues dans le texte du type |
 | `CleSolde` | `core/comparaison.py` | Clé d'agrégation des soldes : compte, journal ou (compte, tiers) |
 | `CleTotaux` | `core/migration/lot.py` | Clés littérales de `TotauxLot` |
-| `client` | `tests/test_connecteurs.py` | Ligne client lue, dans un test |
-| `close` | `core/connecteurs/azalplus.py`, `tests/test_connecteurs.py` | Méthode : fermeture de la connexion (DB-API) |
-| `code` | `tests/test_plan_comptable.py`, `tests/test_connecteurs.py`, `core/connecteurs/azalplus.py` | Code de compte lu ; aussi : code de sortie de la commande (test_connecteurs) |
+| `client` | `tests/test_connecteurs.py`, `core/connecteurs/pennylane.py` | Ligne client lue, dans un test |
+| `ClientJson` | `core/connecteurs/http_json.py` | Classe : client REST JSON commun aux connecteurs par API |
+| `close` | `core/connecteurs/azalplus.py`, `tests/test_connecteurs.py`, `core/connecteurs/http_json.py` | Méthode : fermeture de la connexion (DB-API) |
+| `code` | `tests/test_plan_comptable.py`, `tests/test_connecteurs.py`, `core/connecteurs/azalplus.py`, `core/connecteurs/pennylane.py` | Code de compte lu ; aussi : code de sortie de la commande (test_connecteurs) |
 | `code_journal` | `core/connecteurs/azalplus.py` | Code du journal d'une ligne AzalPlus |
 | `code_sans_zeros` | `core/plan_comptable.py` | Code de compte sans zéros de tête (remplace `c`) |
 | `code_tiers` | `core/connecteurs/azalplus.py` | Code du tiers trouvé par son nom |
 | `code_trace` | `injectors/socle_odoo.py` | Étape inscrite dans le journal Guardian (ex. « odoo17 ») |
 | `codes` | `deploy/addons/concorde/wizard/concorde_import_wizard.py`, `tests/test_connecteurs.py`, `core/connecteurs/odoo.py`, `core/connecteurs/azalplus.py` | Paramètre de _codes_html : codes de comptes à citer ; aussi : codes TRF_ du paquet connecteurs (test_connecteurs) |
 | `codes_affiches` | `deploy/addons/concorde/wizard/concorde_import_wizard.py` | Texte HTML des codes cités par _codes_html |
+| `codes_journaux` | `core/connecteurs/pennylane.py` | {code de journal: id Pennylane} |
 | `colonne` | `core/yaml_min.py` | Colonne du contenu après le tiret |
 | `colonnes` | `tests/test_xlsx_vers_fec.py` | Colonnes reconnues d'un en-tête |
 | `cols_numero` | `core/mapping.py` | Colonnes « Numéro » trouvées sur la ligne d'en-tête |
 | `cols_odoo` | `core/mapping.py` | Colonnes « Odoo Acct » trouvées sur la ligne d'en-tête |
-| `compte` | `core/migration/lot.py`, `core/connecteurs/azalplus.py` | Compte (source ou cible) dans `balance_par_compte` |
+| `compte` | `core/migration/lot.py`, `core/connecteurs/azalplus.py`, `core/connecteurs/pennylane.py` | Compte (source ou cible) dans `balance_par_compte` |
 | `compte_a_arbitrer` | `core/migration/correspondance.py` | Cumul d'un compte à arbitrer (remplace `a`) |
+| `compte_api` | `tests/test_connecteurs.py` | Compte Pennylane simulé parcouru |
 | `compte_attendu` | `tests/test_plan_comptable.py` | Routine : compte attendu {code, nom, type} |
 | `compte_lib` | `tests/test_xlsx_vers_fec.py` | Paramètre : intitulé de compte d'une ligne FEC attendue |
 | `compte_libelle` | `core/connecteurs/azalplus.py` | Libellé du compte d'une ligne AzalPlus |
@@ -301,7 +326,7 @@ Avant d'en créer une, vérifier (casse ignorée) qu'elle n'existe pas déjà.
 | `compte_quadra` | `tests/test_mapping.py` | Compte Quadra source d'une correspondance |
 | `CompteAArbitrer` | `core/migration/correspondance.py` | Type d'un compte absent de la table (libellé, lignes, montants) |
 | `CompteLu` | `core/plan_comptable.py` | TypedDict d'un compte lu dans le plan comptable (code, nom, type) |
-| `comptes` | `core/migration/filtres.py`, `tests/test_connecteurs.py` | Critères du filtre en cours de normalisation |
+| `comptes` | `core/migration/filtres.py`, `tests/test_connecteurs.py`, `core/connecteurs/pennylane.py` | Critères du filtre en cours de normalisation |
 | `comptes_attendus` | `tests/test_moteur.py` | Comptes Odoo attendus après mapping |
 | `comptes_choisis` | `core/comparaison.py` | Ensemble des comptes du filtre (ex-réaffectation de `comptes`) |
 | `comptes_crees` | `core/migration/injection.py` | Comptes créés par la préparation |
@@ -318,20 +343,23 @@ Avant d'en créer une, vérifier (casse ignorée) qu'elle n'existe pas déjà.
 | `confirmation` | `core/connecteurs/transfert.py`, `tests/test_connecteurs.py` | Libellé de la destination retapé pour le feu vert |
 | `connecter` | `tests/test_connecteurs.py` | Doublure de psycopg2.connect, dans un test |
 | `connecter_odoo` | `injectors/socle_odoo.py` | Ouvre une session XML-RPC v2 et trace un écart de version |
-| `Connecteur` | `core/connecteurs/base.py` | Classe de base : prise vers un logiciel (tester, lire, écrire, relire) |
+| `Connecteur` | `core/connecteurs/base.py`, `tests/test_connecteurs.py` | Classe de base : prise vers un logiciel (tester, lire, écrire, relire) |
 | `ConnecteurAzalPlus` | `core/connecteurs/azalplus.py` | Connecteur AzalPlus : lecture seule de la base PostgreSQL (ADR-0009) |
 | `ConnecteurFaux` | `tests/test_connecteurs.py` | Doublure de test : logiciel à API simulé, écriture en mémoire |
 | `ConnecteurFec` | `core/connecteurs/fec.py` | Connecteur FEC : fichier déposé (lecture) ou FEC produit (écriture) |
 | `ConnecteurOdoo` | `core/connecteurs/odoo.py` | Connecteur Odoo 17 : lecture et écriture par l'API XML-RPC |
+| `ConnecteurPennylane` | `core/connecteurs/pennylane.py` | Connecteur Pennylane par l'API v2 |
 | `ConnecteurRefusFinal` | `tests/test_connecteurs.py` | Doublure de test : refuse seulement l'écriture réelle finale |
-| `connexion` | `injectors/odoo_conversion.py`, `tests/test_bases_locales.py`, `core/connecteurs/azalplus.py` | Connexion Odoo utilisée par `extraire` |
+| `connexion` | `injectors/odoo_conversion.py`, `tests/test_bases_locales.py`, `core/connecteurs/azalplus.py`, `core/connecteurs/http_json.py`, `tests/test_connecteurs.py` | Connexion Odoo utilisée par `extraire` |
 | `connexion_a` | `tests/test_connecteurs.py` | Première connexion d'un test |
 | `connexion_b` | `tests/test_connecteurs.py` | Seconde connexion d'un test |
 | `connexion_base` | `core/migration/injection.py` | Connexion PostgreSQL ouverte par `relire` |
 | `connexion_brute` | `core/bases_locales.py` | Connexion psycopg2 avant typage par Protocol |
 | `connexion_espion` | `tests/test_bases_locales.py` | Fausse connexion qui enregistre le SQL exécuté |
+| `connexion_https` | `core/connecteurs/http_json.py` | Routine : connexion HTTPS avec certificat vérifié |
 | `connexion_test` | `core/connecteurs/connexions.py` | Connexion qui sert d'environnement de test à une autre |
 | `ConnexionAzalPlus` | `core/connecteurs/azalplus.py` | Protocole : connexion PostgreSQL utilisée par le connecteur AzalPlus |
+| `ConnexionHttp` | `core/connecteurs/http_json.py` | Protocole : connexion HTTP (http.client ou doublure) |
 | `ConnexionLecture` | `core/migration/injection.py` | Protocoles du curseur et de la connexion SQL de relecture |
 | `ConnexionOdoo` | `injectors/socle_odoo.py` | Session XML-RPC authentifiée (db, uid, mot_de_passe, modeles) |
 | `ConnexionPg` | `core/bases_locales.py` | Protocol d'une connexion PostgreSQL fournie par l'appelant |
@@ -365,6 +393,7 @@ Avant d'en créer une, vérifier (casse ignorée) qu'elle n'existe pas déjà.
 | `cookies` | `interface/serveur.py` | Cookies de la requête |
 | `copie` | `tests/test_connecteurs.py` | Copie modifiable d'une ligne simulée |
 | `copie_texte` | `core/comparaison.py` | `date_copie` normalisée « AAAA-MM-JJ HH:MM:SS » (ex-réaffectation) |
+| `corps` | `core/connecteurs/http_json.py`, `core/connecteurs/pennylane.py`, `tests/test_connecteurs.py` | Corps JSON d'une requête ou d'une réponse |
 | `correctif` | `tests/test_connecteurs.py` | Remplacement mock posé pour un test |
 | `CORRESP_TYPE_NORMALISE` | `core/plan_comptable.py` | Texte normalisé -> account_type : types Odoo tels quels puis libellés |
 | `correspondance` | `interface/serveur.py` | Résultat d'une expression régulière sur le chemin |
@@ -372,7 +401,8 @@ Avant d'en créer une, vérifier (casse ignorée) qu'elle n'existe pas déjà.
 | `correspondances` | `tests/test_moteur.py` | Lignes {quadra, odoo} du mapping synthétique écrit en JSON |
 | `cote` | `core/comparaison.py` | Paramètre de `_lignes_seulement` : « A » ou « B » |
 | `coupe_au_transfert` | `tests/test_connecteurs.py` | Doublure : relecture coupée au vrai transfert seulement |
-| `credit` | `core/migration/connecteur_fec.py`, `core/connecteurs/azalplus.py` | Montants de la ligne en centimes |
+| `credit` | `core/migration/connecteur_fec.py`, `core/connecteurs/azalplus.py`, `core/connecteurs/pennylane.py` | Montants de la ligne en centimes |
+| `cree` | `core/connecteurs/pennylane.py` | Écriture créée par Pennylane |
 | `cree_le` | `core/connecteurs/connexions.py`, `core/connecteurs/transfert.py` | Date de création d'une connexion ou d'un transfert |
 | `creer` | `core/connecteurs/transfert.py`, `tests/test_connecteurs.py` | Routine : crée un transfert et joue les étapes 1 à 4 |
 | `creer_manquants` | `core/migration/injection.py` | Créer comptes, journaux et tiers absents (base de test) ou refuser |
@@ -380,7 +410,7 @@ Avant d'en créer une, vérifier (casse ignorée) qu'elle n'existe pas déjà.
 | `CritereDomaine` | `core/odoo_source.py` | Critère d'un domaine Odoo : « \ | » ou (champ, opérateur, valeur) |
 | `criteres_retenus` | `core/migration/filtres.py` | Critères qui retiennent des lignes (tous sauf `sauf_comptes`) |
 | `csv_comptes` | `tests/test_assistant_import.py`, `deploy/addons/concorde/wizard/concorde_import_wizard.py` | CSV des comptes du zip d'export |
-| `curseur` | `core/migration/injection.py`, `interface/serveur.py`, `core/connecteurs/azalplus.py` | Curseur SQL de relecture |
+| `curseur` | `core/migration/injection.py`, `interface/serveur.py`, `core/connecteurs/azalplus.py`, `core/connecteurs/http_json.py` | Curseur SQL de relecture |
 | `CurseurAvecContexte` | `tests/outils.py` | Type du faux curseur rendu par `with` |
 | `CurseurAzalPlus` | `core/connecteurs/azalplus.py` | Protocole : curseur PostgreSQL utilisé par le connecteur AzalPlus |
 | `CurseurCles` | `tests/test_bases_locales.py` | Curseur simulé de `FausseBaseCles` (SELECT puis DELETE d'une clé API) |
@@ -389,6 +419,7 @@ Avant d'en créer une, vérifier (casse ignorée) qu'elle n'existe pas déjà.
 | `CurseurPg` | `core/bases_locales.py` | Protocol du curseur PostgreSQL utilisé par le module |
 | `CurseurPgSimule` | `tests/test_bases_locales.py` | Faux curseur conforme à `bases_locales.CurseurPg` |
 | `CurseurRelecture` | `tests/test_injection.py` | Faux curseur (hérite `CurseurSimule`) rendant des rangs fixés |
+| `curseurs` | `tests/test_connecteurs.py` | Requêtes avec curseur, dans un test |
 | `CurseurSimule` | `tests/outils.py` | Base des faux curseurs PostgreSQL (protocole `with`) |
 | `cursor` | `core/connecteurs/azalplus.py`, `tests/test_connecteurs.py` | Méthode : ouverture d'un curseur (DB-API) |
 | `date_copie` | `interface/serveur.py` | Date de copie saisie (comparaison) |
@@ -398,9 +429,10 @@ Avant d'en créer une, vérifier (casse ignorée) qu'elle n'existe pas déjà.
 | `date_lue` | `core/xlsx_vers_fec.py` | Date validée par _date_fec |
 | `date_piece` | `core/migration/connecteur_fec.py` | PieceDate convertie |
 | `date_validation` | `core/migration/connecteur_fec.py` | ValidDate convertie |
+| `dates` | `core/connecteurs/pennylane.py` | Dates des lignes du lot |
 | `de_la_societe` | `core/connecteurs/azalplus.py` | Lignes de la société lue |
-| `debit` | `core/migration/connecteur_fec.py`, `core/connecteurs/azalplus.py`, `tests/test_connecteurs.py` | Montants de la ligne en centimes |
-| `debut` | `core/migration/injection.py`, `core/migration/circuit.py`, `core/odoo_source.py` | Résultat et bornes d'un paquet dans `decouper` ; aussi : Début de la référence d'une écriture |
+| `debit` | `core/migration/connecteur_fec.py`, `core/connecteurs/azalplus.py`, `tests/test_connecteurs.py`, `core/connecteurs/pennylane.py` | Montants de la ligne en centimes |
+| `debut` | `core/migration/injection.py`, `core/migration/circuit.py`, `core/odoo_source.py`, `tests/test_connecteurs.py` | Résultat et bornes d'un paquet dans `decouper` ; aussi : Début de la référence d'une écriture |
 | `debut_donnees` | `core/fec_parser.py`, `core/mapping.py`, `core/migration/connecteur_fec.py`, `core/plan_comptable.py`, `core/xlsx_vers_fec.py` | Index de la première ligne de données (après l'en-tête) |
 | `debut_element` | `core/yaml_min.py` | Position de début d'un élément de liste en ligne |
 | `debut_lot` | `core/demat.py`, `core/odoo_source.py` | Indice de début d'une tranche dans `_lots` (ex-`i`) |
@@ -413,8 +445,8 @@ Avant d'en créer une, vérifier (casse ignorée) qu'elle n'existe pas déjà.
 | `decouper` | `core/migration/injection.py` | Routine partagée : découpe une liste en paquets |
 | `deja` | `core/connecteurs/odoo.py` | Références déjà présentes dans Odoo |
 | `deja_retirees` | `core/connecteurs/transfert.py` | Lignes déjà retirées par le connecteur source (hors période) |
-| `delai` | `core/odoo_source.py` | Délai d'attente (secondes) d'un transport XML-RPC |
-| `demande` | `core/connecteurs/transfert.py`, `tests/test_connecteurs.py` | Demande de transfert |
+| `delai` | `core/odoo_source.py`, `core/connecteurs/http_json.py`, `tests/test_connecteurs.py` | Délai d'attente (secondes) d'un transport XML-RPC |
+| `demande` | `core/connecteurs/transfert.py`, `tests/test_connecteurs.py`, `core/connecteurs/http_json.py` | Demande de transfert |
 | `DemandeTransfert` | `core/connecteurs/transfert.py` | TypedDict : source, destinations, période, filtres, correspondances |
 | `depart` | `interface/serveur.py` | Instant de départ d'une mesure de durée |
 | `deposer` | `tests/test_connecteurs.py` | Méthode de test : dépose un FEC |
@@ -436,7 +468,7 @@ Avant d'en créer une, vérifier (casse ignorée) qu'elle n'existe pas déjà.
 | `distant` | `interface/serveur.py` | Fiche d'un Odoo distant |
 | `Domaine` | `core/odoo_source.py` | Liste de critères d'un domaine Odoo (XML-RPC) |
 | `DomaineOdoo` | `core/demat.py`, `tests/test_demat.py` | Type : domaine Odoo (même sens que dans `tests/test_demat.py`) |
-| `donnees` | `tests/test_mapping.py`, `core/fichier_json.py` | Données JSON du mapping de test ; aussi : valeur écrite en JSON (fichier_json) |
+| `donnees` | `tests/test_mapping.py`, `core/fichier_json.py`, `core/connecteurs/http_json.py` | Données JSON du mapping de test ; aussi : valeur écrite en JSON (fichier_json) |
 | `DonneesJson` | `core/rapport_jour.py` | Type : données JSON (alertes, tâches, sécurité, rapports, saisie) |
 | `donner_feu_vert` | `core/connecteurs/transfert.py` | Routine : feu vert, nouveau test, puis transfert (étapes 5 à 7) |
 | `dossier` | `securite/concorde_securite.py`, `core/connecteurs/connexions.py`, `core/connecteurs/fec.py`, `core/connecteurs/secrets.py`, `core/connecteurs/transfert.py`, `tests/test_connecteurs.py` | Dossier temporaire courant (construction de PREFIXES_TEMP) ; aussi : dossier d'une connexion, d'un transfert ou d'un test (connecteurs) |
@@ -452,26 +484,27 @@ Avant d'en créer une, vérifier (casse ignorée) qu'elle n'existe pas déjà.
 | `echapper_xml` | `core/xlsx_ecrire.py` | Routine : échappe un texte pour l'écrire en XML |
 | `echec_pipeline` | `deploy/addons/concorde/wizard/concorde_import_wizard.py` | EchecPipeline intercepté par les actions de l'assistant |
 | `EchecPipeline` | `deploy/addons/concorde/wizard/concorde_import_wizard.py` | Exception : échec du pipeline avec le libellé du mapping connu |
-| `ecrire` | `core/connecteurs/base.py`, `core/connecteurs/fec.py`, `tests/test_connecteurs.py`, `core/connecteurs/odoo.py` | Méthode d'un connecteur : écrit un lot (essai à blanc par défaut) |
+| `ecrire` | `core/connecteurs/base.py`, `core/connecteurs/fec.py`, `tests/test_connecteurs.py`, `core/connecteurs/odoo.py`, `core/connecteurs/pennylane.py` | Méthode d'un connecteur : écrit un lot (essai à blanc par défaut) |
 | `ecrire_fec_lot` | `core/migration/export.py` | Routine partagée : écrit un lot en FEC DGFiP |
 | `ecrire_json_atomique` | `core/fichier_json.py` | Routine partagée : écriture JSON via fichier .tmp puis renommage (ex-`_ecrire_json_atomique`) |
 | `ecrire_rapport_json` | `scripts/outils_cli.py` | Écrit un rapport JSON lisible (option --json) |
 | `ecrire_variable` | `core/connecteurs/secrets.py` | Routine partagée : ajoute ou remplace NOM=valeur dans un fichier env (600) |
 | `ecrit` | `core/connecteurs/transfert.py`, `tests/test_connecteurs.py` | Résultat d'une écriture réelle |
 | `ecrits` | `tests/test_connecteurs.py` | Lots écrits en mémoire par la doublure, par référence |
-| `ecriture` | `core/connecteurs/base.py`, `tests/test_connecteurs.py` | Bilan d'écriture rangé dans les infos d'une étape |
+| `ecriture` | `core/connecteurs/base.py`, `tests/test_connecteurs.py`, `core/connecteurs/pennylane.py` | Bilan d'écriture rangé dans les infos d'une étape |
 | `ecriture_odoo` | `tests/test_connecteurs.py` | Écriture Odoo simulée, dans un test |
 | `EcritureDifferente` | `core/comparaison.py` | TypedDict : couple d'écritures rapprochées qui diffèrent |
 | `EcritureGroupee` | `core/comparaison.py` | TypedDict : écriture reconstituée avec ses lignes |
 | `EcritureRegroupee` | `injectors/socle_odoo.py` | Type d'une écriture regroupée : ref_ext, journal, numero, date, libelle, lignes, total (centimes) |
-| `ecritures` | `core/connecteurs/fec.py` | Nombre d'écritures du lot |
+| `ecritures` | `core/connecteurs/fec.py`, `core/connecteurs/pennylane.py`, `tests/test_connecteurs.py` | Nombre d'écritures du lot |
 | `ecritures_a_creer` | `core/connecteurs/base.py` | Écritures qui seraient (ou ont été) créées |
 | `ecritures_deja_presentes` | `core/connecteurs/base.py` | Écritures déjà présentes sous la référence |
 | `ecrivain` | `interface/serveur.py` | Écrivain CSV |
 | `egal` | `core/connecteurs/secrets.py`, `scripts/concorde_connexion.py` | Signe « = » trouvé dans une ligne NOM=valeur |
-| `element` | `core/migration/circuit.py`, `interface/serveur.py` | Explication Marceau d'un constat / élément du constat |
+| `element` | `core/migration/circuit.py`, `interface/serveur.py`, `core/connecteurs/pennylane.py`, `tests/test_connecteurs.py` | Explication Marceau d'un constat / élément du constat |
+| `element_api` | `tests/test_connecteurs.py` | Élément de l'API simulée parcouru |
 | `element_brut` | `core/yaml_min.py` | Élément brut d'une liste en ligne |
-| `elements` | `core/migration/filtres.py`, `injection.py` | Valeur du critère liste / éléments à traiter |
+| `elements` | `core/migration/filtres.py`, `injection.py`, `core/connecteurs/http_json.py`, `tests/test_connecteurs.py` | Valeur du critère liste / éléments à traiter |
 | `elements_bruts` | `core/yaml_min.py` | Éléments bruts d'une liste en ligne |
 | `elements_liste` | `core/yaml_min.py` | Éléments d'une liste YAML en cours de lecture dans `_lire_liste` |
 | `ElementTraite` | `core/migration/injection.py` | Variables de type de `en_parallele` / `decouper` |
@@ -497,7 +530,7 @@ Avant d'en créer une, vérifier (casse ignorée) qu'elle n'existe pas déjà.
 | `entete_obligatoire` | `tests/test_interface.py` | Valeur d'un en-tête HTTP qui doit être présent (échec sinon) |
 | `entete_quadra` | `core/xlsx_vers_fec.py` | En-tête Cegid Quadra trouvé (index, colonnes) ou None |
 | `ENTETE_STANDARD` | `tests/test_xlsx_vers_fec.py` | En-tête Excel standard avec synonymes |
-| `entetes` | `tests/test_plan_comptable.py` | Paramètre : en-têtes du plan de test |
+| `entetes` | `tests/test_plan_comptable.py`, `core/connecteurs/http_json.py`, `core/connecteurs/pennylane.py`, `tests/test_connecteurs.py` | Paramètre : en-têtes du plan de test |
 | `ENTETES_PLAN` | `tests/test_plan_comptable.py` | En-têtes usuels d'un plan de test |
 | `entite` | `core/xlsx_ecrire.py` | Couple (caractère, entité) de `entites` |
 | `entites` | `core/xlsx_ecrire.py` | Remplacements supplémentaires de `echapper_xml` |
@@ -528,7 +561,8 @@ Avant d'en créer une, vérifier (casse ignorée) qu'elle n'existe pas déjà.
 | `ESPACE_RELATIONS` | `tests/test_xlsx_vers_fec.py` | Espace de noms des relations Office |
 | `ESPACE_RELATIONS_PAQUET` | `tests/classeurs_xlsx.py` | Espace de noms des fichiers .rels |
 | `ESPACE_TABLEUR` | `tests/test_xlsx_vers_fec.py` | Espace de noms SpreadsheetML |
-| `essai` | `core/connecteurs/base.py`, `core/connecteurs/fec.py`, `tests/test_connecteurs.py`, `core/connecteurs/odoo.py` | Vrai : essai à blanc, rien n'est écrit |
+| `essai` | `core/connecteurs/base.py`, `core/connecteurs/fec.py`, `tests/test_connecteurs.py`, `core/connecteurs/odoo.py`, `core/connecteurs/http_json.py`, `core/connecteurs/pennylane.py` | Vrai : essai à blanc, rien n'est écrit |
+| `essais` | `core/connecteurs/http_json.py` | Nombre d'essais sur une limite d'appels |
 | `etape` | `tests/test_yaml_min.py`, `core/connecteurs/transfert.py` | Étape du pipeline lue dans concorde.yaml ; aussi : étape d'un transfert (connecteurs/transfert) |
 | `EtapeConversion` | `injectors/odoo_conversion.py` | Type du compte rendu d'un saut de version |
 | `etapes` | `injectors/odoo_conversion.py`, `core/connecteurs/transfert.py` | Comptes rendus des sauts de version ; aussi : états des étapes d'une destination (connecteurs/transfert) |
@@ -549,16 +583,19 @@ Avant d'en créer une, vérifier (casse ignorée) qu'elle n'existe pas déjà.
 | `extraire_canon` | `core/canonical.py` | Routine partagée : Canonique porté par une donnée du pipeline (Canonique ou dict 'canon' / 'resultat'→'canon'), None sinon |
 | `extrait_message` | `tests/test_plan_comptable.py` | Paramètre : extrait attendu du message d'erreur |
 | `f_fec` | `core/migration/export.py` | Fichier FEC produit, ouvert en lecture binaire |
+| `FausseReponse` | `tests/test_connecteurs.py` | Doublure de test : réponse HTTP simulée |
 | `FauteXmlRpc` | `core/migration/injection.py`, `core/xml_sur.py` | Nom public de `xmlrpc.client.Fault` (erreur renvoyée par Odoo), utilisable par les tests |
 | `faux` | `tests/test_connecteurs.py` | Connexion simulée, dans un test |
 | `FauxCommun` | `tests/outils.py` | Point d'entrée XML-RPC « common » Odoo 17 simulé (déplacé, partagé) |
 | `FauxCurseurPg` | `tests/test_connecteurs.py` | Doublure de test : curseur PostgreSQL d'AzalPlus simulé |
+| `FauxPennylane` | `tests/test_connecteurs.py` | Doublure de test : API v2 de Pennylane simulée |
 | `FauxPg` | `tests/test_connecteurs.py` | Doublure de test : base AzalPlus simulée |
 | `fec_attendu` | `tests/test_xlsx_vers_fec.py` | Routine : FEC complet attendu en octets |
 | `fec_interne` | `tests/test_xlsx_vers_fec.py` | FEC produit par le lecteur interne |
 | `FEC_MINIMAL` | `tests/test_moteur.py` | FEC minimal équilibré (sorti de `TestParseurFEC`, partagé par le fichier) |
 | `fec_openpyxl` | `tests/test_xlsx_vers_fec.py` | FEC produit via openpyxl |
 | `fec_produit` | `tests/test_xlsx_vers_fec.py` | FEC produit par xlsx_vers_fec |
+| `FEC_SIMPLE` | `tests/test_connecteurs.py` | FEC de test sans tiers ni lettrage |
 | `fermee` | `tests/test_connecteurs.py` | Nombre de fermetures de la base simulée |
 | `fetchall` | `core/connecteurs/azalplus.py`, `tests/test_connecteurs.py` | Méthode : toutes les lignes lues (DB-API) |
 | `feu_vert` | `core/connecteurs/transfert.py`, `tests/test_connecteurs.py` | Étape 5 : qui, quand, date de sauvegarde |
@@ -579,10 +616,11 @@ Avant d'en créer une, vérifier (casse ignorée) qu'elle n'existe pas déjà.
 | `fichier_source` | `scripts/export_odoo_online.py` | Fichier FEC / xlsx ouvert en lecture |
 | `fichiers` | `core/connecteurs/base.py`, `core/connecteurs/transfert.py` | Fichiers produits par une étape |
 | `fil` | `tests/test_connecteurs.py` | Fil d'exécution concurrent, dans un test |
-| `filtre` | `core/migration/filtres.py` | Filtre normalisé / filtre fourni / copie modifiable du filtre fourni |
+| `filtre` | `core/migration/filtres.py`, `tests/test_connecteurs.py` | Filtre normalisé / filtre fourni / copie modifiable du filtre fourni |
+| `filtre_api` | `tests/test_connecteurs.py` | Filtre Pennylane parcouru |
 | `filtre_brut` | `core/migration/filtres.py` | Filtre normalisé / filtre fourni / copie modifiable du filtre fourni |
 | `FiltreNormalise` | `core/migration/filtres.py` | Type d'un filtre validé |
-| `filtres` | `core/connecteurs/transfert.py`, `tests/test_connecteurs.py` | Règles de filtres d'une demande |
+| `filtres` | `core/connecteurs/transfert.py`, `tests/test_connecteurs.py`, `core/connecteurs/pennylane.py` | Règles de filtres d'une demande |
 | `fin` | `core/migration/injection.py`, `interface/serveur.py`, `tests/test_demat.py`, `tests/test_connecteurs.py` | Résultat et bornes d'un paquet dans `decouper` ; aussi : état final d'une destination (test_connecteurs) |
 | `fin_attendue` | `tests/test_xlsx_vers_fec.py` | Fin de message d'erreur attendue |
 | `fin_lot` | `core/demat.py`, `core/odoo_source.py` | Indice de fin d'une tranche dans `_lots` |
@@ -593,19 +631,25 @@ Avant d'en créer une, vérifier (casse ignorée) qu'elle n'existe pas déjà.
 | `fonction_interne` | `core/moteur.py` | Fonction d'étape interne au moteur (`_<fonction>`) |
 | `fonction_module` | `core/moteur.py` | Fonction d'étape résolue dans un module |
 | `FonctionSauvegarde` | `core/bases_locales.py` | Protocol de la fonction de sauvegarde injectable |
+| `forcee` | `tests/test_connecteurs.py` | Réponse imposée à l'API simulée |
+| `forcees` | `tests/test_connecteurs.py` | Réponses imposées à l'API simulée |
 | `format_inconnu` | `tests/test_xlsx_vers_fec.py` | Fin du message pour un format de date inconnu |
 | `gardees` | `core/connecteurs/fec.py` | Lignes dans la période |
 | `gestionnaire` | `core/marceau.py` | Gestionnaire urllib ajouté à l'ouvreur https |
 | `GestionnaireConcorde` | `interface/serveur.py` | Sous-classe de Gestionnaire liée à une application (creer_serveur) |
+| `getheader` | `core/connecteurs/http_json.py`, `tests/test_connecteurs.py` | Méthode : valeur d'un en-tête HTTP |
+| `getresponse` | `core/connecteurs/http_json.py`, `tests/test_connecteurs.py` | Méthode : lecture de la réponse HTTP |
 | `groupe` | `core/xlsx_vers_fec.py` | Lignes Quadra d'un même groupe / d'une même écriture |
 | `groupes` | `core/xlsx_vers_fec.py` | Groupes de lignes Quadra par clé de cascade |
 | `guardian` | `tests/test_yaml_min.py`, `core/connecteurs/transfert.py`, `tests/test_connecteurs.py` | Section noyau.guardian de concorde.yaml ; aussi : audit passé au transfert (connecteurs/transfert) |
 | `guillemet_fermant` | `core/yaml_min.py` | Position du guillemet fermant d'une clé |
 | `guillemet_ouvert` | `core/yaml_min.py` | Guillemet actuellement ouvert |
 | `GUILLEMETS_YAML` | `core/yaml_min.py` | Guillemets reconnus par le lecteur YAML |
+| `headers` | `core/connecteurs/http_json.py`, `tests/test_connecteurs.py` | Paramètre : en-têtes de la requête (http.client) |
+| `hote` | `core/connecteurs/http_json.py`, `tests/test_connecteurs.py` | Nom d'hôte de l'API |
 | `HoteXmlRpc` | `core/odoo_source.py` | Type de l'hôte reçu par `Transport.make_connection` |
 | `id` | `core/connecteurs/connexions.py`, `core/connecteurs/transfert.py` | Identifiant d'une connexion ou d'un transfert |
-| `ident` | `core/demat.py`, `core/connecteurs/connexions.py`, `core/connecteurs/secrets.py`, `core/connecteurs/transfert.py`, `tests/test_connecteurs.py` | Id de partenaire dans la compréhension de `_lire_partenaires` ; aussi : identifiant d'une connexion ou d'un transfert (connecteurs) |
+| `ident` | `core/demat.py`, `core/connecteurs/connexions.py`, `core/connecteurs/secrets.py`, `core/connecteurs/transfert.py`, `tests/test_connecteurs.py`, `core/connecteurs/pennylane.py` | Id de partenaire dans la compréhension de `_lire_partenaires` ; aussi : identifiant d'une connexion ou d'un transfert (connecteurs) |
 | `ident_cible` | `core/connecteurs/transfert.py` | Connexion écrite pendant le test (verrou) |
 | `ident_dest` | `core/connecteurs/transfert.py` | Identifiant de la connexion destination |
 | `ident_destination` | `core/connecteurs/transfert.py`, `tests/test_connecteurs.py` | Identifiant d'une destination parcourue |
@@ -614,6 +658,7 @@ Avant d'en créer une, vérifier (casse ignorée) qu'elle n'existe pas déjà.
 | `identifiant_cle` | `core/bases_locales.py`, `tests/test_bases_locales.py` | Identifiant entier de la clé API à révoquer |
 | `identifiant_modele` | `core/bases_locales.py` | Nom du modèle vierge vérifié, calculé avant toute suppression dans `reinitialiser` |
 | `identique` | `core/connecteurs/transfert.py`, `tests/test_connecteurs.py` | Comptes repris à l'identique, par destination |
+| `ids` | `core/connecteurs/pennylane.py` | Identifiants d'écritures |
 | `ids_odoo` | `core/migration/injection.py` | Identifiants Odoo d'une lettre (avec None) / retrouvés |
 | `ids_trouves` | `core/migration/injection.py` | Identifiants Odoo d'une lettre (avec None) / retrouvés |
 | `ignorees` | `interface/serveur.py` | Bases écartées pendant Bases._lister_sql |
@@ -637,8 +682,9 @@ Avant d'en créer une, vérifier (casse ignorée) qu'elle n'existe pas déjà.
 | `Instantane` | `core/surveillance.py` | TypedDict : photo légère d'une base (écritures, comptes, verrous) |
 | `interieur` | `core/yaml_min.py` | Contenu entre crochets d'une liste en ligne |
 | `intitule` | `core/mapping.py` | Paramètre : intitulé d'en-tête cherché |
+| `jeton` | `core/connecteurs/http_json.py` | Jeton Bearer de l'API |
 | `jour` | `tests/test_xlsx_vers_fec.py`, `core/connecteurs/transfert.py`, `core/connecteurs/azalplus.py`, `tests/test_connecteurs.py` | Paramètre : jour d'une ligne Quadra ; aussi : date du feu vert (connecteurs/transfert) |
-| `journal` | `tests/test_xlsx_vers_fec.py`, `core/connecteurs/base.py`, `core/connecteurs/connexions.py`, `core/connecteurs/fec.py`, `core/connecteurs/transfert.py`, `tests/test_connecteurs.py`, `core/connecteurs/odoo.py`, `core/connecteurs/azalplus.py` | Paramètre : code journal d'une ligne FEC attendue ; aussi : journal reçu par un connecteur ou le transfert (connecteurs) |
+| `journal` | `tests/test_xlsx_vers_fec.py`, `core/connecteurs/base.py`, `core/connecteurs/connexions.py`, `core/connecteurs/fec.py`, `core/connecteurs/transfert.py`, `tests/test_connecteurs.py`, `core/connecteurs/odoo.py`, `core/connecteurs/azalplus.py`, `core/connecteurs/pennylane.py` | Paramètre : code journal d'une ligne FEC attendue ; aussi : journal reçu par un connecteur ou le transfert (connecteurs) |
 | `journal_actif` | `core/connecteurs/transfert.py` | Journal du transfert (muet si aucun) |
 | `journal_canonique` | `core/lettrage.py` | Journal canonique à lettrer (extrait par `extraire_canon`) |
 | `journal_desequilibre` | `tests/test_moteur.py` | Journal d'une ligne orpheline (refus attendu) |
@@ -647,7 +693,7 @@ Avant d'en créer une, vérifier (casse ignorée) qu'elle n'existe pas déjà.
 | `journal_log` | `tests/test_xlsx_vers_fec.py` | Journal des messages de conversion Quadra |
 | `journal_minimal` | `tests/test_moteur.py` | Journal canonique lu depuis `FEC_MINIMAL` |
 | `journal_vente` | `tests/test_mapping.py` | Routine : canonique 411/706/445 de test |
-| `journaux` | `core/migration/filtres.py` | Critères du filtre en cours de normalisation |
+| `journaux` | `core/migration/filtres.py`, `core/connecteurs/pennylane.py`, `tests/test_connecteurs.py` | Critères du filtre en cours de normalisation |
 | `journaux_lot` | `core/migration/injection.py` | Journaux demandés par le lot, avec leur libellé |
 | `lancer` | `tests/test_connecteurs.py` | Méthode de test : lance concorde_connexion |
 | `lecteur` | `tests/test_xml_sur.py` | Racine lue ; lecteur de réponses XML-RPC |
@@ -657,15 +703,17 @@ Avant d'en créer une, vérifier (casse ignorée) qu'elle n'existe pas déjà.
 | `LecteurValeur` | `core/mapping.py` | Type du lecteur de valeur d'une cellule rendu par `lire_feuille_xlsx` |
 | `lecture` | `core/xlsx_vers_fec.py`, `core/connecteurs/base.py`, `tests/test_connecteurs.py` | Ordre de lecture retenu pour une date ; aussi : mode de lecture d'un connecteur (connecteurs/base) |
 | `lettrage` | `core/connecteurs/azalplus.py` | Code de lettrage d'une ligne |
+| `lettrees` | `core/connecteurs/pennylane.py` | Lignes Pennylane lettrées avec une ligne |
 | `lettres` | `tests/classeurs_xlsx.py`, `tests/test_mapping.py` | Lettres d'une colonne Excel |
 | `lettres_colonne` | `core/xlsx_ecrire.py` | Routine partagée : index de colonne -> lettres Excel (remplace `_col`, `_lettres_colonne`, `lettre_colonne`) |
-| `libelle` | `core/migration/filtres.py`, `core/odoo_source.py`, `core/connecteurs/base.py`, `core/connecteurs/connexions.py`, `core/connecteurs/fec.py`, `tests/test_connecteurs.py`, `core/connecteurs/odoo.py`, `core/connecteurs/azalplus.py` | Code ou nom d'un compte analytique (dans `analytique_comptes`) ; aussi : libellé d'une connexion ou d'un connecteur (connecteurs) |
+| `libelle` | `core/migration/filtres.py`, `core/odoo_source.py`, `core/connecteurs/base.py`, `core/connecteurs/connexions.py`, `core/connecteurs/fec.py`, `tests/test_connecteurs.py`, `core/connecteurs/odoo.py`, `core/connecteurs/azalplus.py`, `core/connecteurs/pennylane.py` | Code ou nom d'un compte analytique (dans `analytique_comptes`) ; aussi : libellé d'une connexion ou d'un connecteur (connecteurs) |
 | `libelle_journal` | `core/connecteurs/azalplus.py` | Libellé du journal d'une ligne AzalPlus |
 | `libelle_ligne` | `deploy/addons/concorde/wizard/concorde_import_wizard.py` | Libellé d'une ligne d'écriture Odoo (200 caractères au plus) |
 | `libelle_mapping` | `deploy/addons/concorde/wizard/concorde_import_wizard.py` | Libellé du mapping connu au moment de l'échec |
 | `libelle_version` | `injectors/socle_odoo.py` | Mot du message d'avertissement de version (« cible » / « attendue ») |
 | `libelles_totaux` | `core/migration/export.py`, `injection.py` | (clé de totaux, libellé) comparés entrée / sortie |
-| `ligne` | `core/analyser.py`, `core/comparaison.py`, `core/comptes.py`, `core/migration/*.py`, `core/odoo_source.py`, `core/telecharger.py`, `tests/test_surveillance.py`, `core/connecteurs/fec.py`, `core/connecteurs/secrets.py`, `core/connecteurs/transfert.py`, `tests/test_connecteurs.py` | Ligne d'écriture (ex-`l`) ; aussi : ligne du lot ou du fichier de secrets (connecteurs) |
+| `ligne` | `core/analyser.py`, `core/comparaison.py`, `core/comptes.py`, `core/migration/*.py`, `core/odoo_source.py`, `core/telecharger.py`, `tests/test_surveillance.py`, `core/connecteurs/fec.py`, `core/connecteurs/secrets.py`, `core/connecteurs/transfert.py`, `tests/test_connecteurs.py`, `core/connecteurs/pennylane.py` | Ligne d'écriture (ex-`l`) ; aussi : ligne du lot ou du fichier de secrets (connecteurs) |
+| `ligne_api` | `tests/test_connecteurs.py` | Ligne d'écriture envoyée à l'API simulée |
 | `ligne_base` | `tests/test_comparaison.py` | Ligne de la base de test parcourue/modifiée dans un test |
 | `ligne_brute` | `core/yaml_min.py` | Ligne d'origine du document |
 | `ligne_canon` | `tests/test_moteur.py` | Ligne de journal canonique parcourue |
@@ -693,7 +741,8 @@ Avant d'en créer une, vérifier (casse ignorée) qu'elle n'existe pas déjà.
 | `LignePayloadOdoo` | `injectors/socle_odoo.py` | Type d'une ligne account.move.line envoyée à Odoo (montants en euros) |
 | `LignePayloadVersion` | `injectors/odoo_conversion.py` | Type d'une ligne du payload converti (centimes) |
 | `LigneQuadra` | `core/xlsx_vers_fec.py` | TypedDict : ligne validée d'un export Cegid Quadra avant regroupement |
-| `lignes` | `tests/classeurs_xlsx.py`, `tests/test_mapping.py`, `tests/test_plan_comptable.py`, `tests/test_xlsx_vers_fec.py`, `core/connecteurs/secrets.py`, `tests/test_connecteurs.py`, `core/connecteurs/base.py`, `core/connecteurs/odoo.py`, `core/connecteurs/azalplus.py` | Lignes d'une feuille ou d'un document de test ; aussi : lignes du fichier env réécrit (connecteurs/secrets) |
+| `lignes` | `tests/classeurs_xlsx.py`, `tests/test_mapping.py`, `tests/test_plan_comptable.py`, `tests/test_xlsx_vers_fec.py`, `core/connecteurs/secrets.py`, `tests/test_connecteurs.py`, `core/connecteurs/base.py`, `core/connecteurs/odoo.py`, `core/connecteurs/azalplus.py`, `core/connecteurs/pennylane.py` | Lignes d'une feuille ou d'un document de test ; aussi : lignes du fichier env réécrit (connecteurs/secrets) |
+| `lignes_api` | `core/connecteurs/pennylane.py` | Lignes d'écriture lues dans Pennylane |
 | `lignes_classeur` | `tests/test_xlsx_vers_fec.py` | Lignes écrites dans le classeur de test |
 | `lignes_client` | `tests/test_mapping.py` | Lignes du fichier de mapping client |
 | `lignes_fec` | `core/xlsx_vers_fec.py` | Lignes FEC produites avant encodage |
@@ -707,8 +756,9 @@ Avant d'en créer une, vérifier (casse ignorée) qu'elle n'existe pas déjà.
 | `LigneSortie` | `core/migration/export.py` | Type d'une ligne au format de core/telecharger |
 | `LigneXlsx` | `core/xlsx_vers_fec.py` | Type : ligne de cellules du classeur (None toléré) |
 | `LigneYaml` | `core/yaml_min.py` | Ligne utile (numéro, retrait, contenu) |
+| `limite` | `tests/test_connecteurs.py` | Éléments par page, dans l'API simulée |
 | `LIMITE_CODES_AFFICHES` | `deploy/addons/concorde/wizard/concorde_import_wizard.py` | Nombre maximal de codes de comptes cités (30) |
-| `lire` | `core/connecteurs/base.py`, `core/connecteurs/fec.py`, `core/connecteurs/odoo.py`, `core/connecteurs/azalplus.py` | Méthode d'un connecteur : données du périmètre -> Lot |
+| `lire` | `core/connecteurs/base.py`, `core/connecteurs/fec.py`, `core/connecteurs/odoo.py`, `core/connecteurs/azalplus.py`, `core/connecteurs/pennylane.py` | Méthode d'un connecteur : données du périmètre -> Lot |
 | `lire_feuille` | `tests/test_xlsx_vers_fec.py` | Méthode : lit une feuille faite de lignes <row> |
 | `lire_feuille_deplacee` | `tests/test_xlsx_vers_fec.py` | Méthode : lit un classeur dont la feuille est rangée ailleurs |
 | `lire_lignes` | `tests/test_yaml_min.py` | Routine : assemble des lignes YAML et les lit |
@@ -717,27 +767,28 @@ Avant d'en créer une, vérifier (casse ignorée) qu'elle n'existe pas déjà.
 | `lire_xml` | `core/xml_sur.py` | Routine : lecture XML sûre (defusedxml) |
 | `liste` | `interface/serveur.py` | Liste reçue (comptes ou analytiques) |
 | `lister` | `core/connecteurs/connexions.py` | Méthode de l'annuaire : connexions par libellé |
-| `logiciel` | `core/connecteurs/base.py`, `core/connecteurs/connexions.py`, `core/connecteurs/fec.py`, `core/connecteurs/registre.py`, `tests/test_connecteurs.py`, `core/connecteurs/odoo.py`, `core/connecteurs/azalplus.py` | Nom court du logiciel d'un connecteur |
+| `logiciel` | `core/connecteurs/base.py`, `core/connecteurs/connexions.py`, `core/connecteurs/fec.py`, `core/connecteurs/registre.py`, `tests/test_connecteurs.py`, `core/connecteurs/odoo.py`, `core/connecteurs/azalplus.py`, `core/connecteurs/pennylane.py` | Nom court du logiciel d'un connecteur |
 | `longueur_suffixe` | `core/bases_locales.py` | Longueur du suffixe « _modele » retiré du nom du modèle |
-| `lot` | `core/connecteurs/base.py`, `core/connecteurs/fec.py`, `core/connecteurs/transfert.py`, `tests/test_connecteurs.py`, `core/connecteurs/odoo.py`, `core/connecteurs/azalplus.py` | Lot au format commun |
+| `lot` | `core/connecteurs/base.py`, `core/connecteurs/fec.py`, `core/connecteurs/transfert.py`, `tests/test_connecteurs.py`, `core/connecteurs/odoo.py`, `core/connecteurs/azalplus.py`, `core/connecteurs/pennylane.py` | Lot au format commun |
 | `lot_pret` | `tests/test_connecteurs.py` | Méthode de test : FEC de référence, comptes à l'identique |
 | `lot_source` | `core/connecteurs/transfert.py` | Lot lu dans la source (jamais modifié) |
 | `maillon` | `core/guardian.py` | Maillon parcouru lors de la vérification de la chaîne |
 | `MaillonAudit` | `core/guardian.py` | TypedDict d'un maillon de la chaîne d'audit (charge, empreinte) |
 | `main` | `scripts/concorde_connexion.py` | Point d'entrée de concorde_connexion |
-| `manquants` | `core/migration/injection.py` | Routine : comptes, journaux, tiers du lot absents d'Odoo |
+| `manquants` | `core/migration/injection.py`, `core/connecteurs/pennylane.py` | Routine : comptes, journaux, tiers du lot absents d'Odoo |
 | `manque` | `tests/test_connecteurs.py` | Paramètre attendu dans un message d'erreur, dans un test |
 | `mapping_enchaine` | `tests/test_mapping.py` | Mapping de test aux correspondances enchaînées |
 | `mapping_lu` | `tests/test_mapping.py` | Mapping rendu par la fonction testée |
 | `mapping_simule` | `tests/test_assistant_import.py` | Configuration de mapping simulée (intitulés) |
 | `MAPPING_VENTE` | `tests/test_mapping.py` | Mapping complet du journal de vente de test |
 | `marquer_coupure` | `deploy/addons/concorde/wizard/concorde_import_wizard.py` | Paramètre de _codes_html : ajoute « … » si la liste est coupée |
-| `message` | `tests/test_mapping.py`, `tests/test_plan_comptable.py` | Message d'erreur obtenu |
+| `message` | `tests/test_mapping.py`, `tests/test_plan_comptable.py`, `core/connecteurs/http_json.py` | Message d'erreur obtenu |
 | `message_attendu` | `tests/test_xlsx_vers_fec.py` | Message d'erreur attendu |
 | `message_erreur` | `tests/test_xlsx_vers_fec.py` | Routine : lance une conversion qui doit échouer, rend son message |
 | `message_obtenu` | `tests/test_xlsx_vers_fec.py` | Message d'erreur obtenu |
 | `messages` | `tests/test_connecteurs.py` | Messages du journal, dans un test |
-| `methode` | `injectors/socle_odoo.py`, `tests/test_connecteurs.py` | Méthode ORM appelée (ex. search_read) |
+| `method` | `core/connecteurs/http_json.py`, `tests/test_connecteurs.py` | Paramètre : méthode HTTP (http.client) |
+| `methode` | `injectors/socle_odoo.py`, `tests/test_connecteurs.py`, `core/connecteurs/http_json.py` | Méthode ORM appelée (ex. search_read) |
 | `mode` | `core/connecteurs/secrets.py` | Droits du fichier de secrets |
 | `modele` | `injectors/socle_odoo.py`, `tests/test_connecteurs.py` | Modèle Odoo appelé (ex. account.move) |
 | `MODELE_LISEZMOI` | `deploy/addons/concorde/wizard/concorde_import_wizard.py` | Modèle du LISEZMOI joint au zip d'export |
@@ -756,15 +807,17 @@ Avant d'en créer une, vérifier (casse ignorée) qu'elle n'existe pas déjà.
 | `montant_max` | `core/migration/filtres.py` | Critères du filtre en cours de normalisation |
 | `montant_min` | `core/migration/filtres.py` | Critères du filtre en cours de normalisation |
 | `montants` | `core/connecteurs/azalplus.py` | (débit, crédit) en centimes |
+| `morceaux` | `core/connecteurs/http_json.py` | Adresse découpée (schéma, hôte, port, chemin) |
 | `mot` | `core/connecteurs/connexions.py` | Fragment de nom de secret parcouru |
 | `mot_de_passe` | `tests/test_connecteurs.py` | Mot de passe ou clé API d'Odoo |
 | `motif` | `core/yaml_min.py`, `tests/test_connecteurs.py`, `core/connecteurs/azalplus.py` | Paramètre : raison de l'ErreurYaml ; aussi : motif de retrait d'une ligne (test_connecteurs) |
-| `motifs` | `tests/test_connecteurs.py` | Motifs des lignes bloquées, dans un test |
+| `motifs` | `tests/test_connecteurs.py`, `core/connecteurs/pennylane.py` | Motifs des lignes bloquées, dans un test |
 | `MOTS_SECRETS` | `core/connecteurs/connexions.py` | Fragments qui signalent un secret dans un nom de paramètre |
-| `name` | `core/connecteurs/azalplus.py`, `tests/test_connecteurs.py` | Paramètre de cursor (curseur côté serveur, non utilisé) |
+| `multiples` | `core/connecteurs/pennylane.py` | Comptes présents sous plusieurs identifiants |
+| `name` | `core/connecteurs/azalplus.py`, `tests/test_connecteurs.py`, `core/connecteurs/http_json.py` | Paramètre de cursor (curseur côté serveur, non utilisé) |
 | `nature` | `securite/concorde_securite.py`, `core/connecteurs/odoo.py`, `core/migration/injection.py`, `core/odoo_source.py` | Résultat de `classer_connexion` ; aussi : « comptes », « journaux » ou « tiers » |
 | `niveau_cascade` | `core/xlsx_vers_fec.py` | Clé de LigneQuadra : cascade qui a rattaché la ligne (0 = aucune) |
-| `nom` | `tests/test_interface.py`, `core/connecteurs/connexions.py`, `core/connecteurs/fec.py`, `core/connecteurs/secrets.py`, `scripts/concorde_connexion.py`, `tests/test_connecteurs.py`, `core/connecteurs/base.py`, `core/connecteurs/azalplus.py` | Paramètre de `entete_obligatoire` : nom de l'en-tête ; aussi : nom d'un secret, d'un paramètre ou d'un fichier (connecteurs) |
+| `nom` | `tests/test_interface.py`, `core/connecteurs/connexions.py`, `core/connecteurs/fec.py`, `core/connecteurs/secrets.py`, `scripts/concorde_connexion.py`, `tests/test_connecteurs.py`, `core/connecteurs/base.py`, `core/connecteurs/azalplus.py`, `core/connecteurs/pennylane.py` | Paramètre de `entete_obligatoire` : nom de l'en-tête ; aussi : nom d'un secret, d'un paramètre ou d'un fichier (connecteurs) |
 | `nom_base` | `core/bases_locales.py`, `core/migration/injection.py`, `interface/serveur.py` | Paramètre de `_identifiant_sql` : nom de base ou de modèle |
 | `nom_champ` | `tests/test_assistant_import.py` | Paramètre : nom du champ lu sur la pièce jointe simulée |
 | `nom_conforme` | `core/bases_locales.py` | Résultat de la vérification du nom dans `_identifiant_sql` |
@@ -786,9 +839,10 @@ Avant d'en créer une, vérifier (casse ignorée) qu'elle n'existe pas déjà.
 | `nouveau` | `core/connecteurs/transfert.py` | État de la destination au nouveau test |
 | `nouveau_lot` | `core/connecteurs/base.py` | Routine partagée : Lot à partir de lignes lues par API |
 | `nouvelle` | `core/bases_locales.py`, `interface/serveur.py` | Connexion ouverte par `_connexion_ou_nouvelle` |
-| `numero` | `interface/serveur.py`, `core/connecteurs/secrets.py`, `core/connecteurs/odoo.py`, `core/connecteurs/azalplus.py` | Numéro d'un fichier produit dans une tâche ; aussi : numéro de ligne du fichier de secrets (connecteurs/secrets) ; aussi : Rang d'une ligne |
+| `numero` | `interface/serveur.py`, `core/connecteurs/secrets.py`, `core/connecteurs/odoo.py`, `core/connecteurs/azalplus.py`, `core/connecteurs/pennylane.py`, `tests/test_connecteurs.py` | Numéro d'un fichier produit dans une tâche ; aussi : numéro de ligne du fichier de secrets (connecteurs/secrets) ; aussi : Rang d'une ligne |
 | `numero_attendu` | `tests/test_yaml_min.py` | Numéro de ligne attendu dans l'ErreurYaml |
 | `numero_ligne` | `tests/classeurs_xlsx.py` | Numéro de ligne Excel (à partir de 1) |
+| `numeros` | `core/connecteurs/pennylane.py`, `tests/test_connecteurs.py` | Numéros de comptes demandés |
 | `numuniq` | `tests/test_xlsx_vers_fec.py` | Paramètre : numéro unique Quadra d'une ligne |
 | `objet_fil` | `core/migration/injection.py` | Client « object » du fil courant |
 | `ObjetJson` | `interface/serveur.py` | Alias dict[str, Any] : objet JSON dynamique (tâche, base, constat, corps de requête) |
@@ -798,6 +852,7 @@ Avant d'en créer une, vérifier (casse ignorée) qu'elle n'existe pas déjà.
 | `OCTETS_DEBUT_ZIP` | `tests/test_assistant_import.py` | En-tête d'un fichier zip (.xlsx), attendu après décodage |
 | `octets_fichier` | `deploy/addons/concorde/wizard/concorde_import_wizard.py` | Octets du fichier rendus par _lire_binaire |
 | `odoo` | `tests/test_connecteurs.py` | Méthode de test : connecteur Odoo, ou Odoo simulé |
+| `operateur` | `tests/test_connecteurs.py` | Opérateur d'un filtre Pennylane |
 | `operations` | `core/migration/filtres.py` | {opérateur: test} d'une condition libre |
 | `options` | `injectors/socle_odoo.py` | Arguments nommés de la méthode ORM (omis si None) |
 | `options_clamscan` | `securite/concorde_securite.py` | Options de la ligne de commande clamscan |
@@ -808,15 +863,18 @@ Avant d'en créer une, vérifier (casse ignorée) qu'elle n'existe pas déjà.
 | `ouvert` | `tests/test_connecteurs.py` | Connecteur ouvert, dans un test |
 | `OUVRANTS_GUILLEMET` | `core/yaml_min.py` | Caractères après lesquels un guillemet ouvre une chaîne |
 | `ouvreur` | `core/marceau.py` | OpenerDirector construit par `_ouvreur_https` |
-| `ouvrir` | `core/connecteurs/connexions.py` | Méthode de l'annuaire : connecteur avec ses seuls secrets |
+| `ouvrir` | `core/connecteurs/connexions.py`, `core/connecteurs/http_json.py`, `tests/test_connecteurs.py` | Méthode de l'annuaire : connecteur avec ses seuls secrets |
+| `page` | `core/connecteurs/http_json.py`, `tests/test_connecteurs.py` | Page d'une liste paginée |
 | `paire` | `core/mapping.py`, `scripts/concorde_connexion.py` | Paramètre : paire de comptes à valider ; aussi : « nom=valeur » de la ligne de commande (concorde_connexion) |
 | `PaireLettrage` | `core/lettrage.py` | TypedDict d'une paire lettrée (code, compte, montant, ligne_debit, ligne_credit) |
 | `paires` | `scripts/concorde_connexion.py` | Paramètres nom=valeur de la ligne de commande |
+| `paquet` | `core/connecteurs/pennylane.py` | Paquet de valeurs d'un filtre |
 | `paquet_ids` | `core/migration/injection.py` | Paquet de références / d'identifiants lus ou envoyés |
 | `paquet_refs` | `core/migration/injection.py` | Paquet de références / d'identifiants lus ou envoyés |
 | `paquets` | `core/migration/injection.py` | Résultat et bornes d'un paquet dans `decouper` |
 | `par` | `core/connecteurs/transfert.py` | Qui donne le feu vert |
-| `parametres` | `core/bases_locales.py`, `injectors/socle_odoo.py`, `interface/serveur.py`, `tests/test_bases_locales.py`, `core/connecteurs/base.py`, `core/connecteurs/connexions.py`, `scripts/concorde_connexion.py`, `tests/test_connecteurs.py`, `core/connecteurs/azalplus.py` | Paramètre : valeurs SQL de `CurseurPg.execute` ; aussi : paramètres d'une connexion (connecteurs) |
+| `par_id` | `core/connecteurs/pennylane.py` | Écritures Pennylane par identifiant |
+| `parametres` | `core/bases_locales.py`, `injectors/socle_odoo.py`, `interface/serveur.py`, `tests/test_bases_locales.py`, `core/connecteurs/base.py`, `core/connecteurs/connexions.py`, `scripts/concorde_connexion.py`, `tests/test_connecteurs.py`, `core/connecteurs/azalplus.py`, `core/connecteurs/http_json.py`, `core/connecteurs/pennylane.py` | Paramètre : valeurs SQL de `CurseurPg.execute` ; aussi : paramètres d'une connexion (connecteurs) |
 | `parametres_requis` | `core/connecteurs/base.py`, `core/connecteurs/odoo.py`, `core/connecteurs/azalplus.py` | Paramètres attendus par un connecteur |
 | `ParametresUrl` | `interface/serveur.py` | Alias dict[str, str] : paramètres d'URL, dernière valeur gardée |
 | `partages` | `tests/test_mapping.py` | Paramètre : textes de sharedStrings |
@@ -826,8 +884,9 @@ Avant d'en créer une, vérifier (casse ignorée) qu'elle n'existe pas déjà.
 | `PayloadOdoo` | `injectors/socle_odoo.py` | Type du payload account.move envoyé par `create` |
 | `PayloadVersion` | `injectors/odoo_conversion.py` | Type du payload account.move d'une version cible |
 | `pdf_inspectes` | `core/demat.py` | Nombre maximal de PDF inspectés (plafond max_pdf) |
+| `pennylane` | `tests/test_connecteurs.py` | Méthode de test : connecteur Pennylane |
 | `perdre_une_ligne` | `tests/test_connecteurs.py` | Doublure : filtres qui perdent une écriture sans trace |
-| `perimetre` | `core/connecteurs/base.py`, `core/connecteurs/fec.py`, `core/connecteurs/odoo.py`, `core/connecteurs/azalplus.py` | Période d'un transfert |
+| `perimetre` | `core/connecteurs/base.py`, `core/connecteurs/fec.py`, `core/connecteurs/odoo.py`, `core/connecteurs/azalplus.py`, `core/connecteurs/pennylane.py` | Période d'un transfert |
 | `PerimetreLecture` | `core/connecteurs/base.py` | TypedDict : période lue (du, au) |
 | `periode` | `tests/test_xlsx_vers_fec.py` | Paramètre : période d'une ligne Quadra |
 | `PERIODE_ESSAI` | `tests/test_xlsx_vers_fec.py` | Période des lignes Quadra d'essai |
@@ -839,6 +898,7 @@ Avant d'en créer une, vérifier (casse ignorée) qu'elle n'existe pas déjà.
 | `pieces_jointes` | `tests/test_assistant_import.py` | Modèle ir.attachment simulé du test d'export |
 | `pipeline` | `tests/test_yaml_min.py` | Liste pipeline de concorde.yaml |
 | `PlanComptes` | `deploy/addons/concorde/wizard/concorde_import_wizard.py` | Type du plan comptable uploadé {code: (intitulé, type ou None)} |
+| `port` | `core/connecteurs/http_json.py`, `tests/test_connecteurs.py` | Port de l'API (None = 443) |
 | `portee` | `core/migration/filtres.py` | Critères du filtre en cours de normalisation |
 | `portes` | `core/migration/circuit.py` | Raccourci vers `rapport["portes"]` |
 | `position` | `core/yaml_min.py` | Indice de ligne ou de caractère courant (remplace `i`) |
@@ -850,15 +910,17 @@ Avant d'en créer une, vérifier (casse ignorée) qu'elle n'existe pas déjà.
 | `premiere` | `tests/test_connecteurs.py` | Première ligne lue, dans un test |
 | `premiere_ligne` | `scripts/outils_cli.py` | Première ligne d'un texte (description argparse depuis `__doc__`) |
 | `Preparation` | `core/migration/injection.py` | Type du bilan de `preparer` |
+| `present` | `tests/test_connecteurs.py` | Valeur du champ filtré, dans l'API simulée |
+| `presentes` | `core/connecteurs/pennylane.py` | Références déjà présentes dans Pennylane : {référence: id} |
 | `presents` | `core/mapping.py` | Chemins présents dans l'archive |
 | `produit` | `interface/serveur.py` | Fichier ou format produit par une tâche |
 | `ProxyCommun` | `core/migration/injection.py` | Protocoles des services XML-RPC « common » et « object » |
 | `ProxyObjet` | `core/migration/injection.py` | Protocoles des services XML-RPC « common » et « object » |
 | `ProxyXmlRpc` | `core/xml_sur.py` | Client XML-RPC (ServerProxy) protégé par defusedxml |
 | `PSQL_CONCORDE` | `scripts/install_module.sh` | Commande psql (tableau bash) sur la base concorde, arrêt à la première erreur |
-| `racine` | `tests/test_xml_sur.py`, `core/connecteurs/transfert.py` | Racine lue ; lecteur de réponses XML-RPC ; aussi : dossier des transferts (connecteurs/transfert) |
+| `racine` | `tests/test_xml_sur.py`, `core/connecteurs/transfert.py`, `tests/test_connecteurs.py`, `core/connecteurs/http_json.py` | Racine lue ; lecteur de réponses XML-RPC ; aussi : dossier des transferts (connecteurs/transfert) |
 | `RACINE_DEPOT` | `tests/outils.py` | Dossier racine du dépôt |
-| `rang` | `tests/test_moteur.py`, `core/connecteurs/azalplus.py` | Paramètre : rang de l'étape dans le pipeline |
+| `rang` | `tests/test_moteur.py`, `core/connecteurs/azalplus.py`, `tests/test_connecteurs.py` | Paramètre : rang de l'étape dans le pipeline |
 | `rang_annee` | `core/xlsx_vers_fec.py` | Rang du groupe année |
 | `rang_etape` | `deploy/addons/concorde/wizard/concorde_import_wizard.py` | Paramètre de _bilan_etape : rang de l'étape (2 mapping, 4 rapport) |
 | `rang_jour` | `core/xlsx_vers_fec.py` | Rang du groupe jour |
@@ -878,16 +940,17 @@ Avant d'en créer une, vérifier (casse ignorée) qu'elle n'existe pas déjà.
 | `RapportConversion` | `injectors/odoo_conversion.py` | Type du rapport de `convertir_chainee` |
 | `RapportFec` | `core/telecharger.py` | TypedDict : résultat de `generer_fec` |
 | `RapportInjection` | `injectors/socle_odoo.py` | Type du rapport rendu par `InjecteurOdoo.injecter` |
+| `read` | `core/connecteurs/http_json.py`, `tests/test_connecteurs.py` | Méthode : corps de la réponse HTTP |
 | `readonly` | `core/connecteurs/azalplus.py`, `tests/test_connecteurs.py` | Paramètre de set_session (lecture seule) |
 | `rechercher_existants` | `core/migration/injection.py` | Routine : comptes, journaux, tiers du lot déjà dans Odoo |
 | `reel` | `tests/test_connecteurs.py` | Résultat d'une écriture réelle, dans un test |
 | `ref_ecriture` | `core/migration/injection.py` | Routine : référence Odoo <début>/<journal>/<n°> (ex-`_ref`) |
-| `reference` | `tests/classeurs_xlsx.py`, `tests/test_xlsx_vers_fec.py`, `core/connecteurs/base.py`, `core/connecteurs/fec.py`, `core/connecteurs/transfert.py`, `tests/test_connecteurs.py`, `core/connecteurs/odoo.py` | Référence de cellule (ex. B3) ; aussi : référence de transfert CONCORDE/<id> (connecteurs) ; aussi : Référence de transfert (CONCORDE/<id>) |
+| `reference` | `tests/classeurs_xlsx.py`, `tests/test_xlsx_vers_fec.py`, `core/connecteurs/base.py`, `core/connecteurs/fec.py`, `core/connecteurs/transfert.py`, `tests/test_connecteurs.py`, `core/connecteurs/odoo.py`, `core/connecteurs/pennylane.py` | Référence de cellule (ex. B3) ; aussi : référence de transfert CONCORDE/<id> (connecteurs) ; aussi : Référence de transfert (CONCORDE/<id>) |
 | `reference_prefixe` | `core/odoo_source.py` | Lire seulement les écritures dont la référence commence par ce début |
 | `reference_test` | `core/connecteurs/transfert.py` | Référence d'un test de transfert |
-| `references` | `core/connecteurs/transfert.py` | (référence du transfert, référence du test) |
+| `references` | `core/connecteurs/transfert.py`, `tests/test_connecteurs.py` | (référence du transfert, référence du test) |
 | `references_presentes` | `core/migration/injection.py` | Routine : références d'écritures déjà dans Odoo |
-| `refs` | `core/connecteurs/odoo.py`, `tests/test_connecteurs.py` | Références des écritures du lot |
+| `refs` | `core/connecteurs/odoo.py`, `tests/test_connecteurs.py`, `core/connecteurs/pennylane.py` | Références des écritures du lot |
 | `refus` | `tests/test_connecteurs.py` | Destination qui refuse le transfert, dans un test |
 | `refuses` | `core/connecteurs/connexions.py` | Paramètres au nom de secret refusés |
 | `REGISTRE` | `core/connecteurs/registre.py` | Logiciels branchés : nom court -> classe du connecteur |
@@ -901,17 +964,20 @@ Avant d'en créer une, vérifier (casse ignorée) qu'elle n'existe pas déjà.
 | `relations_classeur_xml` | `tests/classeurs_xlsx.py` | Routine : workbook.xml.rels à partir de {id: cible} |
 | `RELATIONS_RACINE` | `tests/test_xlsx_vers_fec.py` | _rels/.rels vers xl/workbook.xml |
 | `relations_xml` | `tests/test_xlsx_vers_fec.py` | Paramètre : contenu de workbook.xml.rels |
-| `relire` | `core/connecteurs/base.py`, `core/connecteurs/fec.py`, `tests/test_connecteurs.py`, `core/connecteurs/odoo.py` | Méthode d'un connecteur : relit ce qui a été écrit |
+| `relire` | `core/connecteurs/base.py`, `core/connecteurs/fec.py`, `tests/test_connecteurs.py`, `core/connecteurs/odoo.py`, `core/connecteurs/pennylane.py` | Méthode d'un connecteur : relit ce qui a été écrit |
 | `relu` | `core/connecteurs/transfert.py`, `tests/test_connecteurs.py` | Lot relu après écriture |
 | `remplacement` | `tests/test_xlsx_vers_fec.py` | Remplacement simulé (mock) |
-| `reponse` | `tests/test_interface.py` | Paramètre de `entete_obligatoire` : réponse HTTP reçue |
-| `requete` | `core/bases_locales.py`, `interface/serveur.py`, `tests/test_bases_locales.py`, `core/connecteurs/azalplus.py`, `tests/test_connecteurs.py` | Paramètre : ordre SQL de `CurseurPg.execute` |
+| `reponse` | `tests/test_interface.py`, `core/connecteurs/http_json.py` | Paramètre de `entete_obligatoire` : réponse HTTP reçue |
+| `ReponseHttp` | `core/connecteurs/http_json.py` | Protocole : réponse HTTP (http.client ou doublure) |
+| `reprise` | `tests/test_connecteurs.py` | Résultat d'une écriture reprise, dans un test |
+| `request` | `core/connecteurs/http_json.py`, `tests/test_connecteurs.py` | Méthode : envoi d'une requête HTTP |
+| `requete` | `core/bases_locales.py`, `interface/serveur.py`, `tests/test_bases_locales.py`, `core/connecteurs/azalplus.py`, `tests/test_connecteurs.py`, `core/connecteurs/http_json.py` | Paramètre : ordre SQL de `CurseurPg.execute` |
 | `requetes` | `tests/test_connecteurs.py` | Requêtes reçues par la base simulée |
 | `resolue` | `interface/serveur.py` | Libellé « alerte résolue » |
 | `resoudre_tiers` | `core/connecteurs/azalplus.py` | Routine : code d'un tiers AzalPlus d'après son nom (jamais deviné) |
 | `restantes` | `core/xlsx_vers_fec.py` | Lignes Quadra des groupes non soldés après une cascade |
 | `reste` | `core/xlsx_ecrire.py`, `core/yaml_min.py` | Reste de la conversion en lettres de colonne ; valeur brute après « clé: » (YAML) |
-| `resultat` | `interface/serveur.py`, `core/connecteurs/fec.py`, `tests/test_connecteurs.py`, `core/connecteurs/odoo.py` | Résultat d'une comparaison ; aussi : bilan d'écriture ou des filtres (connecteurs) |
+| `resultat` | `interface/serveur.py`, `core/connecteurs/fec.py`, `tests/test_connecteurs.py`, `core/connecteurs/odoo.py`, `core/connecteurs/pennylane.py` | Résultat d'une comparaison ; aussi : bilan d'écriture ou des filtres (connecteurs) |
 | `resultat_etape` | `deploy/addons/concorde/wizard/concorde_import_wizard.py`, `tests/test_moteur.py` | Rend le résultat d'une étape du pipeline, type vérifié |
 | `ResultatEcriture` | `core/connecteurs/base.py` | TypedDict : bilan d'une écriture ou d'un essai à blanc |
 | `ResultatEnvoi` | `core/migration/injection.py` | Type du résultat de `envoyer` |
@@ -929,6 +995,7 @@ Avant d'en créer une, vérifier (casse ignorée) qu'elle n'existe pas déjà.
 | `retirer_hors_periode` | `core/connecteurs/fec.py` | Routine : retire les écritures hors période (gardées à part) |
 | `retrait` | `core/migration/filtres.py`, `core/fichier_json.py` | Bilan du filtre en cours (remplace `t`) |
 | `RetraitFiltre` | `core/migration/filtres.py` | Type du bilan d'un filtre |
+| `retry_after` | `core/connecteurs/http_json.py` | Valeur de l'en-tête Retry-After |
 | `role` | `core/connecteurs/transfert.py` | « source » ou « destination » |
 | `roles` | `core/connecteurs/transfert.py` | Connexions d'une demande avec leur rôle |
 | `sait_faire` | `core/connecteurs/transfert.py` | Mode de lecture ou d'écriture du connecteur |
@@ -941,9 +1008,9 @@ Avant d'en créer une, vérifier (casse ignorée) qu'elle n'existe pas déjà.
 | `SauvegardeListee` | `core/bases_locales.py` | TypedDict d'une sauvegarde listée (fichier, taille, date, base) |
 | `ScalaireYaml` | `core/yaml_min.py` | Type d'un scalaire YAML (str, int, bool) |
 | `secret` | `scripts/concorde_connexion.py` | Sous-commande secret de concorde_connexion |
-| `secrets` | `core/connecteurs/base.py`, `core/connecteurs/connexions.py`, `core/connecteurs/secrets.py`, `tests/test_connecteurs.py`, `core/connecteurs/azalplus.py` | Secrets lus, ou secrets donnés à un connecteur |
+| `secrets` | `core/connecteurs/base.py`, `core/connecteurs/connexions.py`, `core/connecteurs/secrets.py`, `tests/test_connecteurs.py`, `core/connecteurs/azalplus.py`, `core/connecteurs/pennylane.py` | Secrets lus, ou secrets donnés à un connecteur |
 | `secrets_connexion` | `core/connecteurs/secrets.py` | Routine : secrets d'une connexion, par champ |
-| `secrets_requis` | `core/connecteurs/base.py`, `tests/test_connecteurs.py`, `core/connecteurs/odoo.py`, `core/connecteurs/azalplus.py` | Secrets attendus par un connecteur |
+| `secrets_requis` | `core/connecteurs/base.py`, `tests/test_connecteurs.py`, `core/connecteurs/odoo.py`, `core/connecteurs/azalplus.py`, `core/connecteurs/pennylane.py` | Secrets attendus par un connecteur |
 | `section` | `tests/test_yaml_min.py` | Routine : sous-table YAML vérifiée |
 | `securite` | `interface/serveur.py` | Constats ou fichiers de sécurité |
 | `separateur` | `tests/test_xlsx_vers_fec.py` | Séparateur de date testé |
@@ -970,14 +1037,17 @@ Avant d'en créer une, vérifier (casse ignorée) qu'elle n'existe pas déjà.
 | `SourceLot` | `core/migration/lot.py` | Type de la description de la source lue (type, nom, empreinte, encodage…) |
 | `SourceMapping` | `core/mapping.py` | Type des sources de mapping acceptées (JSON, chemin, dict, paires) |
 | `SourceOdoo` | `core/odoo_source.py`, `interface/serveur.py`, `scripts/concorde_odoo.py` | Protocol : interface commune des sources SQL et XML-RPC |
+| `sources` | `tests/test_connecteurs.py` | Données simulées par chemin d'API |
 | `sous` | `scripts/concorde_connexion.py` | Sous-commandes argparse |
 | `sous_table` | `tests/test_yaml_min.py` | Sous-table extraite |
 | `spec_assistant` | `tests/test_assistant_import.py` | Spécification d'import de l'assistant |
 | `spec_module` | `tests/test_xlsx_vers_fec.py` | Spécification d'import de core.xlsx_vers_fec |
 | `StatsLettrage` | `core/lettrage.py` | TypedDict des statistiques du lettrage |
-| `statut` | `core/connecteurs/transfert.py` | Statut d'une destination ou d'une étape |
+| `status` | `core/connecteurs/http_json.py`, `tests/test_connecteurs.py` | Statut HTTP de la réponse |
+| `statut` | `core/connecteurs/transfert.py`, `core/connecteurs/http_json.py`, `core/connecteurs/pennylane.py`, `tests/test_connecteurs.py` | Statut d'une destination ou d'une étape |
 | `statut_constats` | `core/migration/circuit.py` | Routine partagée : « bloquee » si un constat est BLOQUANT (ex-`_statut`) |
 | `StatutPorte` | `core/migration/circuit.py` | Partie toujours présente de l'état d'une porte |
+| `statuts` | `core/connecteurs/pennylane.py` | Statuts d'écritures Pennylane lus |
 | `STATUTS_VALIDES` | `core/connecteurs/azalplus.py` | Statuts AzalPlus lus comme validés (VALIDEE, VALIDE) |
 | `style_cellule` | `core/xlsx_vers_fec.py` | Indice de style (attribut s) d'une cellule xlsx |
 | `STYLE_NORMAL` | `tests/test_xlsx_vers_fec.py` | Style nommé Normal exigé par openpyxl |
@@ -988,12 +1058,15 @@ Avant d'en créer une, vérifier (casse ignorée) qu'elle n'existe pas déjà.
 | `styles_presents` | `tests/test_xlsx_vers_fec.py` | Vrai si le classeur de test a des styles |
 | `STYLES_SANS_CELLXFS` | `tests/test_xlsx_vers_fec.py` | Styles sans liste cellXfs |
 | `styles_xml` | `tests/test_xlsx_vers_fec.py` | Paramètre : contenu de xl/styles.xml |
+| `suite` | `tests/test_connecteurs.py` | Vrai s'il reste des pages |
+| `suivant` | `tests/test_connecteurs.py` | Prochain identifiant de l'API simulée |
 | `supprimee` | `interface/serveur.py` | Vrai si la tâche supprime la base (sinon réinitialise) |
 | `table` | `core/yaml_min.py` | Table en cours de lecture (remplace `resultat`/`obj`) |
 | `TABLE_PJ_PRESENTE` | `scripts/install_module.sh` | « t » si la table ir_attachment existe (sinon base neuve) |
 | `tables` | `core/connecteurs/transfert.py` | Tables de correspondance, par destination |
 | `tache` | `interface/serveur.py` | Fiche d'une tâche |
 | `taille` | `interface/serveur.py` | Taille du corps de requête ou d'un fichier |
+| `TAILLE_FILTRE` | `core/connecteurs/pennylane.py` | Valeurs au plus par filtre « in » de Pennylane |
 | `tampon` | `interface/serveur.py` | Tampon mémoire (zip, CSV) |
 | `tampon_zip` | `deploy/addons/concorde/wizard/concorde_import_wizard.py` | Tampon mémoire du zip d'export |
 | `techniques` | `interface/serveur.py` | Rapport des contrôles techniques |
@@ -1007,12 +1080,14 @@ Avant d'en créer une, vérifier (casse ignorée) qu'elle n'existe pas déjà.
 | `TestChargementFichier` | `tests/test_yaml_min.py` | Tests de chargement d'un fichier YAML |
 | `TestChargerMappingJson` | `tests/test_mapping.py` | Tests de charger_mapping (JSON) |
 | `TestChargerMappingXlsx` | `tests/test_mapping.py` | Tests du classeur Mapping Quadra Odoo |
+| `TestClientJson` | `tests/test_connecteurs.py` | Classe de test : client REST JSON |
 | `TestCommande` | `tests/test_connecteurs.py` | Classe de test : scripts/concorde_connexion.py |
 | `TestCommentairesEnFinDeLigne` | `tests/test_yaml_min.py` | Tests des commentaires de fin de ligne |
 | `TestCompteTexte` | `tests/test_mapping.py` | Tests de _compte_txt |
 | `TestConnecteurAzalPlus` | `tests/test_connecteurs.py` | Classe de test : connecteur AzalPlus |
 | `TestConnecteurFec` | `tests/test_connecteurs.py` | Classe de test : connecteur FEC |
 | `TestConnecteurOdoo` | `tests/test_connecteurs.py` | Classe de test : connecteur Odoo sur des Odoo simulés |
+| `TestConnecteurPennylane` | `tests/test_connecteurs.py` | Classe de test : connecteur Pennylane |
 | `TestConversionQuadra` | `tests/test_xlsx_vers_fec.py` | Tests de conversion d'un export Quadra |
 | `TestConversionStandard` | `tests/test_xlsx_vers_fec.py` | Tests de conversion d'un classeur standard |
 | `TestDateFec` | `tests/test_xlsx_vers_fec.py` | Tests de _date_fec |
@@ -1020,7 +1095,7 @@ Avant d'en créer une, vérifier (casse ignorée) qu'elle n'existe pas déjà.
 | `TestDictionnairePlan` | `tests/test_plan_comptable.py` | Tests de dictionnaire_plan |
 | `TestEntete` | `tests/test_xlsx_vers_fec.py` | Tests de détection de l'en-tête |
 | `TestEnvoiOdoo` | `tests/test_connecteurs.py` | Classe de test : envoi vers une base Odoo quelconque |
-| `tester` | `core/connecteurs/base.py`, `core/connecteurs/connexions.py`, `core/connecteurs/fec.py`, `tests/test_connecteurs.py`, `core/connecteurs/odoo.py`, `core/connecteurs/azalplus.py` | Méthode : essaie la connexion et lit la société |
+| `tester` | `core/connecteurs/base.py`, `core/connecteurs/connexions.py`, `core/connecteurs/fec.py`, `tests/test_connecteurs.py`, `core/connecteurs/odoo.py`, `core/connecteurs/azalplus.py`, `core/connecteurs/pennylane.py` | Méthode : essaie la connexion et lit la société |
 | `TestErreursExplicites` | `tests/test_yaml_min.py` | Tests des erreurs YAML explicites |
 | `TestErreursPlan` | `tests/test_plan_comptable.py` | Tests des refus du plan comptable |
 | `TestExporter` | `tests/test_assistant_import.py` | Tests de `action_exporter` |
@@ -1042,7 +1117,7 @@ Avant d'en créer une, vérifier (casse ignorée) qu'elle n'existe pas déjà.
 | `TestTransfert` | `tests/test_connecteurs.py` | Classe de test : procédure de transfert en 7 étapes |
 | `TestTypesComptes` | `tests/test_plan_comptable.py` | Tests de déduction du type Odoo |
 | `TestVraieConfiguration` | `tests/test_yaml_min.py` | Tests du vrai concorde.yaml |
-| `texte` | `core/migration/connecteur_fec.py`, `interface/serveur.py`, `core/connecteurs/transfert.py`, `core/connecteurs/base.py` | Paramètre de `_date` (remplace `v`) ; aussi : lignes du lot en JSON pour l'empreinte (connecteurs/transfert) |
+| `texte` | `core/migration/connecteur_fec.py`, `interface/serveur.py`, `core/connecteurs/transfert.py`, `core/connecteurs/base.py`, `core/connecteurs/pennylane.py`, `tests/test_connecteurs.py` | Paramètre de `_date` (remplace `v`) ; aussi : lignes du lot en JSON pour l'empreinte (connecteurs/transfert) |
 | `texte_normalise` | `core/plan_comptable.py` | Texte de type normalisé (remplace `t`) |
 | `texte_valeur` | `core/yaml_min.py`, `tests/test_mapping.py` | Texte d'une valeur lue |
 | `texte_yaml` | `tests/test_yaml_min.py` | Document YAML d'un sous-test |
@@ -1053,6 +1128,7 @@ Avant d'en créer une, vérifier (casse ignorée) qu'elle n'existe pas déjà.
 | `totaux` | `core/migration/lot.py`, `controles.py`, `connecteur_fec.py`, `core/connecteurs/transfert.py` | Totaux d'un lot (remplace `t`) ; aussi : totaux du lot d'une destination (connecteurs/transfert) |
 | `TotauxLot` | `core/migration/lot.py` | Type des totaux d'un lot (lignes, écritures, débit, crédit) |
 | `tout` | `tests/test_connecteurs.py` | Lot lu sans période, dans un test |
+| `tout_lire` | `core/connecteurs/http_json.py` | Méthode : toutes les pages d'une liste (curseur) |
 | `trace` | `tests/outils.py`, `core/connecteurs/azalplus.py` | Paramètres de `CurseurSimule.__exit__` |
 | `traduction` | `core/odoo_source.py` | Traduction retenue d'un texte Odoo (jsonb) |
 | `TRANSFEREE` | `core/connecteurs/transfert.py` | Statut : destination transférée et relue conforme |
@@ -1061,7 +1137,7 @@ Avant d'en créer une, vérifier (casse ignorée) qu'elle n'existe pas déjà.
 | `TransportXmlRpc` | `core/xml_sur.py` | Transport XML-RPC HTTP |
 | `TransportXmlRpcSur` | `core/xml_sur.py` | Transport XML-RPC HTTPS |
 | `trouve` | `core/connecteurs/fec.py` | SIREN trouvé dans le nom du fichier |
-| `trouves` | `core/connecteurs/secrets.py` | Secrets trouvés pour une connexion |
+| `trouves` | `core/connecteurs/secrets.py`, `core/connecteurs/pennylane.py` | Secrets trouvés pour une connexion |
 | `trouves_par_nom` | `core/connecteurs/azalplus.py` | Tiers retrouvés par leur nom : {nom: code} |
 | `typ_vu` | `core/plan_comptable.py` | Type déjà lu pour un code répété |
 | `type_attendu` | `tests/test_moteur.py` | Paramètre : type que l'étape doit avoir produit |
@@ -1080,10 +1156,11 @@ Avant d'en créer une, vérifier (casse ignorée) qu'elle n'existe pas déjà.
 | `types_contenu` | `tests/test_xlsx_vers_fec.py` | Routine : [Content_Types].xml du classeur de test |
 | `TYPES_ODOO_MESURES` | `tests/test_plan_comptable.py` | Les 18 account_type mesurés dans Odoo 17/18 |
 | `types_specifiques` | `core/plan_comptable.py` | Types des clés les plus spécifiques trouvées |
-| `url` | `tests/test_connecteurs.py` | Adresse du serveur Odoo |
+| `uniques` | `core/connecteurs/pennylane.py` | Comptes à un seul identifiant : {numéro: id} |
+| `url` | `tests/test_connecteurs.py`, `core/connecteurs/http_json.py` | Adresse du serveur Odoo |
 | `utilisateur` | `tests/test_connecteurs.py` | Login Odoo |
 | `utilisateurs` | `core/connecteurs/connexions.py` | Connexions qui utilisent une connexion de test |
-| `valeur` | `core/migration/circuit.py`, `filtres.py`, `core/connecteurs/secrets.py`, `scripts/concorde_connexion.py`, `core/connecteurs/azalplus.py` | Paramètre de `_vers_json` / des routines de normalisation ; aussi : valeur d'un secret (connecteurs/secrets) |
+| `valeur` | `core/migration/circuit.py`, `filtres.py`, `core/connecteurs/secrets.py`, `scripts/concorde_connexion.py`, `core/connecteurs/azalplus.py`, `core/connecteurs/http_json.py`, `tests/test_connecteurs.py` | Paramètre de `_vers_json` / des routines de normalisation ; aussi : valeur d'un secret (connecteurs/secrets) |
 | `valeur_champ` | `core/migration/connecteur_fec.py` | Fonction : valeur nettoyée d'une colonne (remplace `val`) ; dans `filtres._condition` : valeur brute du champ testé |
 | `valeur_element` | `core/yaml_min.py` | Valeur d'un élément de liste lu |
 | `valeur_entete` | `tests/test_interface.py` | Valeur lue de l'en-tête dans `entete_obligatoire` |

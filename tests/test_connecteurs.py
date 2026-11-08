@@ -1,9 +1,12 @@
 # CONCORDE v1.0 — (c) MASITH / Stéphane Moreau. Tous droits réservés.
 """Tests du socle des transferts entre logiciels (ADR-0008)."""
 
+import http.client
 import io
+import json
 import os
 import re
+import ssl
 import stat
 import sys
 import tempfile
@@ -16,9 +19,12 @@ from decimal import Decimal
 from collections.abc import Iterable, Mapping
 from typing import Any, ClassVar
 from unittest import mock
+from urllib.parse import parse_qsl
 
+from core.connecteurs import http_json as module_http_json
 from core.connecteurs import odoo as module_odoo
 from core.connecteurs import registre, transfert
+from core.migration import export as module_export
 from core.migration import filtres as module_filtres
 from core.migration import injection
 from core.migration.correspondance import appliquer as appliquer_correspondance
@@ -31,7 +37,9 @@ from core.connecteurs.base import (
 )
 from core.connecteurs.connexions import Annuaire, ErreurAnnuaire
 from core.connecteurs.azalplus import ConnecteurAzalPlus
+from core.connecteurs.http_json import ClientJson, connexion_https
 from core.connecteurs.odoo import ConnecteurOdoo
+from core.connecteurs.pennylane import ConnecteurPennylane, Element
 from core.connecteurs.fec import (
     ConnecteurFec,
     dossier_reference,
@@ -1542,3 +1550,445 @@ class TestConnecteurAzalPlus(Bac):
                 Journal(),
                 self.guardian,
             )
+
+
+class FausseReponse:
+    """Réponse HTTP simulée."""
+
+    def __init__(
+        self, status: int, corps: bytes, entetes: dict[str, str]
+    ) -> None:
+        """Garde le statut, le corps et les en-têtes."""
+        self.status, self._corps, self._entetes = status, corps, entetes
+
+    def read(self) -> bytes:
+        """Corps de la réponse."""
+        return self._corps
+
+    def getheader(self, name: str) -> str | None:
+        """Valeur d'un en-tête."""
+        return self._entetes.get(name)
+
+
+class FauxPennylane:
+    """API v2 de Pennylane simulée (journaux, comptes, écritures, lignes).
+
+    `forcees` : réponses imposées, servies avant le fonctionnement normal.
+    """
+
+    RACINE = "/api/external/v2"
+
+    def __init__(self) -> None:
+        """Deux journaux, comptes du PCG (512000 deux fois : deux TVA)."""
+        self.journaux: list[Element] = [
+            {"id": 1, "code": "AN", "label": "À nouveaux", "type": "x"},
+            {"id": 2, "code": "VE", "label": "Ventes", "type": "x"},
+        ]
+        self.comptes: list[Element] = [
+            {"id": 10 + rang, "number": numero, "enabled": True}
+            for rang, numero in enumerate(
+                ("512000", "101000", "706000", "445710", "411000", "512000")
+            )
+        ]
+        self.comptes[5]["enabled"] = False  # doublon désactivé : ignoré
+        self.ecritures: list[Element] = []
+        self.lignes: list[Element] = []
+        self.forcees: list[tuple[int, bytes, dict[str, str]]] = []
+        self.requetes: list[tuple[str, str, dict[str, str]]] = []
+        self.suivant = 1000
+
+    def ouvrir(
+        self, hote: str, port: int | None, delai: float
+    ) -> "FauxPennylane":
+        """Fabrique de connexion : la base simulée sert de connexion."""
+        return self
+
+    def request(
+        self,
+        method: str,
+        url: str,
+        body: bytes | None = None,
+        headers: Mapping[str, str] = {},
+    ) -> None:
+        """Garde la requête pour getresponse."""
+        self._requete = (method, url, body)
+        self.requetes.append((method, url, dict(headers)))
+
+    def close(self) -> None:
+        """Rien à fermer."""
+
+    def getresponse(self) -> FausseReponse:
+        """Répond comme l'API v2 (filtres, curseur, création)."""
+        if self.forcees:
+            return FausseReponse(*self.forcees.pop(0))
+        methode, url, corps = self._requete
+        chemin, _, requete = url.partition("?")
+        chemin = chemin.removeprefix(self.RACINE)
+        parametres = dict(parse_qsl(requete))
+        if methode == "POST":
+            return self._creer(json.loads(corps or b"{}"))
+        sources = {
+            "/journals": self.journaux,
+            "/ledger_accounts": self.comptes,
+            "/ledger_entries": self.ecritures,
+            "/ledger_entry_lines": self.lignes,
+        }
+        elements = [
+            element_api
+            for element_api in sources[chemin]
+            if all(
+                self._garde(element_api, filtre_api)
+                for filtre_api in json.loads(parametres.get("filter", "[]"))
+            )
+        ]
+        debut = int(parametres.get("cursor") or 0)
+        limite = int(parametres.get("limit") or 20)
+        fin = debut + limite
+        page = elements[debut:fin]
+        suite = debut + limite < len(elements)
+        return self._json(
+            200,
+            {
+                "items": page,
+                "has_more": suite,
+                "next_cursor": str(debut + limite) if suite else None,
+            },
+        )
+
+    @staticmethod
+    def _garde(element: Element, filtre: dict[str, Any]) -> bool:
+        """Vrai si l'élément passe le filtre Pennylane."""
+        champ, operateur, valeur = (
+            filtre["field"],
+            filtre["operator"],
+            filtre["value"],
+        )
+        if champ == "ledger_entry_id":
+            present = element["ledger_entry"]["id"]
+        else:
+            present = element.get(champ)
+        if operateur == "in":
+            return present in valeur
+        if operateur == "eq":
+            return bool(present == valeur)
+        if operateur == "gteq":
+            return str(present) >= str(valeur)
+        return str(present) <= str(valeur)  # lteq
+
+    def _json(self, statut: int, valeur: object) -> FausseReponse:
+        """Réponse JSON."""
+        return FausseReponse(statut, json.dumps(valeur).encode(), {})
+
+    def _creer(self, corps: dict[str, Any]) -> FausseReponse:
+        """Crée une écriture et ses lignes (422 si déséquilibrée)."""
+        lignes = corps["ledger_entry_lines"]
+        if sum(
+            Decimal(ligne_api["debit"]) - Decimal(ligne_api["credit"])
+            for ligne_api in lignes
+        ):
+            return self._json(422, {"message": "Entry lines are not balanced"})
+        self.suivant += 1
+        ident = self.suivant
+        self.ecritures.append(
+            {
+                "id": ident,
+                "label": corps["label"],
+                "piece_number": corps["piece_number"],
+                "date": corps["date"],
+                "journal": {"id": corps["journal_id"]},
+                "status": "entry",
+            }
+        )
+        numeros = {
+            compte_api["id"]: compte_api["number"]
+            for compte_api in self.comptes
+        }
+        for ligne in lignes:
+            self.suivant += 1
+            self.lignes.append(
+                {
+                    "id": self.suivant,
+                    "debit": ligne["debit"],
+                    "credit": ligne["credit"],
+                    "label": ligne["label"],
+                    "date": corps["date"],
+                    "journal": {"id": corps["journal_id"]},
+                    "ledger_entry": {"id": ident},
+                    "ledger_account": {
+                        "id": ligne["ledger_account_id"],
+                        "number": numeros[ligne["ledger_account_id"]],
+                    },
+                    "lettered_ledger_entry_lines": {"ids": []},
+                }
+            )
+        return self._json(201, {"id": ident})
+
+
+# FEC sans tiers ni lettrage (Pennylane ne les porte pas sur la ligne).
+FEC_SIMPLE = (
+    ligne_fec("AN", "1", "20250101", "512000", "1000,00"),
+    ligne_fec("AN", "1", "20250101", "101000", credit="1000,00"),
+    ligne_fec("VE", "2", "20250115", "411000", "120,00"),
+    ligne_fec("VE", "2", "20250115", "706000", credit="100,00"),
+    ligne_fec("VE", "2", "20250115", "445710", credit="20,00"),
+)
+
+
+class TestClientJson(unittest.TestCase):
+    """Client REST JSON commun (https, 429, erreurs sans jeton)."""
+
+    def client(self, faux: FauxPennylane, **options: Any) -> ClientJson:
+        """Client vers l'API simulée."""
+        return ClientJson(
+            "https://app.pennylane.com/api/external/v2",
+            "jeton-secret",
+            ouvrir=faux.ouvrir,
+            **options,
+        )
+
+    def test_https_exige(self) -> None:
+        """Vérifie le refus d'une adresse http."""
+        with self.assertRaises(ErreurConnexion):
+            ClientJson("http://app.pennylane.com/api", "j")
+
+    def test_limite_d_appels_puis_reprise(self) -> None:
+        """Vérifie l'attente sur 429 puis la reprise, et l'abandon nommé."""
+        faux = FauxPennylane()
+        attentes: list[float] = []
+        faux.forcees = [(429, b"", {"Retry-After": "3"}), (429, b"", {})]
+        page = self.client(faux, attendre=attentes.append).requete(
+            "GET", "/journals"
+        )
+        self.assertEqual(len(page["items"]), 2)
+        self.assertEqual(attentes, [3.0, 2.0])
+        faux.forcees = [(429, b"", {"Retry-After": "x"})] * 2
+        with self.assertRaises(ErreurConnexion) as contexte:
+            self.client(faux, essais=2, attendre=attentes.append).requete(
+                "GET", "/journals"
+            )
+        self.assertIn("limite d'appels", str(contexte.exception))
+        self.assertEqual(attentes[-1], 2.0)
+
+    def test_erreurs_sans_jeton(self) -> None:
+        """Vérifie 401, message de l'éditeur, réponse illisible, réseau."""
+        faux = FauxPennylane()
+        cas: tuple[tuple[tuple[int, bytes, dict[str, str]], str], ...] = (
+            ((401, b"{}", {}), "jeton invalide"),
+            ((500, b'{"error": "panne"}', {}), "panne"),
+            ((502, b"", {}), "sans détail"),
+            ((200, b"<html>", {}), "illisible"),
+        )
+        for forcee, attendu in cas:
+            faux.forcees = [forcee]
+            with self.assertRaises(ErreurConnexion) as contexte:
+                self.client(faux).requete("GET", "/journals")
+            self.assertIn(attendu, str(contexte.exception))
+            self.assertNotIn("jeton-secret", str(contexte.exception))
+        with mock.patch.object(faux, "request", side_effect=OSError("coupé")):
+            with self.assertRaises(ErreurConnexion) as contexte:
+                self.client(faux).requete("GET", "/journals")
+        self.assertIn("injoignable", str(contexte.exception))
+        self.assertEqual(
+            faux.requetes[0][2]["Authorization"], "Bearer jeton-secret"
+        )
+
+    def test_pagination_par_curseur(self) -> None:
+        """Vérifie que toutes les pages d'une liste sont lues."""
+        faux = FauxPennylane()
+        faux.comptes = [
+            {"id": rang, "number": str(rang), "enabled": True}
+            for rang in range(250)
+        ]
+        self.assertEqual(
+            len(self.client(faux).tout_lire("/ledger_accounts")), 250
+        )
+        curseurs = [url for _, url, _ in faux.requetes if "cursor=" in url]
+        self.assertEqual(len(curseurs), 2)
+
+    def test_connexion_https_verifie_le_certificat(self) -> None:
+        """Vérifie que la connexion par défaut vérifie le certificat."""
+        connexion = connexion_https("app.pennylane.com", None, 5)
+        self.assertIsInstance(connexion, http.client.HTTPSConnection)
+        contexte = getattr(connexion, "_context")
+        self.assertEqual(contexte.verify_mode, ssl.CERT_REQUIRED)
+        self.assertTrue(contexte.check_hostname)
+
+
+class TestConnecteurPennylane(Bac):
+    """Connecteur Pennylane sur l'API simulée."""
+
+    def setUp(self) -> None:
+        """Branche le client HTTP sur l'API simulée."""
+        super().setUp()
+        self.faux = FauxPennylane()
+        correctif = mock.patch.object(
+            module_http_json, "connexion_https", self.faux.ouvrir
+        )
+        correctif.start()
+        self.addCleanup(correctif.stop)
+
+    def pennylane(self, **options: str) -> ConnecteurPennylane:
+        """Connecteur vers l'API simulée."""
+        return ConnecteurPennylane(options, {"jeton": "jeton-secret"})
+
+    def lot(self, *lignes: str) -> Lot:
+        """Lot lu dans un FEC, comptes à l'identique."""
+        lot = lire_fec(fec(*lignes))
+        appliquer_correspondance(lot, identique=True)
+        return lot
+
+    def test_tester(self) -> None:
+        """Vérifie le test et l'en-tête de société (jeton de cabinet)."""
+        info = self.pennylane(societe_id="42").tester(Journal())
+        self.assertEqual(info["societe"], "42")
+        self.assertEqual(self.faux.requetes[0][2]["X-Company-Id"], "42")
+
+    def test_refus_nommes(self) -> None:
+        """Vérifie : tiers, lettrage, journal et compte absents."""
+        essai = self.pennylane().ecrire(
+            self.lot(*BASE), "CONCORDE/T1", True, Journal()
+        )
+        texte = " ".join(essai["erreurs"])
+        for attendu in ("avec tiers", "lettrée", "BQ, OD", "421000, 640000"):
+            self.assertIn(attendu, texte)
+        devise = self.lot(*FEC_SIMPLE)
+        devise.lignes[0]["devise"] = "USD"
+        self.assertIn(
+            "en devise",
+            " ".join(
+                self.pennylane().ecrire(devise, "R", True, Journal())[
+                    "erreurs"
+                ]
+            ),
+        )
+        self.faux.comptes[5]["enabled"] = True  # 512000 sous deux TVA
+        self.assertIn(
+            "plusieurs identifiants",
+            " ".join(
+                self.pennylane().ecrire(
+                    self.lot(*FEC_SIMPLE), "R", False, Journal()
+                )["erreurs"]
+            ),
+        )
+        self.assertEqual(self.faux.ecritures, [])
+
+    def test_ecrire_relire_reprise(self) -> None:
+        """Vérifie l'écriture, la relecture au centime, sans doublon."""
+        connecteur = self.pennylane()
+        lot = self.lot(*FEC_SIMPLE)
+        essai = connecteur.ecrire(lot, "CONCORDE/T1", True, Journal())
+        self.assertEqual(
+            (essai["erreurs"], essai["ecritures_a_creer"]), ([], 2)
+        )
+        ecrit = connecteur.ecrire(lot, "CONCORDE/T1", False, Journal())
+        self.assertEqual(ecrit["erreurs"], [])
+        self.assertEqual(
+            sorted(
+                element_api["piece_number"]
+                for element_api in self.faux.ecritures
+            ),
+            ["CONCORDE/T1/AN/1", "CONCORDE/T1/VE/2"],
+        )
+        self.assertEqual(self.faux.lignes[0]["debit"], "1000.00")
+        relu = connecteur.relire("CONCORDE/T1", Journal())
+        self.assertEqual(module_export.comparer(lot, relu).constats, [])
+        encore = self.pennylane()
+        reprise = encore.ecrire(lot, "CONCORDE/T1", False, Journal())
+        self.assertEqual(
+            (
+                reprise["ecritures_a_creer"],
+                reprise["ecritures_deja_presentes"],
+            ),
+            (0, 2),
+        )
+        self.assertEqual(len(self.faux.ecritures), 2)
+        self.assertEqual(
+            encore.relire("CONCORDE/T1", Journal()).totaux(), lot.totaux()
+        )
+        with self.assertRaises(ErreurConnexion):
+            self.pennylane().relire("CONCORDE/T1", Journal())
+
+    def test_refus_d_une_ecriture(self) -> None:
+        """Vérifie qu'un refus de Pennylane est gardé avec sa référence."""
+        refus = self.faux._json(
+            422, {"message": "Entry lines are not balanced"}
+        )
+        with mock.patch.object(self.faux, "_creer", return_value=refus):
+            ecrit = self.pennylane().ecrire(
+                self.lot(*FEC_SIMPLE), "CONCORDE/T2", False, Journal()
+            )
+        self.assertEqual(len(ecrit["erreurs"]), 2)
+        self.assertIn("CONCORDE/T2/AN/1", ecrit["erreurs"][0])
+        self.assertIn("not balanced", ecrit["erreurs"][0])
+
+    def test_lire(self) -> None:
+        """Vérifie la lecture : statuts exigés, période, lettrage."""
+        connecteur = self.pennylane(statuts_lus="entry, complete")
+        connecteur.ecrire(
+            self.lot(*FEC_SIMPLE), "CONCORDE/T1", False, Journal()
+        )
+        self.faux.ecritures[1]["status"] = "draft"
+        self.faux.lignes[0]["lettered_ledger_entry_lines"]["ids"] = [9999]
+        lot = connecteur.lire({"du": date(2025, 1, 1), "au": None}, Journal())
+        self.assertEqual(lot.totaux()["ecritures"], 1)  # brouillon exclu
+        self.assertEqual(lot.lignes[0]["lettrage"], "P1002")
+        self.assertEqual(lot.lignes[0]["journal_code"], "AN")
+        vide = connecteur.lire(
+            {"du": None, "au": date(2024, 12, 31)}, Journal()
+        )
+        self.assertEqual(vide.lignes, [])
+        with self.assertRaises(ErreurConnexion):
+            self.pennylane().lire({"du": None, "au": None}, Journal())
+
+    def test_donnees_illisibles(self) -> None:
+        """Vérifie le refus d'un montant à 3 décimales ou d'une date."""
+        connecteur = self.pennylane(statuts_lus="entry")
+        connecteur.ecrire(self.lot(*FEC_SIMPLE), "R", False, Journal())
+        self.faux.lignes[0]["debit"] = "1.234"
+        with self.assertRaises(ErreurConnexion):
+            connecteur.relire("R", Journal())
+        self.faux.lignes[0]["debit"] = "1000.00"
+        self.faux.lignes[0]["date"] = "05/01/2025"
+        with self.assertRaises(ErreurConnexion):
+            connecteur.relire("R", Journal())
+
+    def test_transfert_fec_vers_pennylane(self) -> None:
+        """Vérifie le parcours complet vers Pennylane (bac à sable en test)."""
+        source = self.annuaire_connexions.ajouter(
+            "fec", "FEC", {"chemin": self.deposer(*FEC_SIMPLE)}
+        )["id"]
+        test = self.annuaire_connexions.ajouter(
+            "pennylane", "Pennylane bac à sable", {}
+        )["id"]
+        vraie = self.annuaire_connexions.ajouter(
+            "pennylane", "Pennylane cabinet", {}, test
+        )["id"]
+        for ident in (test, vraie):
+            ecrire_variable(self.secrets, nom_variable(ident, "jeton"), "j")
+        etat = transfert.creer(
+            self.annuaire_connexions,
+            self.demande(source, vraie),
+            self.transferts,
+            AUJ,
+            Journal(),
+            self.guardian,
+        )
+        self.assertEqual(etat["destinations"][vraie]["statut"], ATTENTE)
+        fin = transfert.donner_feu_vert(
+            self.annuaire_connexions,
+            etat["id"],
+            vraie,
+            "Pennylane cabinet",
+            AUJ,
+            "Stéphane Moreau",
+            self.transferts,
+            AUJ,
+            Journal(),
+            self.guardian,
+        )
+        self.assertEqual(fin["statut"], TRANSFEREE)
+        references = sorted(
+            element_api["piece_number"] for element_api in self.faux.ecritures
+        )
+        self.assertEqual(len(references), 6)  # test1, test2, transfert
+        self.assertTrue(references[0].endswith("/AN/1"))

@@ -1,6 +1,6 @@
-# ADR-0011 — Écran Connexions et Transferts dans l'interface web
+# ADR-0011 — Écrans Connexions, Transferts et Montée de version dans l'interface web
 
-- **Statut** : Proposée
+- **Statut** : Acceptée — arbitrages de Stéphane Moreau du 08/11/2026
 - **Date** : 08/11/2026
 - **Décideur** : Stéphane Moreau
 
@@ -63,7 +63,9 @@ dur dans la page. Un logiciel ajouté plus tard (Sage, Cegid) apparaît donc tou
 - Pour un logiciel sans API (Sage 100, Sage 50, Quadra, Loop), on ajoute une connexion
   « FEC (fichier) » et on **dépose** le fichier depuis le navigateur.
 - Il est rangé dans `/var/lib/concorde-interface/depots/<connexion>/FEC.txt` (dossier
-  700), à **200 Mo au plus**, puis relu tout de suite par la lecture FEC stricte. Un
+  700), à **200 Mo au plus par défaut**. Ce plafond se change sans toucher au code,
+  par la variable `CONCORDE_DEPOT_MAX_MO` de `/etc/concorde/interface.env` (puis
+  redémarrage du service). Le fichier est relu tout de suite par la lecture FEC stricte. Un
   fichier refusé n'est pas gardé, et la cause s'affiche.
 - Un nouveau dépôt remplace l'ancien. Un transfert déjà créé garde sa photo de la source
   (ADR-0008) et n'est pas touché.
@@ -86,14 +88,28 @@ dur dans la page. Un logiciel ajouté plus tard (Sage, Cegid) apparaît donc tou
 - Le nouveau test puis le transfert complet (étapes 6 et 7) tournent en tâche de fond.
 - Le feu vert est inscrit dans l'audit avec la date et l'adresse IP de la session.
 
-### 7. Ce qui reste hors de cet écran
-- **Montée de version Odoo** (ADR-0010) : un écran à part, plus tard, quand la montée
-  sera pilotée de bout en bout par la commande.
+### 7. Un écran à part : « Montée de version »
+- Une entrée **Montée de version** dans le menu, distincte de Transferts.
+- Le client voit **une montée de version Odoo faite par CONCORDE**. Le nom de l'outil
+  utilisé en dessous (OpenUpgrade, ADR-0010) n'apparaît ni à l'écran ni dans le rapport
+  remis au client. Il reste écrit dans la documentation interne et dans l'audit.
+- L'écran suit le circuit de l'ADR-0010 :
+  1. choisir la base Odoo (une connexion Odoo) et la version visée (15 à 18) ;
+  2. inventaire des modules, avec ceux qui bloquent la montée ;
+  3. photo comptable avant ;
+  4. montée pas à pas sur une copie, avec l'avancement par version ;
+  5. photo après et comparaison au centime, écart par écart ;
+  6. rapport, puis feu vert (nom de la base retapé) ;
+  7. nouvel essai sur une copie fraîche, puis livraison.
+- Ce qui s'affiche vient seulement de ce qui a été mesuré : une étape non faite reste
+  grise, jamais « verte » par défaut.
+
+### 8. Ce qui reste hors de ces écrans
 - **Plusieurs utilisateurs** : toujours un seul (ADR-0002).
 - **Modifier une connexion** : on la retire et on la recrée. Ses secrets sont effacés
   avec elle.
 
-### 8. Technique
+### 9. Technique
 - Aucune nouvelle dépendance : `http.server`, HTML, CSS et JavaScript sans framework,
   comme le reste de l'interface.
 - Les nouvelles routes appellent l'annuaire et le moteur de transfert existants. Aucune
@@ -104,6 +120,13 @@ dur dans la page. Un logiciel ajouté plus tard (Sage, Cegid) apparaît donc tou
   parcours complet dans le navigateur, sur le site en ligne, avec un transfert
   FEC → FEC.
 
+### 10. Ordre de construction
+1. Dossier des secrets et écriture atomique (point 3).
+2. Écran Transferts : Connexions, dépôt de FEC, transferts, feu vert.
+3. Pilotage de la montée de bout en bout par la commande `concorde_montee` (copie,
+   conteneurs sur la machine louée, rapport, feu vert), puis l'écran Montée de version
+   branché dessus. L'écran ne fait rien que la commande ne fasse déjà, mesuré en CI.
+
 ## Conséquences
 - Le service peut écrire dans `/etc/concorde/connecteurs`. Une faille dans l'interface
   pourrait donc changer des secrets de connexion, mais pas le mot de passe de
@@ -111,6 +134,18 @@ dur dans la page. Un logiciel ajouté plus tard (Sage, Cegid) apparaît donc tou
 - Le dossier des secrets entre dans la surveillance de sécurité (ADR-0007) et dans les
   sauvegardes chiffrées.
 - L'ADR-0008 (point 3) est modifiée sur le chemin du fichier de secrets.
+- **Licence AGPL d'OpenUpgrade** : ne pas citer OpenUpgrade au client ne change rien
+  aux obligations de la licence (ADR-0010, arbitrage 6). L'avocat doit confirmer, avant
+  la première vente, que le contrat et le rapport client peuvent ne pas le nommer.
+
+## Arbitrages (Stéphane Moreau, 08/11/2026)
+1. Secrets dans `/etc/concorde/connecteurs/`, seul dossier inscriptible par le service : oui.
+2. Dépôt de FEC : 200 Mo par défaut, **qu'on doit pouvoir augmenter si nécessaire**
+   (variable `CONCORDE_DEPOT_MAX_MO`).
+3. Correspondance des comptes : « plan identique » ou fichier déposé : oui.
+4. Modifier une connexion = la retirer puis la recréer, ses secrets effacés : oui.
+5. Montée de version : **un écran spécifique**. OpenUpgrade est utilisé, mais c'est
+   **transparent pour le client**.
 
 ## Options écartées
 - **Garder les secrets en ligne de commande seulement** : rien ne change côté sécurité,

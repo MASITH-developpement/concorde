@@ -3,7 +3,7 @@
 Format : [Keep a Changelog](https://keepachangelog.com/fr/1.1.0/), versions sémantiques.
 Le module Odoo porte la même version au format `17.0.X.Y.Z` (`deploy/addons/concorde/__manifest__.py`).
 
-## [Non publiée]
+## [1.8.0] — 2026-11-08
 ### Modifié
 - Secrets des connexions (ADR-0011, acceptée le 08/11/2026) : nouveau chemin
   `/etc/concorde/connecteurs/connecteurs.env`, dans un dossier 700 du compte

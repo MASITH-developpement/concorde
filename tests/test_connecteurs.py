@@ -48,6 +48,7 @@ from core.connecteurs.fec import (
 from core.connecteurs.secrets import (
     ErreurSecrets,
     ecrire_variable,
+    effacer_secrets_connexion,
     lire_secrets,
     nom_variable,
     secrets_connexion,
@@ -269,6 +270,37 @@ class TestSecrets(Bac):
             ecrire_variable(self.secrets, "minuscule", "x")
         with self.assertRaises(ErreurSecrets):
             ecrire_variable(self.secrets, "A", "x\nB=y")
+        with self.assertRaises(ErreurSecrets):
+            ecrire_variable(self.secrets, "A", "")
+
+    def test_ecriture_atomique_dans_un_dossier_neuf(self) -> None:
+        """Vérifie le dossier créé en 700 et l'absence de fichier temporaire."""
+        chemin = os.path.join(self.dossier, "connecteurs", "connecteurs.env")
+        ecrire_variable(chemin, "A", "1")
+        ecrire_variable(chemin, "B", "2")
+        dossier_secrets = os.path.dirname(chemin)
+        self.assertEqual(stat.S_IMODE(os.stat(dossier_secrets).st_mode), 0o700)
+        self.assertEqual(os.listdir(dossier_secrets), ["connecteurs.env"])
+        self.assertEqual(lire_secrets(chemin), {"A": "1", "B": "2"})
+
+    def test_coupure_pendant_l_ecriture(self) -> None:
+        """Vérifie qu'un échec d'écriture laisse l'ancien fichier intact."""
+        ecrire_variable(self.secrets, "A", "garde")
+        with mock.patch("os.replace", side_effect=OSError("disque plein")):
+            with self.assertRaises(OSError):
+                ecrire_variable(self.secrets, "B", "perdu")
+        self.assertEqual(lire_secrets(self.secrets), {"A": "garde"})
+
+    def test_effacer_les_secrets_d_une_connexion(self) -> None:
+        """Vérifie que seuls les secrets de la connexion sont effacés."""
+        effacer_secrets_connexion(self.secrets, "a", ("jeton",))
+        self.assertFalse(os.path.exists(self.secrets))
+        ecrire_variable(self.secrets, nom_variable("a", "jeton"), "1")
+        ecrire_variable(self.secrets, nom_variable("b", "jeton"), "2")
+        effacer_secrets_connexion(self.secrets, "a", ("jeton", "cle"))
+        self.assertEqual(
+            lire_secrets(self.secrets), {nom_variable("b", "jeton"): "2"}
+        )
 
 
 class TestAnnuaire(Bac):
@@ -297,6 +329,22 @@ class TestAnnuaire(Bac):
             relu.retirer(test["id"])
         with self.assertRaises(ErreurAnnuaire):
             relu.obtenir(test["id"])
+
+    def test_etat_puis_effacement_des_secrets(self) -> None:
+        """Vérifie « renseigné / manquant » sans valeur, puis l'effacement."""
+        fiche = self.annuaire_connexions.ajouter("faux", "Cabinet", {})
+        self.assertEqual(
+            self.annuaire_connexions.secrets_renseignes(fiche["id"]),
+            {"jeton": False},
+        )
+        ecrire_variable(
+            self.secrets, nom_variable(fiche["id"], "jeton"), "jeton-prive"
+        )
+        etat = self.annuaire_connexions.secrets_renseignes(fiche["id"])
+        self.assertEqual(etat, {"jeton": True})
+        self.assertNotIn("jeton-prive", json.dumps(etat))
+        self.annuaire_connexions.retirer(fiche["id"])
+        self.assertEqual(lire_secrets(self.secrets), {})
 
     def test_copies_independantes(self) -> None:
         """Vérifie qu'une fiche rendue ne modifie pas l'annuaire."""

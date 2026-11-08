@@ -24,7 +24,13 @@ from ..fichier_json import ecrire_json_atomique
 from ..journal import Journal
 from .base import Connecteur, InfoConnexion
 from .registre import classe_connecteur
-from .secrets import CHEMIN_SECRETS, lire_secrets, secrets_connexion
+from .secrets import (
+    CHEMIN_SECRETS,
+    effacer_secrets_connexion,
+    etat_secrets,
+    lire_secrets,
+    secrets_connexion,
+)
 
 CHEMIN_CONNEXIONS = os.environ.get(
     "CONCORDE_CONNEXIONS", "/var/lib/concorde-interface/connexions.json"
@@ -165,10 +171,13 @@ class Annuaire:
         return copy.deepcopy(fiche)
 
     def retirer(self, ident: str) -> None:
-        """Retire une connexion (rien ne change dans le logiciel).
+        """Retire une connexion et efface ses secrets.
 
-        Lève ErreurAnnuaire si elle est inconnue, ou si elle sert
-        d'environnement de test à une autre connexion.
+        Rien ne change dans le logiciel lui-même. Lève ErreurAnnuaire si
+        elle est inconnue, ou si elle sert d'environnement de test à une
+        autre connexion ; ErreurSecrets ou OSError si ses secrets ne
+        peuvent pas être effacés (la connexion reste alors dans
+        l'annuaire).
         """
         with self._verrou:
             if ident not in self._fiches:
@@ -183,8 +192,28 @@ class Annuaire:
                     "%s sert d'environnement de test à %s : retrait refusé."
                     % (ident, ", ".join(utilisateurs))
                 )
+            effacer_secrets_connexion(
+                self.fichier_secrets,
+                ident,
+                classe_connecteur(
+                    self._fiches[ident]["logiciel"]
+                ).secrets_requis,
+            )
             del self._fiches[ident]
             self._sauver()
+
+    def secrets_renseignes(self, ident: str) -> dict[str, bool]:
+        """Secrets attendus par la connexion : renseignés ou non.
+
+        Jamais de valeur. Lève ErreurAnnuaire, ErreurSecrets ou
+        ErreurConnexion.
+        """
+        fiche = self.obtenir(ident)
+        return etat_secrets(
+            ident,
+            classe_connecteur(fiche["logiciel"]).secrets_requis,
+            lire_secrets(self.fichier_secrets),
+        )
 
     def ouvrir(self, ident: str) -> Connecteur:
         """Connecteur prêt à servir, avec ses seuls secrets.

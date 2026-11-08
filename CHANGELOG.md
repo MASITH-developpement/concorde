@@ -3,6 +3,18 @@
 Format : [Keep a Changelog](https://keepachangelog.com/fr/1.1.0/), versions sémantiques.
 Le module Odoo porte la même version au format `17.0.X.Y.Z` (`deploy/addons/concorde/__manifest__.py`).
 
+## [Non publiée]
+### Modifié
+- Secrets des connexions (ADR-0011, acceptée le 08/11/2026) : nouveau chemin
+  `/etc/concorde/connecteurs/connecteurs.env`, dans un dossier 700 du compte
+  du service, seul endroit de `/etc` où l'interface peut écrire
+  (`ReadWritePaths` du service). Écriture atomique : une coupure ne perd plus
+  les secrets déjà enregistrés. Une valeur vide est refusée.
+- Retirer une connexion efface aussi ses secrets.
+### Ajouté
+- `Annuaire.secrets_renseignes` : pour chaque secret attendu, renseigné ou
+  non, jamais la valeur.
+
 ## [1.7.0] — 2026-11-08
 ### Ajouté
 - Montée de version Odoo (ADR-0010, acceptée le 08/11/2026) : photo comptable

@@ -2,6 +2,7 @@
 # Installation :
 #   sudo cp deploy/concorde-interface.service /etc/systemd/system/
 #   sudo python3 -m scripts.concorde_interface_mdp        # mot de passe
+#   sudo install -d -o ubuntu -g ubuntu -m 700 /etc/concorde/connecteurs   # secrets (ADR-0011)
 #   sudo systemctl daemon-reload && sudo systemctl enable --now concorde-interface
 [Unit]
 Description=CONCORDE - interface web
@@ -34,6 +35,9 @@ PrivateTmp=yes
 ProtectSystem=strict
 ProtectHome=read-only
 ReadWritePaths=/var/lib/concorde-interface
+# Secrets des connexions, saisis dans l'écran Transferts (ADR-0011) : seul dossier
+# de /etc où le service peut écrire. « - » : absent, le service démarre quand même.
+ReadWritePaths=-/etc/concorde/connecteurs
 ProtectKernelTunables=yes
 ProtectKernelModules=yes
 ProtectControlGroups=yes

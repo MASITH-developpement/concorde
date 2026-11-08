@@ -90,6 +90,7 @@ Avant d'en créer une, vérifier (casse ignorée) qu'elle n'existe pas déjà.
 | `_libelle_action` | `core/rapport_jour.py` | Libellé français d'une action de tâche |
 | `_lignes_a_retirer` | `core/migration/filtres.py` | Lignes retirées par un filtre selon sa portée |
 | `_lignes_problemes` | `core/migration/circuit.py` | Lignes de problemes.xlsx (explication calculée une fois par constat) |
+| `_lignes_sans` | `core/connecteurs/secrets.py` | Routine : lignes du fichier env sans certaines variables |
 | `_lignes_seulement` | `core/comparaison.py` | Routine : décrit les lignes présentes d'un seul côté (A ou B) |
 | `_lignes_utiles` | `core/yaml_min.py` | Routine : lignes non vides avec numéro d'origine et retrait |
 | `_lire` | `core/connecteurs/azalplus.py` | Méthode d'AzalPlus : exécute une requête de lecture |
@@ -125,6 +126,7 @@ Avant d'en créer une, vérifier (casse ignorée) qu'elle n'existe pas déjà.
 | `_preparer_destination` | `core/connecteurs/transfert.py` | Routine partagée : étapes 1 à 4 d'une destination (rapport et nouveau test) |
 | `_quand_borne` | `core/rapport_jour.py` | Borne un horodatage ISO à la seconde (champ « quand ») |
 | `_racine` | `tests/test_mapping.py` | Paramètre ignoré (racine XML) d'un lecteur simulé |
+| `_reecrire` | `core/connecteurs/secrets.py` | Routine : réécriture atomique du fichier de secrets, en 600 |
 | `_refus` | `core/connecteurs/pennylane.py` | Méthode Pennylane : motifs de refus et comptes uniques |
 | `_requete` | `tests/test_injection.py`, `tests/test_connecteurs.py` | Paramètres ignorés de `CurseurRelecture.execute` |
 | `_Resultat` | `core/guardian.py` | TypeVar du résultat de l'étape enveloppée |
@@ -477,6 +479,7 @@ Avant d'en créer une, vérifier (casse ignorée) qu'elle n'existe pas déjà.
 | `dossier_journal` | `tests/test_moteur.py` | Dossier temporaire du journal Guardian |
 | `DOSSIER_MODULE` | `tests/test_assistant_import.py` | Dossier du module Odoo `deploy/addons/concorde` |
 | `dossier_reference` | `core/connecteurs/fec.py` | Routine : dossier sûr d'une référence de transfert |
+| `dossier_secrets` | `tests/test_connecteurs.py` | Dossier du fichier de secrets dans un test |
 | `dossier_temporaire` | `tests/test_moteur.py` | Dossier temporaire du mapping synthétique |
 | `du` | `core/connecteurs/base.py`, `core/connecteurs/fec.py`, `core/connecteurs/transfert.py`, `tests/test_connecteurs.py` | Début de période (compris), None = sans borne |
 | `ecart` | `core/connecteurs/transfert.py` | Rapport de comparaison lot / relecture |
@@ -500,6 +503,7 @@ Avant d'en créer une, vérifier (casse ignorée) qu'elle n'existe pas déjà.
 | `ecritures_a_creer` | `core/connecteurs/base.py` | Écritures qui seraient (ou ont été) créées |
 | `ecritures_deja_presentes` | `core/connecteurs/base.py` | Écritures déjà présentes sous la référence |
 | `ecrivain` | `interface/serveur.py` | Écrivain CSV |
+| `effacer_secrets_connexion` | `core/connecteurs/secrets.py` | Routine : efface les secrets d'une connexion retirée |
 | `egal` | `core/connecteurs/secrets.py`, `scripts/concorde_connexion.py` | Signe « = » trouvé dans une ligne NOM=valeur |
 | `element` | `core/migration/circuit.py`, `interface/serveur.py`, `core/connecteurs/pennylane.py`, `tests/test_connecteurs.py` | Explication Marceau d'un constat / élément du constat |
 | `element_api` | `tests/test_connecteurs.py` | Élément de l'API simulée parcouru |
@@ -568,6 +572,7 @@ Avant d'en créer une, vérifier (casse ignorée) qu'elle n'existe pas déjà.
 | `etapes` | `injectors/odoo_conversion.py`, `core/connecteurs/transfert.py` | Comptes rendus des sauts de version ; aussi : états des étapes d'une destination (connecteurs/transfert) |
 | `etat` | `core/connecteurs/transfert.py`, `tests/test_connecteurs.py` | État d'un transfert ou d'une destination |
 | `etat_dest` | `core/connecteurs/transfert.py` | État d'une destination |
+| `etat_secrets` | `core/connecteurs/secrets.py` | Routine : pour chaque secret attendu, renseigné ou non (jamais la valeur) |
 | `EtatDestination` | `core/connecteurs/transfert.py` | TypedDict : statut, étapes, empreinte et feu vert d'une destination |
 | `EtatEtape` | `core/connecteurs/transfert.py` | TypedDict : résultat d'une étape (statut, erreur, infos, constats) |
 | `EtatPorte` | `core/migration/circuit.py` | Type de l'état d'une porte dans le rapport |
@@ -1010,6 +1015,7 @@ Avant d'en créer une, vérifier (casse ignorée) qu'elle n'existe pas déjà.
 | `secret` | `scripts/concorde_connexion.py` | Sous-commande secret de concorde_connexion |
 | `secrets` | `core/connecteurs/base.py`, `core/connecteurs/connexions.py`, `core/connecteurs/secrets.py`, `tests/test_connecteurs.py`, `core/connecteurs/azalplus.py`, `core/connecteurs/pennylane.py` | Secrets lus, ou secrets donnés à un connecteur |
 | `secrets_connexion` | `core/connecteurs/secrets.py` | Routine : secrets d'une connexion, par champ |
+| `secrets_renseignes` | `core/connecteurs/connexions.py` | Méthode Annuaire : secrets d'une connexion, renseignés ou non |
 | `secrets_requis` | `core/connecteurs/base.py`, `tests/test_connecteurs.py`, `core/connecteurs/odoo.py`, `core/connecteurs/azalplus.py`, `core/connecteurs/pennylane.py` | Secrets attendus par un connecteur |
 | `section` | `tests/test_yaml_min.py` | Routine : sous-table YAML vérifiée |
 | `securite` | `interface/serveur.py` | Constats ou fichiers de sécurité |

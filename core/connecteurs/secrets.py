@@ -1,5 +1,8 @@
 # CONCORDE v1.0 — (c) MASITH / Stéphane Moreau. Tous droits réservés.
-"""Secrets des connexions : /etc/concorde/connecteurs.env (ADR-0008, point 3).
+"""Secrets des connexions : /etc/concorde/connecteurs/connecteurs.env.
+
+Dossier propre au compte du service (700), seul endroit de /etc où
+l'interface peut écrire (ADR-0011, point 3 ; ADR-0008, point 3).
 
 Une ligne par secret, `NOM=valeur`. Le nom d'un secret de connexion est
 `CONCORDE_CNX_<IDENTIFIANT>_<CHAMP>`, en majuscules, par exemple
@@ -15,7 +18,7 @@ import re
 import stat
 
 CHEMIN_SECRETS = os.environ.get(
-    "CONCORDE_SECRETS", "/etc/concorde/connecteurs.env"
+    "CONCORDE_SECRETS", "/etc/concorde/connecteurs/connecteurs.env"
 )
 _NOM_VALIDE = re.compile(r"^[A-Z][A-Z0-9_]*$")
 
@@ -32,7 +35,8 @@ def nom_variable(ident: str, champ: str) -> str:
     secret attendu par le connecteur (ex. « jeton »).
     Retour : `CONCORDE_CNX_<IDENT>_<CHAMP>` en majuscules.
     Erreurs : ErreurSecrets si le nom obtenu n'est pas valide.
-    Usages : secrets_connexion, scripts/concorde_secret.py.
+    Usages : secrets_connexion, etat_secrets, effacer_secrets_connexion,
+    scripts/concorde_connexion.py, interface (écran Transferts).
     """
     nom = ("CONCORDE_CNX_%s_%s" % (ident, champ)).upper()
     if not _NOM_VALIDE.match(nom):
@@ -95,38 +99,99 @@ def secrets_connexion(
     return trouves
 
 
+def etat_secrets(
+    ident: str, champs: tuple[str, ...], secrets: dict[str, str]
+) -> dict[str, bool]:
+    """Pour chaque secret attendu : renseigné ou non, sans sa valeur.
+
+    Rôle : ce que l'écran peut savoir d'un secret (ADR-0011, point 2).
+    Paramètres : ident — identifiant de la connexion ; champs — secrets
+    attendus par le connecteur ; secrets — résultat de lire_secrets.
+    Retour : {champ: True si renseigné}.
+    Erreurs : ErreurSecrets (nom invalide).
+    Usages : connexions.Annuaire.secrets_renseignes.
+    """
+    trouves = secrets_connexion(ident, champs, secrets)
+    return {champ: champ in trouves for champ in champs}
+
+
+def _reecrire(chemin: str, lignes: list[str]) -> None:
+    """Réécrit le fichier d'un seul coup, en 600 dès sa création.
+
+    Rôle : qu'une coupure en pleine écriture ne perde jamais les secrets
+    déjà enregistrés (fichier temporaire puis renommage).
+    Paramètres : chemin — fichier final ; lignes — contenu complet.
+    Retour : aucun.
+    Erreurs : OSError si l'écriture échoue (le fichier d'origine reste
+    intact).
+    Usages : ecrire_variable, effacer_variables.
+    """
+    dossier = os.path.dirname(chemin)
+    if dossier:
+        os.makedirs(dossier, mode=0o700, exist_ok=True)
+    temporaire = chemin + ".tmp"
+    ancien = os.umask(0o077)
+    try:
+        with open(temporaire, "w", encoding="utf-8") as fichier:
+            fichier.writelines(lignes)
+    finally:
+        os.umask(ancien)
+    os.chmod(temporaire, 0o600)
+    os.replace(temporaire, chemin)
+
+
+def _lignes_sans(chemin: str, noms: set[str]) -> list[str]:
+    """Lignes du fichier, sans celles des variables `noms` ; [] s'il manque."""
+    if not os.path.exists(chemin):
+        return []
+    with open(chemin, encoding="utf-8") as fichier:
+        return [
+            ligne
+            for ligne in fichier
+            if ligne.partition("=")[0].strip() not in noms
+        ]
+
+
 def ecrire_variable(chemin: str, nom: str, valeur: str) -> None:
     """Ajoute ou remplace une variable `NOM=valeur` dans un fichier env.
 
     Rôle : écrire un secret sans jamais ouvrir le fichier à d'autres
-    comptes (création en 600, droits remis à 600 ensuite).
+    comptes, ni risquer de perdre les autres (écriture atomique, 600).
     Paramètres : chemin — fichier ; nom — variable (majuscules) ;
-    valeur — sans retour à la ligne.
+    valeur — non vide, sans retour à la ligne.
     Retour : aucun.
     Erreurs : ErreurSecrets si le nom ou la valeur est invalide ; OSError
     si l'écriture échoue.
-    Usages : scripts/concorde_secret.py, scripts/concorde_interface_mdp.py.
+    Usages : scripts/concorde_connexion.py, scripts/concorde_interface_mdp.py,
+    interface (écran Transferts).
     """
     if not _NOM_VALIDE.match(nom):
         raise ErreurSecrets("Nom de variable invalide : %s" % nom)
+    if not valeur:
+        raise ErreurSecrets("Valeur vide pour %s : rien n'est écrit." % nom)
     if "\n" in valeur or "\r" in valeur:
         raise ErreurSecrets(
             "La valeur de %s contient un retour à la ligne." % nom
         )
-    lignes: list[str] = []
-    if os.path.exists(chemin):
-        with open(chemin, encoding="utf-8") as fichier:
-            lignes = [
-                ligne for ligne in fichier if not ligne.startswith(nom + "=")
-            ]
+    lignes = _lignes_sans(chemin, {nom})
     lignes.append("%s=%s\n" % (nom, valeur))
-    dossier = os.path.dirname(chemin)
-    if dossier:
-        os.makedirs(dossier, exist_ok=True)
-    ancien = os.umask(0o077)
-    try:
-        with open(chemin, "w", encoding="utf-8") as fichier:
-            fichier.writelines(lignes)
-    finally:
-        os.umask(ancien)
-    os.chmod(chemin, 0o600)
+    _reecrire(chemin, lignes)
+
+
+def effacer_secrets_connexion(
+    chemin: str, ident: str, champs: tuple[str, ...]
+) -> None:
+    """Efface du fichier les secrets d'une connexion.
+
+    Rôle : une connexion retirée ne laisse aucun secret derrière elle
+    (ADR-0011, point 2).
+    Paramètres : chemin — fichier de secrets ; ident — connexion ;
+    champs — secrets attendus par son connecteur.
+    Retour : aucun (rien à faire si le fichier n'existe pas).
+    Erreurs : ErreurSecrets (nom invalide) ; OSError.
+    Usages : connexions.Annuaire.retirer.
+    """
+    if not os.path.exists(chemin):
+        return
+    noms = {nom_variable(ident, champ) for champ in champs}
+    _reecrire(chemin, _lignes_sans(chemin, noms))

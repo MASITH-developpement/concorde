@@ -89,7 +89,8 @@ plusieurs versions n'y tient pas.
 ## Arbitrages (Stéphane Moreau, 08/11/2026)
 1. **Versions** : de 14 à 18 ; 19 dès que la branche OCA est publiée et testée.
 2. **Machine** : un serveur de travail dédié, loué le temps d'une montée ; jamais le
-   serveur CONCORDE.
+   serveur CONCORDE. *Remplacé le 08/11/2026 par l'ADR-0012 : montées sur le serveur
+   CONCORDE, avec garde-fous.*
 3. **Copies du client** : supprimées 30 jours après la livraison.
 4. **Tolérance** : zéro écart au centime, sans exception.
 5. **Modules sur mesure** : hors périmètre ; migrés par le développeur du client ou

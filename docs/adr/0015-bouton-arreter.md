@@ -1,6 +1,6 @@
 # ADR-0015 — Bouton « Arrêter » sur une tâche en cours
 
-- **Statut** : Proposée
+- **Statut** : Acceptée — arbitrages de Stéphane Moreau du 09/11/2026
 - **Date** : 09/11/2026
 - **Décideur** : Stéphane Moreau
 
@@ -30,32 +30,55 @@ Ce qui existe (mesuré dans le code au 09/11/2026) :
   passe au statut **« arrêtée »**, avec l'heure et l'étape où elle s'est arrêtée.
 - Une tâche en attente de place (2 tâches à la fois) est arrêtée tout de suite.
 
-### 2. Ce qui est fait reste fait, et se reprend
-- Transfert ou feu vert arrêté : les écritures déjà faites restent dans la destination ;
-  relancer le feu vert reprend sans doublon (idempotence ADR-0008).
-- SIRET et facture électronique : les fiches déjà écrites restent, tracées ; le bouton
-  « Annuler l'écriture » les remet si besoin.
-- Analyse, téléchargement, propositions : rien n'est écrit ; il suffit de relancer.
+### 2. Arrêter, c'est aussi défaire ce que la tâche a écrit (arbitrage 1)
+Après l'arrêt au point sûr, CONCORDE **efface ce que cette tâche a écrit**, et seulement
+cela :
+- **SIRET et facture électronique** : les fiches écrites par la tâche reprennent leurs
+  anciennes valeurs (trace propre à la tâche) ; une fiche modifiée entre-temps par
+  quelqu'un d'autre n'est pas touchée.
+- **Transfert et feu vert** : les écritures créées par la tâche (repérées par leur
+  référence `CONCORDE/<transfert>/…`) sont repassées en brouillon puis supprimées par
+  l'API d'Odoo ; un FEC produit est effacé. **Limite légale** : une écriture validée dans
+  un journal protégé contre la modification (inaltérabilité, art. 286 du CGI) ou dans une
+  période verrouillée ne peut pas être supprimée ; Odoo refuse, et CONCORDE la **nomme**
+  dans le résultat au lieu de la forcer. Un logiciel qui ne sait pas supprimer (API sans
+  suppression) est nommé de même.
+- **Montée de version** : la copie de travail de la montée (bases, journaux) est effacée ;
+  la base du client n'a jamais été touchée.
+- **Analyse, téléchargement, propositions, vérification** : rien n'a été écrit, rien à
+  défaire.
+Le résultat de l'effacement (défait, laissé et pourquoi) figure dans la tâche arrêtée.
 
 ### 3. Montée de version : arrêt du saut en cours
 - Le bouton dépose un **fichier d'arrêt** pour la montée ; le service le lit toutes les
-  10 secondes (même fil que le garde-fou du disque) : il arrête le conteneur du saut en
-  cours, puis la montée passe au statut « arrêtée ». La copie de la base reste dans le
-  volume chiffré : on peut relancer les vérifications, ou laisser l'effacement à
-  30 jours s'en charger.
-- Restauration de la sauvegarde ou photo en cours : arrêt à la fin de l'étape.
+  10 secondes : il arrête le conteneur du saut en cours, efface la copie de travail, et
+  la montée passe au statut « arrêtée ».
 
-### 4. Traces
-L'arrêt est inscrit dans le journal de la tâche, dans le journal de l'interface et dans
-l'audit (qui, quand, quelle tâche, à quelle étape).
+### 4. Arrêt d'urgence (arbitrage 4)
+- Pas de « tout arrêter » au point sûr (chaque tâche a son bouton). En revanche, un
+  bouton **Arrêt d'urgence**, toujours visible, arrête **tout, tout de suite, dans l'état
+  où c'est** : l'interface s'arrête et redémarre (systemd), les tâches en cours sont
+  coupées net et marquées « interrompues » ; le service de montée arrête tous ses
+  conteneurs.
+- Confirmation renforcée : message de **danger** (« une écriture en cours peut rester à
+  moitié faite dans la base ; le logiciel redémarre ; rien n'est défait
+  automatiquement »), et mot `ARRÊT` à retaper.
+- Après un arrêt d'urgence, chaque tâche interrompue garde sa trace : les annulations
+  (SIRET, facture électronique) et la reprise des transferts restent possibles à la main.
 
-## Questions à trancher
-1. Arrêt **au prochain point sûr** (quelques secondes au plus en général), jamais au
-   milieu d'une écriture : d'accord ?
-2. Le bouton est aussi proposé pendant une **écriture en production** (feu vert),
-   en sachant que ce qui est déjà écrit reste écrit : d'accord ?
-3. Une **confirmation** avant d'arrêter : d'accord ?
-4. Un bouton « **tout arrêter** » en plus (toutes les tâches en cours) : oui ou non ?
+### 5. Traces
+Tout arrêt (tâche ou urgence) est inscrit dans le journal de la tâche, dans le journal de
+l'interface et dans l'audit (qui, quand, quelle tâche, à quelle étape, ce qui a été
+défait).
+
+## Arbitrages (Stéphane Moreau, 09/11/2026)
+1. Arrêt au prochain point sûr ; **si une écriture a été faite, elle est effacée** (le
+   travail fait sur la base par la tâche).
+2. Bouton aussi pendant une écriture en production : oui.
+3. Confirmation avant d'arrêter : oui.
+4. Pas de « tout arrêter » (un bouton par tâche), mais un **arrêt d'urgence** qui arrête
+   tout dans l'état où c'est, avec confirmation et avertissement du danger pour la base
+   et le logiciel.
 
 ## Options écartées
 - **Couper le fil d'exécution brutalement** : Python ne le permet pas proprement, et une

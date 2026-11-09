@@ -20,6 +20,9 @@ NOM_DUMP = "dump.sql"
 NOM_MANIFESTE = "manifest.json"
 DOSSIER_PIECES = "filestore"
 _BLOC = 1 << 20
+PG_DEFAUT = 13
+PG_MIN = 10
+PG_MAX = 17
 
 
 class ErreurSauvegarde(ValueError):
@@ -36,6 +39,7 @@ class InfoSauvegarde(TypedDict):
     pieces_jointes: int
     version: str | None
     base: str | None
+    pg_version: int
 
 
 def empreinte_fichier(chemin: str) -> str:
@@ -53,6 +57,28 @@ def empreinte_fichier(chemin: str) -> str:
         for bloc in iter(lambda: fichier.read(_BLOC), b""):
             calcul.update(bloc)
     return calcul.hexdigest()
+
+
+def version_postgres(texte: object) -> int:
+    """Version majeure de PostgreSQL du client (manifest.json).
+
+    Rôle : restaurer la base dans la même version majeure que chez le
+    client, pour que sa sauvegarde se recharge sans surprise.
+    Paramètres : texte — « pg_version » du manifeste (« 13.4 », « 9.6 »),
+    ou None.
+    Retour : version majeure (13 si absente).
+    Erreurs : ErreurSauvegarde si elle est illisible ou hors de 10 à 17.
+    Usages : examiner_sauvegarde.
+    """
+    if texte is None:
+        return PG_DEFAUT
+    majeure = str(texte).strip().split(".", 1)[0]
+    if not majeure.isdigit() or not PG_MIN <= int(majeure) <= PG_MAX:
+        raise ErreurSauvegarde(
+            "Version de PostgreSQL du client non prise en charge : %r "
+            "(attendu %d à %d)." % (texte, PG_MIN, PG_MAX)
+        )
+    return int(majeure)
 
 
 def _membres_surs(archive: zipfile.ZipFile) -> list[zipfile.ZipInfo]:
@@ -116,6 +142,7 @@ def examiner_sauvegarde(chemin: str) -> InfoSauvegarde:
             ),
             "version": None if version is None else str(version),
             "base": manifeste.get("db_name"),
+            "pg_version": version_postgres(manifeste.get("pg_version")),
         }
 
 

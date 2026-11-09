@@ -166,16 +166,21 @@ jobs:
             odoo:14.0 -- -d "$ODOO_BASE" --db-filter "^${ODOO_BASE}$"
           python -m tests.integration.attendre_odoo
           python -m tests.integration.verifier_photo
-      - name: Sauvegarde Odoo (.zip), comme celle que donnerait le client
+      - name: Sauvegarde Odoo (.zip) du client, au format d'Odoo
         run: |
-          if ! python -m tests.integration.base_odoo sauvegarder premiere.zip; then
-            docker exec -e PGPASSWORD=odoo odoo14 pg_dump -h 127.0.0.1 \
-              -U odoo --no-owner -f /tmp/diag.sql "$ODOO_BASE" 2>&1 \
-              | tail -n 5 | sed 's/^/::error::pg_dump : /'
-            docker exec odoo14 pg_dump --version | sed 's/^/::error::/'
-            exit 1
-          fi
-          python -m tests.integration.base_odoo sauvegarder fraiche.zip
+          for nom in premiere fraiche; do
+            rm -rf client && mkdir client
+            docker run --rm --network host -e PGPASSWORD=odoo postgres:13 \
+              pg_dump -h 127.0.0.1 -U odoo --no-owner "$ODOO_BASE" \
+              > client/dump.sql
+            if docker exec odoo14 test -d "/var/lib/odoo/filestore/$ODOO_BASE"; then
+              docker cp "odoo14:/var/lib/odoo/filestore/$ODOO_BASE" client/filestore
+            else
+              mkdir client/filestore
+            fi
+            python -m tests.integration.base_odoo emballer client "$nom.zip" \
+              14.0 13
+          done
           docker stop odoo14
       - name: Montée conduite par CONCORDE (étapes 1 à 4)
         run: |

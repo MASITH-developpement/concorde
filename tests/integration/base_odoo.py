@@ -1,13 +1,19 @@
 # CONCORDE v1.0 — (c) MASITH / Stéphane Moreau. Tous droits réservés.
-"""Sauvegarde et restauration Odoo (.zip) dans la CI, par le service officiel.
+"""Sauvegardes Odoo (.zip) dans la CI : fabriquer, restaurer.
 
-  python -m tests.integration.base_odoo sauvegarder <fichier.zip>
+  python -m tests.integration.base_odoo emballer <dossier> <fichier.zip> \
+      <version Odoo> <version PostgreSQL>
   python -m tests.integration.base_odoo restaurer <fichier.zip> <base>
 
-Appelle `db.dump` et `db.restore` (même code que le gestionnaire de bases
-d'Odoo) sur ODOO_URL ; base sauvegardée : ODOO_BASE ; mot de passe maître
-ODOO_MAITRE (« admin » par défaut). Code 1, avec une annotation ::error::,
-si Odoo refuse ou si le fichier n'est pas une sauvegarde .zip.
+`emballer` fait la sauvegarde du « client » au format d'Odoo (dump_db :
+dump.sql de `pg_dump --no-owner`, filestore/, manifest.json) à partir de
+<dossier>/dump.sql et <dossier>/filestore. Le service db.dump de l'image
+Odoo 14 échoue dans la CI (son pg_dump interne rend « error 1 » alors que
+le même pg_dump lancé à la main réussit) : la CI fabrique donc le fichier
+elle-même, au même format.
+`restaurer` appelle `db.restore` (même code que le gestionnaire de bases)
+sur ODOO_URL, mot de passe maître ODOO_MAITRE (« admin » par défaut).
+Code 1, avec une annotation ::error::, si Odoo refuse.
 """
 
 import base64
@@ -15,6 +21,7 @@ import os
 import sys
 import zipfile
 
+from core.montee_version.sauvegarde import ecrire_sauvegarde
 from core.odoo_source import transport_xmlrpc
 from core.xml_sur import FauteXmlRpc, ProxyXmlRpc
 
@@ -31,13 +38,20 @@ def service_bases() -> ProxyXmlRpc:
     )
 
 
-def sauvegarder(chemin: str) -> None:
-    """Écrit la sauvegarde .zip de ODOO_BASE dans `chemin`."""
-    contenu = service_bases().dump(
-        os.environ.get("ODOO_MAITRE", "admin"), os.environ["ODOO_BASE"], "zip"
+def emballer(dossier: str, chemin: str, version: str, pg_version: str) -> None:
+    """Sauvegarde .zip au format d'Odoo (dump et pièces jointes)."""
+    ecrire_sauvegarde(
+        chemin,
+        os.path.join(dossier, "dump.sql"),
+        os.path.join(dossier, "filestore"),
+        {
+            "odoo_dump": "1",
+            "db_name": os.environ["ODOO_BASE"],
+            "version": version,
+            "major_version": version,
+            "pg_version": pg_version,
+        },
     )
-    with open(chemin, "wb") as fichier:
-        fichier.write(base64.b64decode(str(contenu)))
 
 
 def restaurer(chemin: str, base: str) -> None:
@@ -51,14 +65,17 @@ def restaurer(chemin: str, base: str) -> None:
 
 def main() -> int:
     """Lance l'action demandée ; rend le code de sortie."""
-    action, chemin = sys.argv[1], sys.argv[2]
-    if not (action == "sauvegarder" or zipfile.is_zipfile(chemin)):
-        print("::error::%s n'est pas une sauvegarde .zip." % chemin)
-        return 1
+    action = sys.argv[1]
+    if action == "emballer":
+        emballer(sys.argv[2], sys.argv[3], sys.argv[4], sys.argv[5])
+        chemin = sys.argv[3]
+    else:
+        chemin = sys.argv[2]
+        if not zipfile.is_zipfile(chemin):
+            print("::error::%s n'est pas une sauvegarde .zip." % chemin)
+            return 1
     try:
-        if action == "sauvegarder":
-            sauvegarder(chemin)
-        else:
+        if action == "restaurer":
             restaurer(chemin, sys.argv[3])
     except FauteXmlRpc as exc:
         cause = [ligne for ligne in str(exc.faultString).splitlines() if ligne]

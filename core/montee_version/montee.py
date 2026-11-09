@@ -44,7 +44,6 @@ from .sauvegarde import (
     extraire_sauvegarde,
 )
 
-IMAGE_POSTGRES = "postgres:13"
 MODULES_ODOO = "/usr/lib/python3/dist-packages/odoo/addons"
 SCRIPTS_MONTEE = "openupgrade_scripts/scripts"
 UTILISATEUR_PG = "odoo"
@@ -364,7 +363,7 @@ class Montee:
                 "-v",
                 "%s:/var/lib/postgresql/data"
                 % os.path.join(self.donnees, "pgdata"),
-                IMAGE_POSTGRES,
+                "postgres:%d" % info["pg_version"],
             )
         self._attendre_postgres()
         if os.path.isfile(restauree):

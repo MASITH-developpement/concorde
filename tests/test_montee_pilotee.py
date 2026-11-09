@@ -40,6 +40,7 @@ from core.montee_version.sauvegarde import (
     ecrire_sauvegarde,
     examiner_sauvegarde,
     extraire_sauvegarde,
+    version_postgres,
 )
 from scripts import concorde_montee
 from tests.test_montee_version import BasePhoto, reponses_odoo
@@ -76,7 +77,9 @@ def sauvegarde_zip(
         if version is not None:
             archive.writestr(
                 "manifest.json",
-                json.dumps({"version": version, "db_name": base}),
+                json.dumps(
+                    {"version": version, "db_name": base, "pg_version": "13.4"}
+                ),
             )
     return chemin
 
@@ -244,6 +247,7 @@ class TestCircuit(Atelier):
         lancements = [
             argv for argv in self.docker.commandes if argv[1] == "run"
         ]
+        self.assertIn("postgres:13", lancements[0])
         for argv in lancements:
             self.assertNotIn("-p", argv)
             self.assertNotIn("--publish", argv)
@@ -523,6 +527,14 @@ class TestSauvegarde(unittest.TestCase):
                 sortie, dump, pieces, {"version": "17.0"}
             )
             self.assertEqual(examiner_sauvegarde(sortie)["sha256"], empreinte)
+
+    def test_version_postgres(self) -> None:
+        """Vérifie la version de PostgreSQL du client, et ses refus."""
+        self.assertEqual(version_postgres(None), 13)
+        self.assertEqual(version_postgres("16.2"), 16)
+        for mauvaise_version in ("9.6", "18", "abc"):
+            with self.assertRaises(ErreurSauvegarde):
+                version_postgres(mauvaise_version)
 
     def test_refus(self) -> None:
         """Vérifie les refus : chemin dangereux, sans dump, manifeste faux."""

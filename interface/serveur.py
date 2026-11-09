@@ -48,6 +48,12 @@ API (JSON ; toute requête qui modifie exige l'en-tête X-Concorde: 1) :
   GET  /api/transferts   POST /api/transferts   GET /api/transferts/<id>
   GET  /api/transferts/<id>/fichier?chemin=…
   POST /api/transferts/<id>/feu-vert {destination, confirmation, sauvegarde_du}
+  Écran Montée de version (ADR-0012, interface/montees.py) :
+  GET  /api/montees   GET /api/montees/demandes/<id>
+  GET  /api/montees/<id>/livraison
+  POST /api/montees/depot?nom=…   (corps = la sauvegarde Odoo .zip)
+  POST /api/montees {depot, arrivee}
+  POST /api/montees/<id>/(circuit|feu-vert|nouvel-essai|livrer)
   (suppression / réinitialisation d'une base LOCALE : POST /api/taches avec
    action = supprimer_base | reinitialiser_base et confirmation = nom
    retapé — ADR-0005)
@@ -100,6 +106,7 @@ from core.surveillance import (
     depuis_24h,
 )
 from interface.auth import Sessions, verifier
+from interface.montees import ERREURS_MONTEE_ECRAN, EcranMontees
 from interface.transferts import ERREURS_ECRAN, EcranTransferts
 
 # Objet JSON (tâche, base, constat, corps de requête) : contenu dynamique,
@@ -1462,6 +1469,7 @@ class Application:
         bases: Bases | None = None,
         minutes_surveillance: int = 0,
         fichier_secrets: str = CHEMIN_SECRETS,
+        montees: EcranMontees | None = None,
     ) -> None:
         """Assemble le service autour du dossier de données.
 
@@ -1484,6 +1492,7 @@ class Application:
         self.transferts = EcranTransferts(
             dossier, self.taches, self.journal, fichier_secrets
         )
+        self.montees = montees or EcranMontees(self.journal)
         self.journal.dire("Service CONCORDE démarré", "ok")
 
 
@@ -1627,6 +1636,10 @@ class Gestionnaire(BaseHTTPRequestHandler):
             if not self._connecte():
                 return self._erreur(401, "Connexion requise.")
             return self._get_transferts(chemin)
+        if chemin.startswith("/api/montees"):
+            if not self._connecte():
+                return self._erreur(401, "Connexion requise.")
+            return self._get_montees(chemin)
         if not self._connecte():
             return self._erreur(401, "Connexion requise.")
         requete = self._requete()
@@ -1746,7 +1759,7 @@ class Gestionnaire(BaseHTTPRequestHandler):
         chemin = urlparse(self.path).path
         if not self._verifier_origine():
             return self._erreur(403, "Requête refusée.")
-        if chemin == "/api/tables" or re.fullmatch(
+        if chemin in ("/api/tables", "/api/montees/depot") or re.fullmatch(
             r"/api/connexions/[\w-]+/depot", chemin
         ):
             if not self._connecte():
@@ -1817,6 +1830,8 @@ class Gestionnaire(BaseHTTPRequestHandler):
             return self._json(200, {"ok": True})
         if chemin.startswith(("/api/connexions", "/api/transferts")):
             return self._post_transferts(chemin, corps)
+        if chemin.startswith("/api/montees"):
+            return self._post_montees(chemin, corps)
         if chemin == "/api/cles/revoquer":
             return self._revoquer_cle(corps)
         if chemin == "/api/rapport":
@@ -1872,19 +1887,27 @@ class Gestionnaire(BaseHTTPRequestHandler):
         return self._erreur(404, "Base inconnue.")
 
     # --- écran Transferts (ADR-0011) ----------------------------------------
-    def _ecran(self, code: int, appel: Callable[[], object]) -> None:
+    def _ecran(
+        self,
+        code: int,
+        appel: Callable[[], object],
+        refus: tuple[type[BaseException], ...] = ERREURS_ECRAN,
+    ) -> None:
         """Exécute une action de l'écran Transferts et envoie sa réponse.
 
         Rôle : une seule traduction des refus en HTTP 400, cause comprise
         (jamais de secret : les erreurs n'en contiennent pas).
-        Paramètres : code — code HTTP en cas de succès ; appel — l'action.
+        Paramètres : code — code HTTP en cas de succès ; appel — l'action ;
+        refus — erreurs rendues en 400 (celles de l'écran Transferts par
+        défaut).
         Retour : aucun (réponse envoyée).
         Erreurs : aucune (chaque refus devient une réponse 400).
-        Usages : _get_transferts, _post_transferts, _televerser, do_DELETE.
+        Usages : _get_transferts, _post_transferts, _get_montees,
+        _post_montees, _televerser, do_DELETE.
         """
         try:
             donnees = appel()
-        except ERREURS_ECRAN as exc:
+        except refus as exc:
             return self._erreur(400, str(exc))
         return self._json(code, donnees)
 
@@ -1934,6 +1957,62 @@ class Gestionnaire(BaseHTTPRequestHandler):
             )
         return self._erreur(404, "Route inconnue.")
 
+    # --- écran Montée de version (ADR-0012) ----------------------------------
+    ROUTES_MONTEE = {
+        "circuit": "circuit",
+        "feu-vert": "feu_vert",
+        "nouvel-essai": "nouvel_essai",
+        "livrer": "livrer",
+    }
+
+    def _get_montees(self, chemin: str) -> None:
+        """Lectures de l'écran Montée de version."""
+        ecran = self.app.montees
+        parties = chemin.split("/")  # ["", "api", "montees", <id>, …]
+        if chemin == "/api/montees":
+            return self._ecran(200, ecran.etat, ERREURS_MONTEE_ECRAN)
+        if re.fullmatch(r"/api/montees/demandes/\w+", chemin):
+            return self._ecran(
+                200,
+                lambda: ecran.resultat_demande(parties[4]),
+                ERREURS_MONTEE_ECRAN,
+            )
+        if re.fullmatch(r"/api/montees/[\w-]+/livraison", chemin):
+            try:
+                fichier = ecran.livraison(parties[3])
+            except ERREURS_MONTEE_ECRAN as exc:
+                return self._erreur(404, str(exc))
+            return self._fichier(
+                fichier, os.path.basename(fichier), "application/zip"
+            )
+        return self._erreur(404, "Route inconnue.")
+
+    def _post_montees(self, chemin: str, corps: ObjetJson) -> None:
+        """Demandes au service de montée (corps JSON)."""
+        ecran = self.app.montees
+        parties = chemin.split("/")
+        if chemin == "/api/montees":
+            return self._ecran(
+                201,
+                lambda: ecran.demander("creer", corps, None, self._ip()),
+                ERREURS_MONTEE_ECRAN,
+            )
+        if (
+            re.fullmatch(r"/api/montees/[\w-]+/[\w-]+", chemin)
+            and parties[4] in self.ROUTES_MONTEE
+        ):
+            return self._ecran(
+                201,
+                lambda: ecran.demander(
+                    self.ROUTES_MONTEE[parties[4]],
+                    corps,
+                    parties[3],
+                    self._ip(),
+                ),
+                ERREURS_MONTEE_ECRAN,
+            )
+        return self._erreur(404, "Route inconnue.")
+
     def _televerser(self, chemin: str) -> None:
         """Fichier envoyé brut : FEC déposé ou table de correspondance."""
         try:
@@ -1942,6 +2021,12 @@ class Gestionnaire(BaseHTTPRequestHandler):
             return self._erreur(400, "Taille du fichier invalide.")
         nom = self._requete().get("nom", "")
         ecran = self.app.transferts
+        if chemin == "/api/montees/depot":
+            return self._ecran(
+                201,
+                lambda: self.app.montees.deposer(nom, self.rfile, taille),
+                ERREURS_MONTEE_ECRAN,
+            )
         if chemin == "/api/tables":
             return self._ecran(
                 201, lambda: ecran.recevoir_table(nom, self.rfile, taille)

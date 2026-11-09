@@ -12,7 +12,10 @@ import json
 import os
 import re
 import shutil
+import threading
 import uuid
+from collections.abc import Iterator
+from contextlib import contextmanager
 from datetime import datetime, timedelta
 from typing import Any, TypedDict
 
@@ -36,6 +39,7 @@ _MONTEE = re.compile(r"^M\d{14}-[0-9a-f]{4}$")
 _DEMANDE = re.compile(r"^[0-9a-f]{32}\.json$")
 TEXTE_MAX = 200
 JOURS_CONSERVATION = 30
+PUBLICATION_S = 5.0
 # Erreurs d'une montée, rendues comme refus nommés.
 ERREURS_MONTEE = (
     montee.ErreurMontee,
@@ -48,10 +52,10 @@ ERREURS_MONTEE = (
 
 
 class ErreurDemande(ValueError):
-    """Demande mal formée : refusée sans rien exécuter."""
+    """DemandeMontee mal formée : refusée sans rien exécuter."""
 
 
-class Demande(TypedDict):
+class DemandeMontee(TypedDict):
     """Une demande vérifiée."""
 
     id: str
@@ -59,13 +63,13 @@ class Demande(TypedDict):
     valeurs: dict[str, Any]
 
 
-def verifier_demande(contenu: Any) -> Demande:
+def verifier_demande(contenu: Any) -> DemandeMontee:
     """Vérifie une demande, champ par champ.
 
     Rôle : seul passage entre l'interface et root ; rien d'imprévu
     n'est accepté.
     Paramètres : contenu — JSON relu ({id, action, valeurs}).
-    Retour : Demande.
+    Retour : DemandeMontee.
     Erreurs : ErreurDemande (action inconnue, champ manquant ou en trop,
     valeur mal formée).
     Usages : deposer_demande, lire_demande.
@@ -75,7 +79,7 @@ def verifier_demande(contenu: Any) -> Demande:
         "action",
         "valeurs",
     }:
-        raise ErreurDemande("Demande mal formée.")
+        raise ErreurDemande("DemandeMontee mal formée.")
     action = contenu["action"]
     valeurs = contenu["valeurs"]
     if action not in ACTIONS_MONTEE or not isinstance(valeurs, dict):
@@ -126,7 +130,7 @@ def deposer_demande(dossier: str, action: str, **valeurs: Any) -> str:
     return ident
 
 
-def lire_demande(chemin: str) -> Demande:
+def lire_demande(chemin: str) -> DemandeMontee:
     """Relit et vérifie une demande déposée. Lève ErreurDemande."""
     if not _DEMANDE.match(os.path.basename(chemin)):
         raise ErreurDemande("Fichier de demande inattendu.")
@@ -134,11 +138,11 @@ def lire_demande(chemin: str) -> Demande:
         with open(chemin, encoding="utf-8") as fichier:
             contenu = json.load(fichier)
     except ValueError as exc:
-        raise ErreurDemande("Demande illisible.") from exc
+        raise ErreurDemande("DemandeMontee illisible.") from exc
     return verifier_demande(contenu)
 
 
-class Service:
+class ServiceMontee:
     """Ce que fait le service de montée, pas à pas."""
 
     def __init__(
@@ -188,7 +192,8 @@ class Service:
         try:
             demande = lire_demande(chemin)
             resultat["action"] = demande["action"]
-            resultat["montee"] = self._executer(demande, journal)
+            with self._publication(demande["valeurs"].get("montee")):
+                resultat["montee"] = self._executer(demande, journal)
             resultat["statut"] = "fait"
         except (ErreurDemande, *ERREURS_MONTEE) as exc:
             resultat["statut"] = "refus"
@@ -203,6 +208,27 @@ class Service:
         if resultat.get("montee"):
             self.publier(str(resultat["montee"]))
 
+    @contextmanager
+    def _publication(self, ident: str | None) -> Iterator[None]:
+        """Republie la montée toutes les PUBLICATION_S pendant le bloc.
+
+        L'écran suit ainsi une longue montée saut par saut.
+        """
+        fini = threading.Event()
+
+        def republier() -> None:
+            """Publie jusqu'à la fin du bloc."""
+            while ident is not None and not fini.wait(PUBLICATION_S):
+                self.publier(ident)
+
+        fil = threading.Thread(target=republier, daemon=True)
+        fil.start()
+        try:
+            yield
+        finally:
+            fini.set()
+            fil.join()
+
     def _depot(self, nom: str) -> str:
         """Chemin d'une sauvegarde déposée par l'interface."""
         chemin = os.path.join(self.depots, nom)
@@ -210,7 +236,9 @@ class Service:
             raise ErreurDemande("Sauvegarde déposée introuvable.")
         return chemin
 
-    def _executer(self, demande: Demande, journal: Journal | None) -> str:
+    def _executer(
+        self, demande: DemandeMontee, journal: Journal | None
+    ) -> str:
         """Lance l'action ; rend l'identifiant de la montée concernée."""
         valeurs = demande["valeurs"]
         action = demande["action"]

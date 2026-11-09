@@ -21,7 +21,7 @@ from types import FrameType
 
 from core.journal import Journal
 from core.montee_version.commandes import ErreurCommande
-from core.montee_version.demandes import Service
+from core.montee_version.demandes import ServiceMontee
 from core.montee_version.volume import (
     ErreurVolume,
     fermer_volume,
@@ -62,7 +62,7 @@ def main() -> int:
     proprietaire = preparer_dossiers(
         donnees, os.environ.get("CONCORDE_UI_UTILISATEUR", "ubuntu")
     )
-    service = Service(donnees, CHEMIN_ETATS, proprietaire=proprietaire)
+    service = ServiceMontee(donnees, CHEMIN_ETATS, proprietaire=proprietaire)
     continuer = [True]
 
     def arreter(signal_recu: int, cadre: FrameType | None) -> None:

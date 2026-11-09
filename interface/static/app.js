@@ -17,7 +17,7 @@ const STATUTS = {
   conforme: "Conforme", alertes: "Alertes", bloquant: "Bloquant",
   verte: "Bonne", bloquee: "Bloquée", non_jouee: "Pas encore faite",
   attente_feu_vert: "Attend le feu vert", arretee_sans_test: "Arrêtée sans test",
-  transferee: "Transférée",
+  transferee: "Transférée", livree: "Livrée",
 };
 
 // --- utilitaires ------------------------------------------------------------
@@ -141,6 +141,7 @@ function router() {
   if (existe === "rapport" && !etat.rapport) chargerRapport();
   if (existe === "bases") { afficherBases(); chargerCles(); chargerSauvegardes(); }
   if (existe === "transferts") chargerEcranTransferts();
+  if (existe === "montees") chargerEcranMontees();
 }
 window.addEventListener("hashchange", router);
 

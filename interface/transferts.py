@@ -81,24 +81,29 @@ ERREURS_ECRAN = (
 )
 
 
-def taille_depot_max(environnement: Mapping[str, str]) -> int:
-    """Taille maximale d'un FEC déposé, en octets.
+def taille_depot_max(
+    environnement: Mapping[str, str],
+    variable: str = "CONCORDE_DEPOT_MAX_MO",
+    defaut_mo: int = DEPOT_MAX_MO_DEFAUT,
+) -> int:
+    """Taille maximale d'un fichier déposé, en octets.
 
     Rôle : plafond réglable sans toucher au code (ADR-0011, arbitrage 2).
     Paramètres : environnement — variables du service (os.environ) ;
-    CONCORDE_DEPOT_MAX_MO, en mégaoctets, 200 par défaut.
+    variable — nom de la variable, en mégaoctets ; defaut_mo — valeur
+    sans variable (200 Mo pour un FEC).
     Retour : le plafond en octets.
     Erreurs : ValueError si la variable n'est pas un entier positif (le
     service refuse alors de démarrer, avec la cause).
-    Usages : EcranTransferts.
+    Usages : EcranTransferts (FEC), EcranMontees (sauvegardes Odoo).
     """
-    texte = environnement.get("CONCORDE_DEPOT_MAX_MO", "").strip()
+    texte = environnement.get(variable, "").strip()
     if not texte:
-        return DEPOT_MAX_MO_DEFAUT * 1024 * 1024
+        return defaut_mo * 1024 * 1024
     if not texte.isdigit() or int(texte) == 0:
         raise ValueError(
-            "CONCORDE_DEPOT_MAX_MO doit être un nombre entier de Mo "
-            "(reçu : %r)." % texte
+            "%s doit être un nombre entier de Mo (reçu : %r)."
+            % (variable, texte)
         )
     return int(texte) * 1024 * 1024
 
@@ -154,8 +159,11 @@ def chemin_dans(racine: str, chemin: str) -> bool:
     return reel.startswith(os.path.realpath(racine) + os.sep)
 
 
-def _texte(corps: Mapping[str, Any], cle: str) -> str:
-    """Champ texte du corps, sans espaces autour ('' si absent)."""
+def texte_corps(corps: Mapping[str, Any], cle: str) -> str:
+    """Champ texte du corps d'une requête, sans espaces ('' si absent).
+
+    Usages : EcranTransferts, EcranMontees.
+    """
     valeur = corps.get(cle)
     return valeur.strip() if isinstance(valeur, str) else ""
 
@@ -278,7 +286,7 @@ class EcranTransferts:
         fichier sera déposé) ou « destination » (dossier des FEC produits).
         Lève ErreurEcran, ErreurAnnuaire ou ErreurConnexion.
         """
-        logiciel = _texte(corps, "logiciel")
+        logiciel = texte_corps(corps, "logiciel")
         recus = corps.get("parametres") or {}
         if not isinstance(recus, dict) or not all(
             isinstance(valeur, str) for valeur in recus.values()
@@ -296,7 +304,7 @@ class EcranTransferts:
                     "les fichiers."
                 )
             dossier_fec = uuid.uuid4().hex
-            usage = _texte(corps, "usage")
+            usage = texte_corps(corps, "usage")
             if usage == "source":
                 parametres = {
                     "chemin": os.path.join(self.depots, dossier_fec, NOM_FEC)
@@ -312,9 +320,9 @@ class EcranTransferts:
                 )
         fiche = self.annuaire.ajouter(
             logiciel,
-            _texte(corps, "libelle"),
+            texte_corps(corps, "libelle"),
             parametres,
-            _texte(corps, "connexion_test") or None,
+            texte_corps(corps, "connexion_test") or None,
         )
         self.journal.dire(
             "Connexion ajoutée : %s (%s)" % (fiche["libelle"], logiciel),
@@ -332,7 +340,7 @@ class EcranTransferts:
         ErreurSecrets (valeur vide ou sur plusieurs lignes) ou OSError.
         """
         fiche = self.annuaire.obtenir(ident)
-        champ = _texte(corps, "champ")
+        champ = texte_corps(corps, "champ")
         if champ not in classe_connecteur(fiche["logiciel"]).secrets_requis:
             raise ErreurEcran(
                 "Secret inconnu pour ce logiciel : %s" % (champ or "(vide)")
@@ -492,10 +500,10 @@ class EcranTransferts:
         ):
             raise ErreurEcran("Demande de transfert mal formée.")
         demande: transfert.DemandeTransfert = {
-            "source": _texte(corps, "source"),
+            "source": texte_corps(corps, "source"),
             "destinations": destinations,
-            "du": _texte(corps, "du") or None,
-            "au": _texte(corps, "au") or None,
+            "du": texte_corps(corps, "du") or None,
+            "au": texte_corps(corps, "au") or None,
             "filtres": [],
             "tables": {
                 ident: self._table(tables[ident])
@@ -617,9 +625,9 @@ class EcranTransferts:
         rien n'est alors lancé.
         """
         self._verifier_ident(ident)
-        ident_dest = _texte(corps, "destination")
-        confirmation = _texte(corps, "confirmation")
-        texte_date = _texte(corps, "sauvegarde_du")
+        ident_dest = texte_corps(corps, "destination")
+        confirmation = texte_corps(corps, "confirmation")
+        texte_date = texte_corps(corps, "sauvegarde_du")
         if not texte_date:
             raise ErreurEcran(
                 "Date de la sauvegarde de la destination requise."

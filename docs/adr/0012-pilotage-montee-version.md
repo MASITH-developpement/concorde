@@ -55,9 +55,10 @@ Mesures du 08/11/2026 :
   - avant de commencer : refus si l'espace libre est inférieur à **3 fois la taille de la
     base décompressée, plus 3 Go** (images Odoo comprises) ; la cause et les chiffres
     sont affichés ;
-  - pendant la montée : arrêt propre si l'espace libre passe sous **2 Go** ;
-  - conteneurs bridés : **1,5 Go de mémoire et 1 processeur** au plus, priorité basse
-    (`nice`, `ionice`) ;
+  - pendant la montée : arrêt propre si l'espace libre passe sous **2 Go** (le plus
+    petit entre le volume chiffré et le disque réel du serveur) ;
+  - conteneurs bridés : **1,5 Go de mémoire sans swap et 1 processeur** au plus,
+    priorité processeur basse ; service en priorité basse (`Nice`, `IOSchedulingClass`) ;
   - **une seule montée à la fois** ;
   - les images Odoo d'une version sont effacées après leur saut ; elles sont
     retéléchargées à la montée suivante.
@@ -74,13 +75,22 @@ Mesures du 08/11/2026 :
   empreinte SHA-256 gardée dans le rapport.
 
 ### 3. Les copies sont chiffrées et effacées à 30 jours
-- Toutes les données du client (sauvegarde déposée, bases PostgreSQL des conteneurs,
-  base montée) sont dans un **volume chiffré** (LUKS, conteneur fichier) monté pour la
-  durée d'une montée.
-- La clé est dans un fichier lisible **par le seul service de montée**
-  (`/etc/concorde/montee/cle`, 600), pas dans le fichier de secrets de l'interface.
-- 30 jours après la livraison, le volume de la montée est effacé (arbitrage 3 de
-  l'ADR-0010).
+- Toutes les données des clients (sauvegardes déposées, bases PostgreSQL des
+  conteneurs, bases montées, livraisons) sont dans **un volume chiffré** (LUKS, dans un
+  fichier creux qui ne prend sur le disque que ce qui y est écrit), ouvert et monté par
+  le service de montée à son démarrage.
+- La clé est dans un fichier lisible **par root seul** (`/etc/concorde/montee/cle`,
+  600), pas dans le fichier de secrets de l'interface. Le service refuse de démarrer si
+  elle est mal protégée.
+- Dans ce volume, l'interface n'a accès qu'à trois dossiers : les sauvegardes qu'elle
+  dépose, la file des demandes, et les livraisons à télécharger. Les montées elles-mêmes
+  (bases, journaux) restent à root.
+- 30 jours après la livraison (ou après le dernier changement pour une montée jamais
+  livrée), la montée est effacée, livraison comprise (arbitrage 3 de l'ADR-0010). Une
+  montée en cours n'est jamais effacée.
+- Le PostgreSQL jetable d'une montée est de la **même version majeure que celui du
+  client** (`pg_version` de la sauvegarde), pour que sa sauvegarde se recharge sans
+  surprise.
 
 ### 4. Inventaire avant toute montée
 - Lecture de la version et des modules installés de la copie.

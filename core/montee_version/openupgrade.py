@@ -170,7 +170,12 @@ def lire_apriori(texte: str) -> dict[str, str]:
                 raise ErreurOpenUpgrade(
                     "apriori.py illisible (%s)." % noeud.targets[0].id
                 ) from exc
-            fusions.update({str(k): str(v) for k, v in dict(valeur).items()})
+            fusions.update(
+                {
+                    str(module_ancien): str(module_repreneur)
+                    for module_ancien, module_repreneur in dict(valeur).items()
+                }
+            )
     return fusions
 
 

@@ -22,6 +22,20 @@ Le module Odoo porte la même version au format `17.0.X.Y.Z` (`deploy/addons/con
   sauvegarde .zip → montée 14 → 17 par la commande → nouvel essai →
   livraison → restauration de la base livrée dans un vrai Odoo 17 → zéro
   écart. Commits d'OpenUpgrade figés dans `core/montee_version/openupgrade.py`.
+- Service de montée (`scripts/concorde_montee_service.py`, root) : file de
+  demandes vérifiées champ par champ (`core/montee_version/demandes.py`),
+  volume chiffré LUKS (`core/montee_version/volume.py`, clé root 600),
+  résumés publiés pour l'écran pendant la montée, effacement à 30 jours.
+  Installation : `sudo bash deploy/installer_montee.sh`.
+- Écran **Montée de version** (`interface/montees.py`,
+  `interface/static/montees.js`) : dépôt de la sauvegarde (.zip, 4 Go par
+  défaut, `CONCORDE_MONTEE_DEPOT_MAX_MO`), vérifications, suivi saut par
+  saut, inventaire, écarts, feu vert, nouvel essai, livraison et
+  téléchargement. L'outil de migration n'y est jamais nommé.
+- PostgreSQL jetable à la version du client (`pg_version` de la sauvegarde).
+- Inventaire v2 : notes, retraits et fusions d'OpenUpgrade (`apriori.py`)
+  suivis saut par saut ; un module standard non annoté est « à vérifier »,
+  seul un module absent de la liste bloque.
 ### Modifié
 - Routines partagées : `commandes.executer` (seul lancement de programme de
   la montée, sans shell), `photo.requete_lecture` et `photo.version_odoo`,

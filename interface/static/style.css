@@ -167,7 +167,7 @@ input[type=checkbox] { width: 16px; height: 16px; accent-color: var(--accent); }
 .statut.alertes { background: var(--alerte-fond); color: var(--alerte); }
 .statut.bloquant, .statut.echec, .statut.interrompue { background: var(--bloquant-fond); color: var(--bloquant); }
 .statut.en_cours, .statut.en_attente { background: var(--info-fond); color: var(--info); }
-.statut.verte, .statut.transferee { background: var(--ok-fond); color: var(--ok); }
+.statut.verte, .statut.transferee, .statut.livree { background: var(--ok-fond); color: var(--ok); }
 .statut.bloquee { background: var(--bloquant-fond); color: var(--bloquant); }
 .statut.attente_feu_vert, .statut.arretee_sans_test { background: var(--alerte-fond); color: var(--alerte); }
 .statut.non_jouee { background: var(--surface-2); color: var(--texte-2); }
@@ -355,3 +355,11 @@ input[type=checkbox] { width: 16px; height: 16px; accent-color: var(--accent); }
   .destination-choix .ligne-champs { margin-left: 0; }
   #table-connexions, #table-transferts { display: block; overflow-x: auto; }
 }
+
+/* --- écran Montée de version (ADR-0012) --- */
+#vue-montees fieldset { min-width: 0; }
+#vue-montees input[type=file] { max-width: 100%; }
+.montee-carte { overflow-wrap: anywhere; min-width: 0; }
+.montee-carte h3 { margin: 0; }
+.montee-carte details { margin-top: .5rem; }
+.montee-carte ul.liste-modules { margin: .3rem 0 0; padding-left: 1.2rem; font-size: .88rem; overflow-wrap: anywhere; }

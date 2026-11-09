@@ -697,10 +697,10 @@ class TestOpenUpgradeEtInventaire(unittest.TestCase):
         self.assertTrue(resultat["bloque"])
         premier, second = resultat["sauts"]
         self.assertEqual(
-            [m["module"] for m in premier["bloquants"]], ["perso"]
+            [ligne["module"] for ligne in premier["bloquants"]], ["perso"]
         )
         self.assertEqual(
-            [m["module"] for m in premier["a_verifier"]], ["vieux"]
+            [ligne["module"] for ligne in premier["a_verifier"]], ["vieux"]
         )
         self.assertEqual((second["couverts"], second["bloquants"]), (3, []))
         with self.assertRaises(ErreurOpenUpgrade):
@@ -840,7 +840,7 @@ class TestFileDeDemandes(Atelier):
         donnees = os.path.join(self._tmp.name, "volume")
         for nom in ("depots", "demandes", "livraisons"):
             os.makedirs(os.path.join(donnees, nom), exist_ok=True)
-        service = demandes.Service(
+        service = demandes.ServiceMontee(
             donnees,
             os.path.join(self._tmp.name, "etats"),
             self.openupgrade,
@@ -896,8 +896,8 @@ class TestFileDeDemandes(Atelier):
         ):
             with open(
                 os.path.join(service.demandes, nom), "w", encoding="utf-8"
-            ) as f:
-                f.write(contenu)
+            ) as fichier:
+                fichier.write(contenu)
         self.assertEqual(service.traiter_file(), 2)
         self.assertEqual(os.listdir(service.demandes), [])
         self.assertFalse(self.docker.commandes)
@@ -946,8 +946,8 @@ class TestFileDeDemandes(Atelier):
         )
         with open(
             os.path.join(service.etats, montee_id + ".json"), encoding="utf-8"
-        ) as f:
-            public = json.load(f)
+        ) as fichier:
+            public = json.load(fichier)
         self.assertEqual(public["statut"], montee.LIVREE)
         self.assertIn("inventaire", public)
         ident = demandes.deposer_demande(
@@ -977,7 +977,10 @@ class TestFileDeDemandes(Atelier):
             service.purger(datetime.now() + timedelta(days=90)), []
         )
         self.assertEqual(
-            demandes.Service(service.racine, service.etats).traiter_file(), 0
+            demandes.ServiceMontee(
+                service.racine, service.etats
+            ).traiter_file(),
+            0,
         )
 
 
@@ -999,12 +1002,18 @@ class TestVolume(unittest.TestCase):
     def test_creation_puis_reouverture(self) -> None:
         """Vérifie les commandes : création creuse, LUKS, ext4, montage."""
         appels: list[list[str]] = []
+
+        def noter(arguments: list[str]) -> str:
+            """Lanceur simulé : garde la commande."""
+            appels.append(arguments)
+            return ""
+
         with tempfile.TemporaryDirectory() as dossier, mock.patch.object(
             volume, "verifier_cle", lambda cle: None
         ):
             image = os.path.join(dossier, "v", "volume.luks")
             montage = os.path.join(dossier, "donnees")
-            volume.ouvrir_volume(image, montage, "cle", "1G", appels.append)
+            volume.ouvrir_volume(image, montage, "cle", "1G", noter)
             self.assertEqual(
                 [appel[0] for appel in appels],
                 ["truncate", "cryptsetup", "cryptsetup", "mkfs.ext4", "mount"],
@@ -1012,7 +1021,7 @@ class TestVolume(unittest.TestCase):
             with open(image, "w", encoding="utf-8"):
                 pass
             appels.clear()
-            volume.ouvrir_volume(image, montage, "cle", "1G", appels.append)
+            volume.ouvrir_volume(image, montage, "cle", "1G", noter)
             self.assertEqual(
                 [appel[:2] for appel in appels],
                 [
@@ -1021,5 +1030,5 @@ class TestVolume(unittest.TestCase):
                 ],
             )
             appels.clear()
-            volume.fermer_volume(montage, appels.append)
+            volume.fermer_volume(montage, noter)
             self.assertEqual(appels, [])

@@ -16,12 +16,11 @@ from unittest import mock
 
 from core.connecteurs.odoo import ConnecteurOdoo
 from core.connecteurs.secrets import ecrire_variable, nom_variable
+from core.tiers_odoo import CibleTiers, annuler
 from core.tiers_siret import (
     INTROUVABLE,
     SURE,
-    CibleTiers,
     ErreurSiret,
-    annuler,
     controler,
     ecrire,
     identifiants_constat,

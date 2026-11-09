@@ -7,24 +7,21 @@
    interrogé avec le nom et le code postal ; chaque candidate est contrôlée
    par calcul (SIRET : Luhn et SIREN ; TVA : clé et SIREN) puis classée
    « sûre », « à choisir » ou « introuvable ».
-3. `ecrire` : les choix validés sont écrits par l'API d'Odoo (trois champs
-   de res.partner seulement), sans jamais écraser une fiche complétée
-   entre-temps ; chaque écriture est tracée. `annuler` remet les anciennes
-   valeurs à partir de la trace.
+3. `ecrire` : les choix validés, contrôlés à nouveau, sont écrits par
+   l'API d'Odoo (trois champs de res.partner seulement) par la routine
+   commune `tiers_odoo.ecrire_champs` (fiche déjà complétée jamais écrasée,
+   trace, annulation par `tiers_odoo.annuler`).
 """
 
-import json
 import re
 import time
 from collections.abc import Callable, Iterable, Mapping, Sequence
-from datetime import datetime
 from typing import Any, Protocol, TypedDict
 
 from .analyser import normaliser_nom
 from .connecteurs.http_json import ClientJson
 from .demat import siren_valide, siret_valide, tva_fr_valide
-from .migration.injection import CibleOdoo
-from .xml_sur import FauteXmlRpc
+from .tiers_odoo import AccesOdoo, EcritureTiers, ecrire_champs, valeur_vide
 
 ANNUAIRE_ENTREPRISES = "https://recherche-entreprises.api.gouv.fr"
 PAUSE_ANNUAIRE_S = 0.15  # environ 7 appels par seconde (limite publiée)
@@ -79,19 +76,6 @@ class Choix(TypedDict):
     tva: str
 
 
-class AccesOdoo(Protocol):
-    """Ce dont ce module a besoin d'une base Odoo : appeler ses modèles."""
-
-    def appel(
-        self,
-        modele: str,
-        methode: str,
-        args: list[Any],
-        kwargs: dict[str, Any] | None = None,
-    ) -> Any:
-        """Appelle une méthode d'un modèle Odoo."""
-
-
 class ClientAnnuaire(Protocol):
     """Ce dont ce module a besoin de l'annuaire : des requêtes JSON."""
 
@@ -103,12 +87,6 @@ class ClientAnnuaire(Protocol):
         corps: object = None,
     ) -> Any:
         """Appelle l'annuaire ; rend le JSON décodé."""
-
-
-class CibleTiers(CibleOdoo):
-    """Accès Odoo réduit à ce que fait l'ADR-0013 : lire et compléter."""
-
-    methodes_autorisees = ("search_read", "read", "fields_get", "write")
 
 
 def identifiants_constat(elements: Iterable[str]) -> list[int]:
@@ -142,11 +120,6 @@ def champ_siret(cible: AccesOdoo) -> str:
     return "company_registry"
 
 
-def _vide(valeur: object) -> bool:
-    """Vrai pour une valeur Odoo vide (False, None, chaîne blanche)."""
-    return not valeur or not str(valeur).strip()
-
-
 def lire_tiers(
     cible: AccesOdoo, identifiants: Sequence[int]
 ) -> list[TiersACompleter]:
@@ -177,9 +150,9 @@ def lire_tiers(
         }
         for ident in identifiants
         if ident in par_id
-        and _vide(par_id[ident]["vat"])
-        and _vide(par_id[ident]["company_registry"])
-        and _vide(par_id[ident].get("siret"))
+        and valeur_vide(par_id[ident]["vat"])
+        and valeur_vide(par_id[ident]["company_registry"])
+        and valeur_vide(par_id[ident].get("siret"))
     ]
 
 
@@ -347,10 +320,9 @@ def ecrire(
 ) -> dict[str, Any]:
     """Écrit les choix validés ; rend le bilan (écrits, ignorés, refus).
 
-    Rôle : point 4 de l'ADR-0013. Contrôles refaits avant d'écrire ; une
-    fiche complétée entre-temps n'est pas touchée ; un refus d'Odoo
-    n'arrête pas les autres fiches. Chaque écriture ajoute une ligne JSON
-    à `trace` (tiers, champs, anciennes et nouvelles valeurs, base, date).
+    Rôle : point 4 de l'ADR-0013. Contrôles refaits avant d'écrire, puis
+    écriture tracée par tiers_odoo.ecrire_champs (fiche complétée
+    entre-temps jamais touchée, refus d'Odoo nommés).
     Paramètres : cible ; choix ; base — nom affiché dans la trace ; trace
     — fichier de trace.
     Retour : {"ecrits": [...], "ignores": [...], "refus": [...]}.
@@ -368,80 +340,12 @@ def ecrire(
                 % (un_choix["id"], ", ".join(anomalies))
             )
     champ = champ_siret(cible)
-    bilan: dict[str, list[Any]] = {"ecrits": [], "ignores": [], "refus": []}
+    ecritures: list[EcritureTiers] = []
     for un_choix in choix:
-        actuel = cible.appel(
-            "res.partner",
-            "read",
-            [[un_choix["id"]]],
-            {"fields": ["vat", champ]},
-        )
-        if not actuel or not (
-            _vide(actuel[0]["vat"]) and _vide(actuel[0][champ])
-        ):
-            bilan["ignores"].append(un_choix["id"])
-            continue
         valeurs = {champ: un_choix["siret"]}
         if un_choix["tva"]:
             valeurs["vat"] = un_choix["tva"]
-        try:
-            cible.appel("res.partner", "write", [[un_choix["id"]], valeurs])
-        except FauteXmlRpc as exc:
-            bilan["refus"].append(
-                {"id": un_choix["id"], "cause": str(exc.faultString)[-300:]}
-            )
-            continue
-        with open(trace, "a", encoding="utf-8") as fichier:
-            fichier.write(
-                json.dumps(
-                    {
-                        "le": datetime.now().isoformat(timespec="seconds"),
-                        "base": base,
-                        "tiers": un_choix["id"],
-                        "anciennes": {
-                            nom: actuel[0][nom] or "" for nom in valeurs
-                        },
-                        "nouvelles": valeurs,
-                        "source": ANNUAIRE_ENTREPRISES,
-                    },
-                    ensure_ascii=False,
-                )
-                + "\n"
-            )
-        bilan["ecrits"].append(un_choix["id"])
-    return bilan
-
-
-def annuler(cible: AccesOdoo, trace: str) -> dict[str, list[int]]:
-    """Remet les anciennes valeurs écrites d'après la trace.
-
-    Rôle : rendre réversible une écriture de l'ADR-0013. Une fiche
-    modifiée depuis (valeur différente de celle écrite) n'est pas touchée.
-    Paramètres : cible ; trace — fichier écrit par `ecrire`.
-    Retour : {"remis": [...], "ignores": [...]}.
-    Erreurs : OSError (trace absente) ; FauteXmlRpc.
-    Usages : interface (écran SIRET), tests.
-    """
-    bilan: dict[str, list[int]] = {"remis": [], "ignores": []}
-    with open(trace, encoding="utf-8") as fichier:
-        lignes = [json.loads(ligne) for ligne in fichier if ligne.strip()]
-    for ligne in reversed(lignes):
-        champs = list(ligne["nouvelles"])
-        actuel = cible.appel(
-            "res.partner", "read", [[ligne["tiers"]]], {"fields": champs}
-        )
-        if not actuel or any(
-            (actuel[0][nom] or "") != ligne["nouvelles"][nom] for nom in champs
-        ):
-            bilan["ignores"].append(ligne["tiers"])
-            continue
-        cible.appel(
-            "res.partner",
-            "write",
-            [
-                [ligne["tiers"]],
-                {nom: ligne["anciennes"][nom] or False for nom in champs},
-            ],
-        )
-        bilan["remis"].append(ligne["tiers"])
-    return bilan
+        ecritures.append({"id": un_choix["id"], "valeurs": valeurs})
+    return ecrire_champs(
+        cible, ecritures, ["vat", champ], base, trace, ANNUAIRE_ENTREPRISES
+    )

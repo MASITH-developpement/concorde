@@ -21,12 +21,11 @@ from core.connecteurs.odoo import ConnecteurOdoo
 from core.connecteurs.secrets import ErreurSecrets
 from core.guardian import Guardian
 from core.journal import Journal
+from core.tiers_odoo import CibleTiers, annuler
 from core.tiers_siret import (
-    CibleTiers,
     Choix,
     ErreurSiret,
     Proposition,
-    annuler,
     ecrire,
     identifiants_constat,
     lire_tiers,

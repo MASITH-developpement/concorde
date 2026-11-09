@@ -18,6 +18,7 @@ from typing import Any
 
 from core.journal import Journal
 from core.montee_version.demandes import ErreurDemande, deposer_demande
+from core.montee_version.montee import ARRET_URGENCE, PREFIXE_ARRET
 from core.montee_version.openupgrade import VERSION_MAX, VERSION_MIN
 from core.montee_version.sauvegarde import (
     ErreurSauvegarde,
@@ -205,6 +206,40 @@ class EcranMontees:
             "alerte" if action in ("feu_vert", "livrer") else "info",
         )
         return {"demande": demande}
+
+    def arreter(self, ident: str) -> ObjetJson:
+        """Demande l'arrêt d'une montée (ADR-0016) ; rend {"ok"}.
+
+        Fichier d'arrêt lu par le service de montée toutes les 10 s : il
+        arrête le saut en cours puis efface la copie de travail.
+        Lève ErreurEcran.
+        """
+        self._pret()
+        if not _MONTEE.match(ident):
+            raise ErreurEcran("Montée inconnue : %s" % ident)
+        with open(
+            os.path.join(self.demandes, PREFIXE_ARRET + ident),
+            "w",
+            encoding="utf-8",
+        ) as fichier:
+            fichier.write(ident)
+        self.journal.dire(
+            "Montée de version : arrêt demandé (%s)" % ident, "alerte"
+        )
+        return {"ok": True}
+
+    def prevenir_urgence(self) -> bool:
+        """Dépose l'arrêt d'urgence pour le service de montée (ADR-0016).
+
+        Retour : vrai si le fichier a pu être déposé (service prêt).
+        """
+        if not os.path.isdir(self.demandes):
+            return False
+        with open(
+            os.path.join(self.demandes, ARRET_URGENCE), "w", encoding="utf-8"
+        ) as fichier:
+            fichier.write("urgence")
+        return True
 
     def livraison(self, ident: str) -> str:
         """Chemin de la sauvegarde livrée d'une montée. Lève ErreurEcran."""

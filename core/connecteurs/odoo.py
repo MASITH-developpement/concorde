@@ -29,11 +29,18 @@ from .base import (
     InfoConnexion,
     PerimetreLecture,
     ResultatEcriture,
+    ResultatSuppression,
     nouveau_lot,
 )
 
 # Erreurs d'Odoo ou du réseau, rendues en ErreurConnexion.
 ERREURS_ODOO = (ErreurSource, injection.ErreurInjection, ErreurXmlRpc, OSError)
+
+
+class CibleSuppression(injection.CibleOdoo):
+    """Accès réduit à effacer les écritures d'un transfert (ADR-0016)."""
+
+    methodes_autorisees = ("search_read", "button_draft", "unlink")
 
 
 def ligne_depuis_odoo(numero: int, enregistrement: Enregistrement) -> LigneLot:
@@ -217,3 +224,48 @@ class ConnecteurOdoo(Connecteur):
         except ERREURS_ODOO as exc:
             raise ErreurConnexion("Odoo : %s" % exc) from exc
         return self._lot(lignes)
+
+    def supprimer(
+        self, reference: str, journal: Journal
+    ) -> ResultatSuppression:
+        """Efface les écritures écrites sous `reference` (tâche arrêtée).
+
+        Chaque écriture est repassée en brouillon puis supprimée, une par
+        une. Odoo refuse pour un journal protégé contre la modification
+        (inaltérabilité) ou une période verrouillée : l'écriture est alors
+        laissée et nommée avec la cause, jamais forcée.
+        """
+        try:
+            cible = self.cible(CibleSuppression)
+            trouvees = cible.appel(
+                "account.move",
+                "search_read",
+                [[("ref", "=like", reference + "/%")]],
+                {"fields": ["ref", "state"]},
+            )
+        except ERREURS_ODOO as exc:
+            raise ErreurConnexion("Odoo : %s" % exc) from exc
+        bilan: ResultatSuppression = {"supprimees": 0, "laissees": []}
+        for ecriture in trouvees:
+            try:
+                if ecriture["state"] == "posted":
+                    cible.appel(
+                        "account.move", "button_draft", [[ecriture["id"]]]
+                    )
+                cible.appel("account.move", "unlink", [[ecriture["id"]]])
+            except ERREURS_ODOO as exc:
+                bilan["laissees"].append(
+                    "%s : %s" % (ecriture["ref"], str(exc)[-200:])
+                )
+                continue
+            bilan["supprimees"] += 1
+        journal.dire(
+            "%s : %d écriture(s) effacée(s), %d laissée(s)"
+            % (
+                self.parametres["base"],
+                bilan["supprimees"],
+                len(bilan["laissees"]),
+            ),
+            "alerte" if bilan["laissees"] else "info",
+        )
+        return bilan

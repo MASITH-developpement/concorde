@@ -23,7 +23,7 @@ const STATUTS = {
   conforme: "Conforme", alertes: "Alertes", bloquant: "Bloquant",
   verte: "Bonne", bloquee: "Bloquée", non_jouee: "Pas encore faite",
   attente_feu_vert: "Attend le feu vert", arretee_sans_test: "Arrêtée sans test",
-  transferee: "Transférée", livree: "Livrée",
+  transferee: "Transférée", livree: "Livrée", arretee: "Arrêtée",
 };
 
 // --- utilitaires ------------------------------------------------------------
@@ -376,8 +376,20 @@ function ligneJournal(ev) {
     el("time", { texte: ev.t.slice(11, 19) }), el("span", { texte: ev.message }));
 }
 
+// Bouton « Arrêter » d'une tâche en cours (ADR-0016).
+function boutonArreter(id) {
+  return el("button", { class: "bouton petit danger-bouton", type: "button", texte: "Arrêter",
+    onclick: async (ev) => {
+      if (!confirm("Arrêter cette tâche ?\n\nElle s'arrête au prochain point sûr (jamais au milieu d'une écriture), puis CONCORDE efface ce qu'elle a déjà écrit dans la base. Une écriture qu'Odoo refuse d'effacer (journal protégé, période verrouillée) sera nommée.")) return;
+      ev.target.disabled = true; ev.target.textContent = "Arrêt demandé…";
+      try { await api(`/api/taches/${id}/arreter`, { method: "POST", corps: {} }); }
+      catch (e) { alert(e.message); ev.target.disabled = false; ev.target.textContent = "Arrêter"; }
+    } });
+}
+
 function suivre(id, zone) {
   const prog = $("#modele-progression").content.cloneNode(true).firstElementChild;
+  $(".progression", prog).append(boutonArreter(id));
   zone.replaceChildren(prog);
   const liste = $(".journal", prog);
   const debut = Date.now();
@@ -414,6 +426,13 @@ function suivre(id, zone) {
 }
 
 function rendreTache(t) {
+  if (t.statut === "arretee") {
+    return el("div", { class: "carte" },
+      el("div", { class: "entete-resultat" }, el("h2", { texte: (ACTIONS[t.action] || t.action) + " arrêtée" }), statutPastille(t.statut)),
+      el("p", { texte: t.erreur || "" }),
+      el("details", { open: true }, el("summary", { texte: "Ce qui a été effacé" }),
+        el("pre", { class: "mono", texte: JSON.stringify(t.annulation || {}, null, 1) })));
+  }
   if (t.statut !== "terminee") {
     return el("div", { class: "carte" },
       el("div", { class: "entete-resultat" }, el("h2", { texte: ACTIONS[t.action] + " impossible" }),
@@ -529,7 +548,7 @@ async function chargerHistorique() {
     el("td", { texte: t.base }),
     el("td", {}, statutPastille(t.statut)),
     el("td", { class: "mono", texte: t.duree_s != null ? t.duree_s + " s" : "—" }),
-    el("td", {}, $("#resultat-" + t.action) ? el("button", { class: "bouton petit", type: "button",
+    el("td", {}, t.statut === "en_cours" || t.statut === "en_attente" ? boutonArreter(t.id) : $("#resultat-" + t.action) ? el("button", { class: "bouton petit", type: "button",
       texte: "Ouvrir", onclick: () => {
         location.hash = "#" + (VUE_ACTION[t.action] || t.action);
         suivre(t.id, $("#resultat-" + t.action));
@@ -1072,3 +1091,31 @@ $("#rapport-telecharger").addEventListener("click", async () => {
 window.addEventListener("beforeunload", (e) => { if (etat.rapportModifie) e.preventDefault(); });
 
 demarrer().catch((e) => { document.body.prepend(el("p", { class: "erreur", texte: e.message })); });
+
+// --- arrêt d'urgence (ADR-0016) ----------------------------------------------------
+$("#arret-urgence").addEventListener("click", () => {
+  const saisie = el("input", { type: "text", autocomplete: "off", spellcheck: "false", "aria-label": "Mot à retaper" });
+  const bouton = el("button", { class: "bouton danger-bouton", type: "submit", disabled: true, texte: "ARRÊT D'URGENCE" });
+  const erreur = el("p", { class: "erreur", role: "alert" });
+  saisie.addEventListener("input", () => { bouton.disabled = saisie.value !== "ARRÊT"; });
+  const form = el("form", { class: "formulaire" },
+    el("div", { class: "danger" },
+      el("strong", { texte: "DANGER pour la base de données et pour le logiciel." }), el("br"),
+      "Tout s'arrête tout de suite, dans l'état où c'est : une écriture en cours peut rester à moitié faite dans la base, ",
+      "rien n'est effacé automatiquement, les montées de version en cours sont coupées, et CONCORDE redémarre (quelques secondes). ",
+      "Pour arrêter une seule tâche proprement, utilisez plutôt son bouton « Arrêter »."),
+    el("label", {}, el("span", {}, "Pour confirmer, retapez ", el("span", { class: "mot-cle", texte: "ARRÊT" })), saisie),
+    erreur, bouton);
+  form.addEventListener("submit", async (ev) => {
+    ev.preventDefault(); bouton.disabled = true;
+    try {
+      await api("/api/urgence", { method: "POST", corps: { confirmation: saisie.value } });
+      $("#tiroir-contenu").replaceChildren(el("p", { class: "danger", texte: "Arrêt d'urgence fait. CONCORDE redémarre : la page se recharge dans quelques secondes." }));
+      setTimeout(() => location.reload(), 8000);
+    } catch (e) { erreur.textContent = e.message; bouton.disabled = false; }
+  });
+  $("#voile").hidden = false;
+  $("#tiroir-titre").textContent = "Arrêt d'urgence";
+  $("#tiroir-contenu").replaceChildren(form);
+  saisie.focus();
+});

@@ -3,6 +3,31 @@
 Format : [Keep a Changelog](https://keepachangelog.com/fr/1.1.0/), versions sémantiques.
 Le module Odoo porte la même version au format `17.0.X.Y.Z` (`deploy/addons/concorde/__manifest__.py`).
 
+## [1.12.0] — 2026-11-09
+### Ajouté
+- **Bouton « Arrêter »** sur toute tâche en cours (ADR-0016, acceptée le
+  09/11/2026), dans l'écran qui l'a lancée et dans l'Historique, avec
+  confirmation. Arrêt au prochain point sûr (prochain message du journal :
+  jamais au milieu d'un appel à un logiciel), statut « arrêtée », puis
+  **effacement de ce que la tâche a écrit** : écritures d'un transfert ou
+  d'un feu vert (brouillon puis suppression dans Odoo ; une écriture
+  protégée ou en période verrouillée est nommée, jamais forcée ; FEC
+  produit effacé ; logiciel sans effacement nommé), fiches SIRET et facture
+  électronique remises, copie de travail d'une montée effacée.
+- **Arrêt d'urgence** (bouton rouge du menu) : tout s'arrête tout de suite,
+  dans l'état où c'est, après un avertissement de danger pour la base et
+  le logiciel et le mot « ARRÊT » retapé. Le service de montée arrête ses
+  conteneurs et vide sa file ; l'interface s'arrête et systemd la relance.
+- **Point de non-retour** : un feu vert abouti qui prévient AzalPlus (devis
+  et rapport, 1.11.0) ne peut plus être arrêté ni défait.
+- Connecteurs : `supprimer(référence)` ; Odoo (`CibleSuppression`), FEC.
+- Tests : les chemins de travail du serveur sont tournés vers un dossier
+  temporaire (`tests/__init__.py`) : un test ne touche jamais les fichiers
+  réels, même lancé sur le serveur.
+### Modifié
+- Une trace par tâche d'écriture (SIRET, facture électronique) : arrêter
+  une tâche ne défait que son propre travail.
+
 ## [1.11.0] — 2026-11-09
 ### Ajouté
 - **Devis et rapport dans AzalPlus** (ADR-0015, proposée le 09/11/2026) :

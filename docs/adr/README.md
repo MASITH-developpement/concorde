@@ -19,3 +19,4 @@ Modèle : `0000-modele.md`. Une ADR acceptée ne se modifie pas : on en écrit u
 | [0013](0013-completer-siren-tva.md) | Compléter le SIRET et la TVA des tiers depuis CONCORDE | Acceptée (09/11/2026) |
 | [0014](0014-facture-electronique-tiers.md) | Facture électronique : vérifier l'inscription des tiers et reprendre leur adresse | Acceptée (09/11/2026) |
 | [0015](0015-devis-et-rapport-dans-azalplus.md) | Devis et rapport dans AzalPlus : CONCORDE demande par l'API v1, AzalPlus décide | Proposée (09/11/2026) |
+| [0016](0016-bouton-arreter.md) | Bouton « Arrêter » sur une tâche en cours, et arrêt d'urgence | Acceptée (09/11/2026) |

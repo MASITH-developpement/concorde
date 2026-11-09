@@ -97,6 +97,13 @@ class ResultatEcriture(TypedDict):
     fichiers: dict[str, str]
 
 
+class ResultatSuppression(TypedDict):
+    """Bilan de l'effacement de ce qu'une référence a écrit (ADR-0016)."""
+
+    supprimees: int
+    laissees: list[str]
+
+
 class Connecteur(ABC):
     """Prise vers un logiciel : un compte précis de ce logiciel.
 
@@ -163,6 +170,22 @@ class Connecteur(ABC):
     def relire(self, reference: str, journal: Journal) -> Lot:
         """Relit ce qui a été écrit sous `reference`. Lève ErreurConnexion."""
         raise ErreurConnexion("%s ne sait pas relire." % self.libelle)
+
+    def supprimer(
+        self, reference: str, journal: Journal
+    ) -> ResultatSuppression:
+        """Efface ce qui a été écrit sous `reference` (tâche arrêtée).
+
+        Par défaut le logiciel ne sait pas : rien n'est effacé, et la
+        cause est nommée pour un effacement à la main (ADR-0016).
+        """
+        return {
+            "supprimees": 0,
+            "laissees": [
+                "%s : %s ne sait pas effacer, à faire à la main dans le "
+                "logiciel" % (reference, self.libelle)
+            ],
+        }
 
     def environnement_test(self) -> Optional["Connecteur"]:
         """Connecteur vers l'environnement de test propre au logiciel.

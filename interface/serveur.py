@@ -53,7 +53,10 @@ API (JSON ; toute requête qui modifie exige l'en-tête X-Concorde: 1) :
   GET  /api/montees/<id>/livraison
   POST /api/montees/depot?nom=…   (corps = la sauvegarde Odoo .zip)
   POST /api/montees {depot, arrivee}
-  POST /api/montees/<id>/(circuit|feu-vert|nouvel-essai|livrer)
+  POST /api/montees/<id>/(circuit|feu-vert|nouvel-essai|livrer|arreter)
+  Arrêter (ADR-0016) : POST /api/taches/<id>/arreter (au prochain point sûr,
+  puis effacement de ce que la tâche a écrit) ; POST /api/urgence
+  {confirmation: « ARRÊT »} (tout s'arrête dans l'état où c'est).
   Compléter SIRET et TVA (ADR-0013, interface/siret.py) :
   GET  /api/tiers/bases   (bases où CONCORDE peut écrire : sélecteur et
        connexions Odoo de Transferts ; pour les deux écrans de tiers)
@@ -96,7 +99,7 @@ from core.comptes import alertes_balance, grand_livre
 from core.connecteurs.secrets import CHEMIN_SECRETS
 from core.fichier_json import ecrire_json_atomique
 from core.guardian import Guardian
-from core.journal import Journal, duree_texte, nombre_texte
+from core.journal import Journal, TacheArretee, duree_texte, nombre_texte
 from core.marceau import Marceau
 from core.migration.injection import CibleOdoo
 from core.odoo_source import (
@@ -131,6 +134,8 @@ ParametresUrl = dict[str, str]
 # Travail d'une tâche branchée par un autre module (écran Transferts) :
 # (tâche, journal, guardian) ; remplit tache["resultat"], lève en cas d'échec.
 Travail = Callable[[ObjetJson, Journal, Guardian], None]
+# Défait ce qu'une tâche arrêtée a écrit : (tâche, journal) -> bilan.
+AnnulationTache = Callable[[ObjetJson, Journal], ObjetJson]
 SourceOdoo = SourceSqlOdoo17 | SourceXmlRpcOdoo17
 
 STATIQUE = os.path.join(os.path.dirname(os.path.abspath(__file__)), "static")
@@ -158,6 +163,7 @@ VERSION_CONCORDE = lire_version(
 COOKIE = "concorde_session"
 CORPS_MAX = 64 * 1024
 TACHES_SIMULTANEES = 2
+MOT_URGENCE = "ARRÊT"
 LIMITE_GRAND_LIVRE = 500
 _marceau = Marceau()
 
@@ -719,6 +725,8 @@ class Taches:
         self._verrou = threading.Lock()
         self._places = threading.Semaphore(TACHES_SIMULTANEES)
         self.travaux: dict[str, Travail] = {}
+        # Action -> ce qui défait le travail d'une tâche arrêtée (ADR-0016).
+        self.annulations: dict[str, AnnulationTache] = {}
         os.makedirs(dossier, exist_ok=True)
         self._recharger()
 
@@ -877,9 +885,75 @@ class Taches:
             )
             self._places.acquire()
         try:
+            if journal.arret_demande:
+                journal.desarmer()
+                tache["statut"] = "arretee"
+                journal.dire("Arrêtée avant d'avoir commencé.", "alerte")
+                tache["journal"] = journal.tout()
+                self._sauver(tache)
+                return
             self._executer_tache(tache, journal)
         finally:
             self._places.release()
+
+    def arreter(self, ident: str, par: str) -> ObjetJson:
+        """Demande l'arrêt d'une tâche au prochain point sûr (ADR-0016).
+
+        Rôle : bouton « Arrêter » ; la tâche s'arrête au prochain message
+        de son journal, puis ce qu'elle a écrit est défait.
+        Paramètres : ident — tâche ; par — qui demande (session, adresse).
+        Retour : la tâche (statut inchangé tant que l'arrêt n'est pas pris).
+        Erreurs : ValueError si la tâche est inconnue, déjà finie ou
+        passée à son point de non-retour.
+        Usages : Gestionnaire.do_POST (/api/taches/<id>/arreter).
+        """
+        with self._verrou:
+            tache = self._taches.get(ident)
+            journal = self._journaux.get(ident)
+        if (
+            tache is None
+            or journal is None
+            or tache["statut"] not in ("en_attente", "en_cours")
+        ):
+            raise ValueError(
+                "Cette tâche n'est pas en cours : rien à arrêter."
+            )
+        if not journal.demander_arret():
+            raise ValueError(
+                "Cette tâche a abouti et prévient AzalPlus : elle ne peut "
+                "plus être arrêtée."
+            )
+        tache["arret_demande"] = {
+            "par": par,
+            "le": datetime.now().isoformat(timespec="seconds"),
+        }
+        self._sauver(tache)
+        Guardian().tracer("tache", "arret_demande", "%s %s" % (ident, par))
+        return tache
+
+    def _defaire(self, tache: ObjetJson, journal: Journal, etape: str) -> None:
+        """Tâche arrêtée : raconte l'arrêt, puis défait ce qu'elle a écrit."""
+        journal.desarmer()
+        tache["statut"] = "arretee"
+        tache["erreur"] = "Arrêtée à la demande, à l'étape : %s" % etape
+        journal.dire(tache["erreur"], "alerte")
+        annulation = self.annulations.get(tache["action"])
+        if annulation is None:
+            tache["annulation"] = {"rien": "Cette tâche n'écrit rien."}
+            return
+        journal.dire("Effacement de ce que la tâche a écrit", "etape")
+        try:
+            tache["annulation"] = annulation(tache, journal)
+        except Exception as exc:
+            # l'effacement incomplet est rendu tel quel (jamais muet)
+            tache["annulation"] = {"erreur": _motif_erreur(exc)}
+            journal.dire(
+                "Effacement incomplet : %s" % tache["annulation"]["erreur"],
+                "erreur",
+            )
+        Guardian().tracer(
+            "tache", "annulation", "%s %s" % (tache["id"], tache["annulation"])
+        )
 
     def _executer_tache(self, tache: ObjetJson, journal: Journal) -> None:
         """Exécute la tâche ; toute erreur est rendue à l'écran."""
@@ -888,11 +962,11 @@ class Taches:
         debut = time.monotonic()
         guardian = Guardian()
         guardian.self_check()
-        journal.dire(
-            "Guardian : contrôle d'intégrité de démarrage réussi", "detail"
-        )
         source: SourceOdoo | None = None
         try:
+            journal.dire(
+                "Guardian : contrôle d'intégrité de démarrage réussi", "detail"
+            )
             parametres = tache["params"]
             if tache["action"] in self.travaux:
                 self.travaux[tache["action"]](tache, journal, guardian)
@@ -912,6 +986,8 @@ class Taches:
             else:
                 self._telecharger(tache, parametres, source, journal, guardian)
             tache["statut"] = "terminee"
+        except TacheArretee as arret:
+            self._defaire(tache, journal, str(arret))
         except Exception as exc:
             # erreur rendue telle quelle à l'écran (jamais muet)
             tache["statut"] = "echec"
@@ -1588,7 +1664,27 @@ class Application:
         self.peppol = EcranPeppol(
             self.taches, self.bases, self.transferts.annuaire, self.journal
         )
+        # Fin du processus pour l'arrêt d'urgence (systemd le relance).
+        self.quitter: Callable[[int], object] = os._exit
         self.journal.dire("Service CONCORDE démarré", "ok")
+
+    def declencher_urgence(self, par: str) -> ObjetJson:
+        """Arrêt d'urgence (ADR-0016) : tout s'arrête, dans l'état où c'est.
+
+        Rôle : le service de montée arrête ses conteneurs (fichier
+        d'urgence) ; l'interface s'arrête 2 secondes après la réponse et
+        systemd la relance ; les tâches en cours sont coupées net, rien
+        n'est défait.
+        Paramètres : par — qui le demande (session, adresse).
+        Retour : {"montee": vrai si le service de montée est prévenu}.
+        Erreurs : aucune.
+        Usages : Gestionnaire.do_POST (/api/urgence).
+        """
+        self.journal.dire("ARRÊT D'URGENCE demandé (%s)" % par, "erreur")
+        Guardian().tracer("urgence", "arret", par)
+        prevenu = self.montees.prevenir_urgence()
+        threading.Timer(2.0, self.quitter, (1,)).start()
+        return {"montee": prevenu, "redemarrage": True}
 
 
 class Gestionnaire(BaseHTTPRequestHandler):
@@ -1887,6 +1983,31 @@ class Gestionnaire(BaseHTTPRequestHandler):
             return self._json(200, {"ok": True}, entetes=_cookie_session(None))
         if not self._connecte():
             return self._erreur(401, "Connexion requise.")
+        if re.fullmatch(r"/api/taches/[\w-]+/arreter", chemin):
+            ident_tache = chemin.split("/")[3]
+            try:
+                tache = self.app.taches.arreter(
+                    ident_tache,
+                    "session de l'interface depuis %s" % self._ip(),
+                )
+            except ValueError as exc:
+                return self._erreur(400, str(exc))
+            self.app.journal.dire(
+                "Arrêt demandé : %s (%s)" % (tache["base"], tache["action"]),
+                "alerte",
+            )
+            return self._json(202, {"ok": True})
+        if chemin == "/api/urgence":
+            if str(corps.get("confirmation") or "") != MOT_URGENCE:
+                return self._erreur(
+                    400,
+                    "Pour l'arrêt d'urgence, retapez %s : rien n'est arrêté."
+                    % MOT_URGENCE,
+                )
+            return self._json(
+                202,
+                self.app.declencher_urgence("session depuis %s" % self._ip()),
+            )
         if chemin == "/api/taches":
             try:
                 params = self._params_tache(corps)
@@ -2123,6 +2244,10 @@ class Gestionnaire(BaseHTTPRequestHandler):
                 201,
                 lambda: ecran.demander("creer", corps, None, self._ip()),
                 ERREURS_MONTEE_ECRAN,
+            )
+        if re.fullmatch(r"/api/montees/[\w-]+/arreter", chemin):
+            return self._ecran(
+                202, lambda: ecran.arreter(parties[3]), ERREURS_MONTEE_ECRAN
             )
         if (
             re.fullmatch(r"/api/montees/[\w-]+/[\w-]+", chemin)

@@ -197,6 +197,8 @@ class EcranTransferts:
         self.journal = journal
         taches.travaux["transfert"] = self._travail_transfert
         taches.travaux["feu_vert"] = self._travail_feu_vert
+        taches.annulations["transfert"] = self._defaire_transfert
+        taches.annulations["feu_vert"] = self._defaire_feu_vert
 
     # --- connexions ----------------------------------------------------------
     def logiciels(self) -> ObjetJson:
@@ -522,7 +524,11 @@ class EcranTransferts:
             ", ".join(self._libelle(ident) for ident in destinations),
         )
         ident_tache = self.taches.lancer(
-            "transfert", None, nom, "", {"demande": demande}
+            "transfert",
+            None,
+            nom,
+            "",
+            {"demande": demande, "transfert": transfert.nouvel_identifiant()},
         )
         self.journal.dire("Transfert lancé : %s" % nom, "info")
         return ident_tache
@@ -537,6 +543,7 @@ class EcranTransferts:
             self.racine,
             journal=journal,
             guardian=guardian,
+            ident=tache["params"]["transfert"],
         )
         tache["resultat"] = {
             "transfert": etat["id"],
@@ -545,6 +552,34 @@ class EcranTransferts:
                 for ident, etat_dest in etat["destinations"].items()
             },
         }
+
+    def _defaire_transfert(
+        self, tache: ObjetJson, journal: Journal
+    ) -> ObjetJson:
+        """Transfert arrêté : efface les écritures de test (ADR-0016)."""
+        parametres = tache["params"]
+        return transfert.defaire(
+            self.annuaire,
+            parametres["transfert"],
+            parametres["demande"]["destinations"],
+            False,
+            self.racine,
+            journal,
+        )
+
+    def _defaire_feu_vert(
+        self, tache: ObjetJson, journal: Journal
+    ) -> ObjetJson:
+        """Feu vert arrêté : efface test et production (ADR-0016)."""
+        parametres = tache["params"]
+        return transfert.defaire(
+            self.annuaire,
+            parametres["transfert"],
+            [parametres["destination"]],
+            True,
+            self.racine,
+            journal,
+        )
 
     def _verifier_ident(self, ident: str) -> None:
         """Refuse un identifiant de transfert mal formé (ErreurEcran)."""

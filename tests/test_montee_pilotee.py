@@ -574,7 +574,7 @@ class TestOpenUpgradeEtInventaire(unittest.TestCase):
     """Références d'OpenUpgrade et règle de l'inventaire."""
 
     def test_lire_couverture(self) -> None:
-        """Vérifie la lecture des marques |new| et |del|, des notes, des « + »."""
+        """Vérifie les marques |new| et |del|, les notes et les « + »."""
         texte = "\n".join(
             [
                 "| Module | Status               + Extra |",

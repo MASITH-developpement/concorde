@@ -17,4 +17,4 @@ Modèle : `0000-modele.md`. Une ADR acceptée ne se modifie pas : on en écrit u
 | [0011](0011-ecran-connexions-transferts.md) | Écrans Connexions, Transferts et Montée de version dans l'interface web | Acceptée (08/11/2026) |
 | [0012](0012-pilotage-montee-version.md) | Montée de version : pilotage sur le serveur CONCORDE et écran | Acceptée (08/11/2026) |
 | [0013](0013-completer-siren-tva.md) | Compléter le SIRET et la TVA des tiers depuis CONCORDE | Acceptée (09/11/2026) |
-| [0014](0014-facture-electronique-tiers.md) | Facture électronique : vérifier l'inscription des tiers et reprendre leur adresse | Proposée (09/11/2026) |
+| [0014](0014-facture-electronique-tiers.md) | Facture électronique : vérifier l'inscription des tiers et reprendre leur adresse | Acceptée (09/11/2026) |

@@ -94,6 +94,42 @@ python3 -m scripts.check_dematerialisation --url https://mon-odoo.fr --db mabase
 
 Le client XML-RPC refuse toute méthode autre que `search_read` / `fields_get` / `search_count`.
 
+## Devis et rapport dans AzalPlus (ADR-0015)
+
+Un transfert abouti demande à AzalPlus un **devis** de la prestation et range son
+**rapport** dans la GED du client. CONCORDE **demande**, il n'écrit pas : l'appel
+passe par `/api/v1/` avec une clé d'API, et AzalPlus garde la numérotation du devis,
+les prix de son catalogue, les totaux, la TVA, les droits et son journal d'audit.
+
+Réglages : `azalplus_documents.yaml`. Trois verrous, **fermés à la livraison** —
+`actif`, le déclencheur du genre de mission, et `essai_a_blanc`. En essai à blanc,
+CONCORDE ne fait que lire AzalPlus et dit ce qui partirait.
+
+```bash
+# État de la liaison : verrous, clé acceptée ou non, prestations et leurs prix.
+# Ne crée rien.
+python3 -m scripts.concorde_azalplus verifier
+
+# Rejouer la demande d'un transfert abouti (AzalPlus était injoignable, ou le
+# SIREN du client vient d'y être renseigné). Une mission déjà émise ne l'est
+# pas deux fois.
+python3 -m scripts.concorde_azalplus emettre <transfert> <destination>
+```
+
+Trois choses sont à faire côté AzalPlus avant que quoi que ce soit parte :
+
+1. une **clé d'API** de portée `api:read,api:write`
+   (`python3 scripts/mcp_token.py creer --email <porteur> --nom "CONCORDE" --api
+   --ecriture`), déposée dans `/etc/concorde/connecteurs/connecteurs.env` sous
+   `CONCORDE_AZALPLUS_CLE_API` (droits 600) ;
+2. les **prestations au catalogue** d'AzalPlus, avec leurs prix — leur `code` est
+   ce qu'on écrit dans `prestations:` ;
+3. le **SIREN** des clients concernés (`clients.registration_number`) : c'est la
+   seule clé d'appariement, le nom n'en est pas une.
+
+Tant qu'il manque l'un des trois, la liaison refuse **en le nommant** ; elle ne crée
+jamais un devis approximatif.
+
 ## Passerelle de données Odoo 17 (télécharger, analyser)
 
 Commande `scripts/concorde_odoo.py` — ADR-0001. Deux sources de **lecture**, mêmes résultats :

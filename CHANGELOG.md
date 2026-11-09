@@ -3,6 +3,47 @@
 Format : [Keep a Changelog](https://keepachangelog.com/fr/1.1.0/), versions sémantiques.
 Le module Odoo porte la même version au format `17.0.X.Y.Z` (`deploy/addons/concorde/__manifest__.py`).
 
+## [1.11.0] — 2026-11-09
+### Ajouté
+- **Devis et rapport dans AzalPlus** (ADR-0015, proposée le 09/11/2026) :
+  un transfert abouti demande à AzalPlus un **devis** de la prestation et
+  range son **rapport** dans la GED du client. CONCORDE **demande**, il
+  n'écrit pas : l'appel passe par `/api/v1/` avec une clé d'API, et
+  AzalPlus garde la numérotation du devis, les prix de son catalogue, les
+  totaux, la TVA, les droits et son journal d'audit (AZAP-AUTORITE). Une
+  prestation est désignée par le **code** d'un produit du catalogue : son
+  prix est LU chez AzalPlus, jamais fixé ici. La quantité vaut `forfait`
+  ou le nom d'une mesure de la mission (`lignes`, `ecritures`) ; une
+  mesure absente est un refus nommé, jamais un 1 deviné.
+  `core/azalplus_documents.py`, `azalplus_documents.yaml`.
+- **Trois verrous fermés à la livraison** : `actif`, le déclencheur du
+  genre de mission, et `essai_a_blanc`. En essai à blanc, CONCORDE ne
+  fait que lire AzalPlus et dit ce qui partirait. Aucun interrupteur ne
+  figure dans les réglages s'il ne fait rien.
+- **Le client se reconnaît à son SIREN**, lu dans son propre logiciel et
+  comparé à `clients.registration_number` ; jamais par le nom (deux
+  homonymes seraient confondus). Introuvable : refus nommé, ou création
+  du client si `client_absent: creer`. En double : refus.
+- **Une mission ne donne qu'un devis** : registre local
+  (`/var/lib/concorde-interface/azalplus_documents.json`) et référence
+  CONCORDE portée par le champ `reference` du devis.
+- **Outil en ligne de commande** `python3 -m scripts.concorde_azalplus` :
+  `verifier` (état des verrous, clé acceptée ou non, prestations réglées
+  et leur prix au catalogue — ne crée rien) et `emettre <transfert>
+  <destination>` (rejoue la demande quand AzalPlus était injoignable ou
+  qu'un SIREN vient d'y être renseigné).
+### Modifié
+- Fin d'un transfert (ADR-0008, étape 7) : la demande part sur le seul
+  statut `transferee`. Un refus d'AzalPlus est **dit** au journal et ne
+  change pas le statut du transfert — un transfert réussi reste réussi.
+  `core/connecteurs/transfert.py` (`mission_azalplus`,
+  `_emettre_vers_azalplus`).
+### Sécurité
+- La clé d'API vit dans `/etc/concorde/connecteurs/connecteurs.env`
+  (`CONCORDE_AZALPLUS_CLE_API`, droits 600), jamais dans git ni dans un
+  message. Elle est révocable depuis AzalPlus sans toucher CONCORDE, et
+  aucune clé d'API d'AzalPlus ne peut supprimer quoi que ce soit.
+
 ## [1.10.1] — 2026-11-09
 ### Corrigé
 - « Facture électronique » et « Compléter SIRET et TVA » ne proposaient que

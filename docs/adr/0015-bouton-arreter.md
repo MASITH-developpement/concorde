@@ -21,7 +21,7 @@ Ce qui existe (mesuré dans le code au 09/11/2026) :
 - la montée de version tourne dans un **service à part** (root, ADR-0012), qui traite une
   demande à la fois ; ses sauts sont des conteneurs Docker.
 
-## Décision proposée
+## Décision
 ### 1. Arrêt au prochain point sûr, jamais au milieu d'une écriture
 - Bouton **Arrêter** à côté de toute tâche en cours (écran qui l'a lancée et Historique),
   avec une confirmation (« Arrêter cette tâche ? Ce qui est déjà fait reste fait. »).

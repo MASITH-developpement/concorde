@@ -173,6 +173,13 @@ class ServiceMontee:
         """Traite les demandes en attente, une à la fois ; rend leur nombre."""
         if not os.path.isdir(self.demandes):
             return 0
+        urgence = os.path.join(self.demandes, montee.ARRET_URGENCE)
+        if os.path.exists(urgence):
+            # Arrêt d'urgence consommé : rien n'est en cours entre deux
+            # demandes ; les demandes déposées avant sont abandonnées.
+            for nom in os.listdir(self.demandes):
+                os.remove(os.path.join(self.demandes, nom))
+            return 0
         noms = sorted(
             (
                 nom
@@ -182,6 +189,8 @@ class ServiceMontee:
             key=lambda nom: os.path.getmtime(os.path.join(self.demandes, nom)),
         )
         for nom in noms:
+            if os.path.exists(urgence):
+                break
             self.traiter(os.path.join(self.demandes, nom), journal)
         return len(noms)
 
@@ -195,6 +204,7 @@ class ServiceMontee:
             with self._publication(demande["valeurs"].get("montee")):
                 resultat["montee"] = self._executer(demande, journal)
             resultat["statut"] = "fait"
+            self._apres_arret(str(resultat["montee"]))
         except (ErreurDemande, *ERREURS_MONTEE) as exc:
             resultat["statut"] = "refus"
             resultat["message"] = str(exc)
@@ -229,6 +239,35 @@ class ServiceMontee:
             fini.set()
             fil.join()
 
+    def _apres_arret(self, ident: str) -> None:
+        """Montée arrêtée à la demande : efface sa copie de travail.
+
+        Arrêt d'urgence : rien n'est effacé (ADR-0015, point 4). Le
+        fichier d'arrêt de la montée est retiré une fois traité.
+        """
+        conduite = montee.Montee(
+            self.racine,
+            ident,
+            self.openupgrade,
+            self.lanceur,
+            None,
+            self.demandes,
+        )
+        genre = conduite.arret_demande()
+        if genre is None:
+            return
+        essai = conduite.etat["etapes"]["nouvel_essai"].get("infos", {})
+        if genre == "demande":
+            if conduite.etat["statut"] == montee.ARRETEE:
+                conduite.effacer_copie()
+            elif essai.get("statut") == montee.ARRETEE:
+                montee.Montee(
+                    self.racine, str(essai["montee"]), lanceur=self.lanceur
+                ).effacer_copie()
+            os.remove(
+                os.path.join(self.demandes, montee.PREFIXE_ARRET + ident)
+            )
+
     def _depot(self, nom: str) -> str:
         """Chemin d'une sauvegarde déposée par l'interface."""
         chemin = os.path.join(self.depots, nom)
@@ -259,10 +298,16 @@ class ServiceMontee:
                 self.openupgrade,
                 self.lanceur,
                 journal,
+                self.demandes,
             )
             return ident
         conduite = montee.Montee(
-            self.racine, ident, self.openupgrade, self.lanceur, journal
+            self.racine,
+            ident,
+            self.openupgrade,
+            self.lanceur,
+            journal,
+            self.demandes,
         )
         if action == "circuit":
             conduite.circuit()

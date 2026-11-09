@@ -12,6 +12,7 @@ disparaît sans trace).
 
 import os
 import re
+import shutil
 from typing import ClassVar
 
 from ..journal import Journal, nombre_texte
@@ -26,6 +27,7 @@ from .base import (
     InfoConnexion,
     PerimetreLecture,
     ResultatEcriture,
+    ResultatSuppression,
 )
 
 NOM_FEC = "FEC.txt"
@@ -190,6 +192,21 @@ class ConnecteurFec(Connecteur):
                 return lire_fec(fichier.read(), NOM_FEC, journal=journal)
         except (OSError, ErreurConnecteur) as exc:
             raise ErreurConnexion("FEC écrit illisible : %s" % exc) from exc
+
+    def supprimer(
+        self, reference: str, journal: Journal
+    ) -> ResultatSuppression:
+        """Efface le FEC produit sous la référence (tâche arrêtée)."""
+        dossier = self.parametres.get("dossier")
+        if not dossier:
+            return {"supprimees": 0, "laissees": []}
+        cible = dossier_reference(dossier, reference)
+        if not os.path.isdir(cible):
+            return {"supprimees": 0, "laissees": []}
+        nombre = sum(len(noms) for _, _, noms in os.walk(cible))
+        shutil.rmtree(cible)
+        journal.dire("FEC effacé : %s" % cible, "info")
+        return {"supprimees": nombre, "laissees": []}
 
     def environnement_test(self) -> Connecteur | None:
         """Sous-dossier « essais » du dossier d'écriture."""

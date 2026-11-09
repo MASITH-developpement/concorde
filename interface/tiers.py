@@ -78,6 +78,7 @@ class EcranTiers:
         taches.travaux[self.action_preparer] = self._travail_preparer
         taches.travaux[self.prefixe + "_ecrire"] = self._travail_ecrire
         taches.travaux[self.prefixe + "_annuler"] = self._travail_annuler
+        taches.annulations[self.prefixe + "_ecrire"] = self._defaire_ecriture
 
     # --- à fournir par chaque écran ------------------------------------------
     def _travail_preparer(
@@ -265,10 +266,7 @@ class EcranTiers:
             self.acces(parametres["source"]),
             parametres["choix"],
             libelle,
-            self.fichier(
-                parametres["propositions"],
-                "trace-%s.jsonl" % parametres["cible"],
-            ),
+            self.trace(tache),
         )
         journal.dire(
             "%s : %d fiche(s) complétée(s), %d déjà renseignée(s), %d refus"
@@ -300,13 +298,49 @@ class EcranTiers:
             bilan, cible=parametres["cible"], base=libelle
         )
 
+    def trace(self, tache: ObjetJson) -> str:
+        """Trace propre à une tâche d'écriture (une par tâche)."""
+        parametres = tache["params"]
+        return self.fichier(
+            parametres["propositions"],
+            "trace-%s-%s.jsonl" % (parametres["cible"], tache["id"]),
+        )
+
+    def traces(self, ident: str, cible: str) -> list[str]:
+        """Traces d'écriture d'une préparation, la plus récente d'abord."""
+        dossier = os.path.join(self.taches.dossier, ident)
+        if not os.path.isdir(dossier):
+            return []
+        noms = [
+            nom
+            for nom in os.listdir(dossier)
+            if nom.startswith("trace-%s-" % cible) and nom.endswith(".jsonl")
+        ]
+        chemins = [os.path.join(dossier, nom) for nom in noms]
+        return sorted(chemins, key=os.path.getmtime, reverse=True)
+
+    def _defaire_ecriture(
+        self, tache: ObjetJson, journal: Journal
+    ) -> ObjetJson:
+        """Écriture arrêtée : remet les fiches qu'elle a écrites (ADR-0015)."""
+        trace = self.trace(tache)
+        if not os.path.isfile(trace):
+            return {"remis": [], "ignores": []}
+        bilan = annuler(self.acces(tache["params"]["source"]), trace)
+        journal.dire(
+            "%d fiche(s) remise(s), %d modifiée(s) depuis (laissée(s))"
+            % (len(bilan["remis"]), len(bilan["ignores"])),
+            "info",
+        )
+        return dict(bilan)
+
     def lancer_annulation(self, ident: str, corps: Mapping[str, Any]) -> str:
         """Remet les anciennes valeurs (test ou production).
 
         Lève ErreurEcran.
         """
         cible, source = self._cible(ident, corps)
-        if not os.path.isfile(self.fichier(ident, "trace-%s.jsonl" % cible)):
+        if not self.traces(ident, cible):
             raise ErreurEcran("Rien à annuler : aucune écriture tracée.")
         libelle = self.libelle_source(source)
         return self.taches.lancer(
@@ -322,13 +356,14 @@ class EcranTiers:
     ) -> None:
         """Tâche « <écran>_annuler » : anciennes valeurs remises."""
         parametres = tache["params"]
-        bilan = annuler(
-            self.acces(parametres["source"]),
-            self.fichier(
-                parametres["propositions"],
-                "trace-%s.jsonl" % parametres["cible"],
-            ),
-        )
+        acces = self.acces(parametres["source"])
+        bilan: dict[str, list[int]] = {"remis": [], "ignores": []}
+        for trace in self.traces(
+            parametres["propositions"], parametres["cible"]
+        ):
+            un_bilan = annuler(acces, trace)
+            bilan["remis"] += un_bilan["remis"]
+            bilan["ignores"] += un_bilan["ignores"]
         guardian.tracer(self.prefixe, "annulation", json.dumps(bilan))
         tache["resultat"] = dict(bilan, cible=parametres["cible"])
 

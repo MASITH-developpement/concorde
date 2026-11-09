@@ -99,6 +99,16 @@ class _Etape:
         return False
 
 
+class TacheArretee(BaseException):
+    """Arrêt demandé depuis l'écran (ADR-0015).
+
+    Levée au prochain message du journal de la tâche : entre deux étapes,
+    deux lots ou deux fiches, jamais pendant un appel à un logiciel.
+    BaseException (comme KeyboardInterrupt) : un `except Exception` d'une
+    étape ne l'avale pas.
+    """
+
+
 class Journal:
     """Journal d'activité borné et sûr entre fils."""
 
@@ -117,6 +127,20 @@ class Journal:
         self._taille_max = taille_max
         self._decalage = 0  # événements tombés (pour la lecture incrémentale)
         self._ecouteur = ecouteur
+        self._arret = threading.Event()
+
+    def demander_arret(self) -> None:
+        """Arrêt demandé : le prochain `dire` lève TacheArretee (ADR-0015)."""
+        self._arret.set()
+
+    def desarmer(self) -> None:
+        """Annule la demande d'arrêt (pour raconter l'arrêt et le défaire)."""
+        self._arret.clear()
+
+    @property
+    def arret_demande(self) -> bool:
+        """Vrai si un arrêt est demandé et pas encore appliqué."""
+        return self._arret.is_set()
 
     def dire(self, message: str, niveau: str = "info") -> Evenement | None:
         """Ajoute un événement au journal et le transmet à l'écouteur.
@@ -125,7 +149,8 @@ class Journal:
         Paramètres : message — texte affiché ; niveau — un de `NIVEAUX`
         (sinon « info »).
         Retour : l'événement créé (None pour `JournalMuet`).
-        Erreurs : celles levées par l'écouteur.
+        Erreurs : celles levées par l'écouteur ; TacheArretee si un arrêt
+        est demandé (après avoir noté le message).
         Usages : tous les modules de `core` qui reçoivent un journal.
         """
         if niveau not in NIVEAUX:
@@ -143,6 +168,8 @@ class Journal:
                 self._decalage += trop
         if self._ecouteur:
             self._ecouteur(ev)
+        if self._arret.is_set():
+            raise TacheArretee(message)
         return ev
 
     def etape(self, nom: str) -> _Etape:

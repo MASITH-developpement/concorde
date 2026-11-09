@@ -88,6 +88,14 @@ function carteMontee(m, demandeEnCours) {
     } });
   const base = `/api/montees/${encodeURIComponent(m.id)}`;
   const actions = [];
+  if (m.statut === "en_cours") {
+    actions.push(el("button", { class: "bouton danger-bouton", type: "button", texte: "Arrêter cette montée",
+      onclick: async (ev) => {
+        if (!confirm("Arrêter cette montée ?\n\nLe saut en cours s'arrête sous 10 secondes, puis la copie de travail est effacée. La base du client n'est pas touchée.")) return;
+        ev.target.disabled = true; ev.target.textContent = "Arrêt demandé…";
+        try { await api(base + "/arreter", { method: "POST", corps: {} }); } catch (e) { erreur.textContent = e.message; ev.target.disabled = false; }
+      } }));
+  }
   if (m.statut === "en_attente" || m.statut === "bloquee") {
     actions.push(action(m.statut === "bloquee" ? "Relancer les vérifications" : "Lancer les vérifications (étapes 1 à 4)", base + "/circuit"));
   }

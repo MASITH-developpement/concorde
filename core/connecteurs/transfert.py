@@ -270,6 +270,27 @@ def _etat_etape(
     }
 
 
+def connecteur_test(
+    annuaire_connexions: Annuaire, ident_dest: str, destination: Connecteur
+) -> tuple[Connecteur | None, str]:
+    """Environnement de test d'une destination, et son nom de verrou.
+
+    Rôle : un seul endroit qui sait où vont les écritures de test.
+    Paramètres : annuaire ; ident_dest — connexion destination ;
+    destination — son connecteur ouvert.
+    Retour : (connecteur de test ou None, identifiant pour le verrou).
+    Erreurs : ErreurAnnuaire, ErreurSecrets, ErreurConnexion.
+    Usages : _tester, defaire.
+    """
+    fiche = annuaire_connexions.obtenir(ident_dest)
+    if fiche["connexion_test"]:
+        return (
+            annuaire_connexions.ouvrir(fiche["connexion_test"]),
+            fiche["connexion_test"],
+        )
+    return destination.environnement_test(), ident_dest + "#test"
+
+
 def _tester(
     annuaire_connexions: Annuaire,
     ident_dest: str,
@@ -282,14 +303,9 @@ def _tester(
 
     Retourne None s'il n'y a pas d'environnement de test.
     """
-    fiche = annuaire_connexions.obtenir(ident_dest)
-    cible: Connecteur | None
-    if fiche["connexion_test"]:
-        cible = annuaire_connexions.ouvrir(fiche["connexion_test"])
-        ident_cible = fiche["connexion_test"]
-    else:
-        cible = destination.environnement_test()
-        ident_cible = ident_dest + "#test"
+    cible, ident_cible = connecteur_test(
+        annuaire_connexions, ident_dest, destination
+    )
     if cible is None:
         return None
     with verrou_connexion(ident_cible):
@@ -443,6 +459,68 @@ def _photo_source(lot: Lot, dossier: str, journal: Journal) -> str | None:
     return chemin
 
 
+def nouvel_identifiant() -> str:
+    """Identifiant d'un transfert : T + date et heure + 4 caractères."""
+    return "T%s-%s" % (
+        datetime.now().strftime("%Y%m%d%H%M%S"),
+        uuid.uuid4().hex[:4],
+    )
+
+
+def defaire(
+    annuaire_connexions: Annuaire,
+    ident: str,
+    destinations: Sequence[str],
+    feu_vert: bool,
+    racine: str = CHEMIN_TRANSFERTS,
+    journal: Journal | None = None,
+) -> dict[str, Any]:
+    """Efface ce qu'un transfert arrêté a écrit (ADR-0015).
+
+    Rôle : après « Arrêter » : les écritures de test (référence
+    CONCORDE/<id>/test1, et test2 pour un feu vert) et, pour un feu vert,
+    les écritures de production (CONCORDE/<id>) sont effacées ; ce que le
+    logiciel refuse d'effacer est nommé. La destination d'un feu vert
+    défait revient « en attente du feu vert ».
+    Paramètres : annuaire ; ident — transfert ; destinations ; feu_vert —
+    tâche de feu vert (sinon étapes 1 à 4) ; racine ; journal.
+    Retour : {destination: {test, production?}} (bilans de suppression).
+    Erreurs : ErreurConnexion, ErreurAnnuaire, ErreurSecrets.
+    Usages : interface/transferts.py (annulations des tâches).
+    """
+    journal_actif = ou_muet(journal)
+    bilan: dict[str, Any] = {}
+    for ident_dest in destinations:
+        destination = annuaire_connexions.ouvrir(ident_dest)
+        test, _ = connecteur_test(annuaire_connexions, ident_dest, destination)
+        resultat: dict[str, Any] = {}
+        if test is not None:
+            references = ["CONCORDE/%s/test1" % ident]
+            if feu_vert:
+                references = ["CONCORDE/%s/test2" % ident]
+            resultat["test"] = [
+                test.supprimer(reference, journal_actif)
+                for reference in references
+            ]
+        if feu_vert:
+            with verrou_connexion(ident_dest):
+                resultat["production"] = destination.supprimer(
+                    "CONCORDE/%s" % ident, journal_actif
+                )
+            etat = charger(ident, racine)
+            etat_dest = etat["destinations"].get(ident_dest)
+            if (
+                etat_dest is not None
+                and not resultat["production"]["laissees"]
+            ):
+                etat_dest["statut"] = ATTENTE
+                for etape in ("feu_vert", "nouveau_test", "transfert"):
+                    etat_dest["etapes"][etape] = {"statut": "non_jouee"}
+                _sauver(etat, racine)
+        bilan[ident_dest] = resultat
+    return bilan
+
+
 def creer(
     annuaire_connexions: Annuaire,
     demande: DemandeTransfert,
@@ -450,6 +528,7 @@ def creer(
     aujourd_hui: date | None = None,
     journal: Journal | None = None,
     guardian: Guardian | None = None,
+    ident: str | None = None,
 ) -> EtatTransfert:
     """Crée un transfert et joue les étapes 1 à 4 pour chaque destination.
 
@@ -457,7 +536,8 @@ def creer(
     vert. Rien n'est écrit dans une vraie destination.
     Paramètres : annuaire ; demande ; racine — dossier des transferts ;
     aujourd_hui — date des contrôles (dates futures) ; journal ;
-    guardian — audit (par défaut, celui du serveur).
+    guardian — audit (par défaut, celui du serveur) ; ident — identifiant
+    donné d'avance (pour défaire un transfert arrêté avant sa fin).
     Retour : EtatTransfert tel qu'écrit dans <racine>/<id>/transfert.json
     (dates en texte ISO), relu après écriture.
     Erreurs : ErreurTransfert si la demande est impossible (rien n'est
@@ -468,10 +548,7 @@ def creer(
     audit = guardian or Guardian()
     audit.self_check()
     valider_demande(annuaire_connexions, demande)
-    ident = "T%s-%s" % (
-        datetime.now().strftime("%Y%m%d%H%M%S"),
-        uuid.uuid4().hex[:4],
-    )
+    ident = ident or nouvel_identifiant()
     dossier = _dossier(racine, ident)
     etat: EtatTransfert = {
         "id": ident,

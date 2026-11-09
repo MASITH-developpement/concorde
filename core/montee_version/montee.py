@@ -69,6 +69,10 @@ BLOQUEE = "bloquee"
 EN_COURS = "en_cours"
 ATTENTE = "attente_feu_vert"
 LIVREE = "livree"
+ARRETEE = "arretee"
+# Fichiers d'arrêt déposés par l'interface (ADR-0015).
+ARRET_URGENCE = "arret-urgence"
+PREFIXE_ARRET = "arret-"
 ETAPES_MONTEE = (
     "inventaire",
     "photo_avant",
@@ -228,10 +232,16 @@ class Montee:
         openupgrade: str = CHEMIN_OPENUPGRADE,
         lanceur: LanceurProgramme | None = None,
         journal: Journal | None = None,
+        arrets: str | None = None,
+        ident_arret: str | None = None,
     ) -> None:
         """Relit la montée ; prépare les noms de ses conteneurs.
 
         `lanceur` : commandes.executer par défaut (simulé dans les tests).
+        `arrets` : dossier où l'interface dépose les fichiers d'arrêt
+        (ADR-0015) ; None : la montée ne peut pas être arrêtée de l'écran.
+        `ident_arret` : montée dont le fichier d'arrêt compte (celle qui a
+        reçu le feu vert, pour un nouvel essai) ; par défaut, celle-ci.
         """
         self.racine = racine
         self.etat = charger(racine, ident)
@@ -243,6 +253,41 @@ class Montee:
         self.reseau = nom
         self.conteneur_pg = nom + "-pg"
         self.donnees = os.path.join(self.dossier, "donnees")
+        self.arrets = arrets
+        self.ident_arret = ident_arret or ident
+
+    # --- arrêt (ADR-0015) --------------------------------------------------
+    def arret_demande(self) -> str | None:
+        """« urgence », « demande » (cette montée) ou None."""
+        if self.arrets is None:
+            return None
+        if os.path.exists(os.path.join(self.arrets, ARRET_URGENCE)):
+            return "urgence"
+        if os.path.exists(
+            os.path.join(self.arrets, PREFIXE_ARRET + self.ident_arret)
+        ):
+            return "demande"
+        return None
+
+    def _verifier_arret(self) -> None:
+        """Entre deux étapes : lève ErreurMontee si l'arrêt est demandé."""
+        genre = self.arret_demande()
+        if genre is not None:
+            raise ErreurMontee("Montée arrêtée (arrêt %s)." % genre)
+
+    def effacer_copie(self) -> None:
+        """Efface la copie de travail d'une montée arrêtée (ADR-0015).
+
+        Conteneurs retirés ; bases, sauvegarde déposée, accès et livraison
+        effacés. montee.json et les journaux restent pour l'historique.
+        """
+        self.arreter()
+        for nom in ("donnees", "depot", "acces", "livraison"):
+            chemin = os.path.join(self.dossier, nom)
+            if os.path.isdir(chemin):
+                shutil.rmtree(chemin)
+        self._etape("arret", ARRETEE, "Arrêtée à la demande : copie effacée.")
+        self._statut(ARRETEE)
 
     # --- état ----------------------------------------------------------------
     def _etape(
@@ -588,6 +633,11 @@ class Montee:
         def guetter() -> None:
             """Mesure la place libre toutes les SURVEILLANCE_S secondes."""
             while not fini.wait(SURVEILLANCE_S):
+                genre = self.arret_demande()
+                if genre is not None:
+                    causes.append("arrêt %s demandé : saut arrêté" % genre)
+                    self._docker("kill", conteneur)
+                    return
                 libre = place_libre(self.dossier)
                 if libre < LIBRE_MINIMUM:
                     causes.append(
@@ -720,15 +770,19 @@ class Montee:
                 if not self.faire_inventaire():
                     self._statut(BLOQUEE)
                     return BLOQUEE
+                self._verifier_arret()
                 self.photo("photo_avant")
+                self._verifier_arret()
                 self.monter()
+                self._verifier_arret()
                 self.photo("photo_apres")
                 ecarts = self.comparer()
         except (ErreurMontee, ErreurCommande, OSError, ValueError) as exc:
             self.journal.dire("Montée arrêtée : %s" % exc, "erreur")
-            self._etape("arret", BLOQUEE, str(exc))
-            self._statut(BLOQUEE)
-            return BLOQUEE
+            arret = self.arret_demande() is not None
+            self._etape("arret", ARRETEE if arret else BLOQUEE, str(exc))
+            self._statut(ARRETEE if arret else BLOQUEE)
+            return ARRETEE if arret else BLOQUEE
         statut = BLOQUEE if ecarts else ATTENTE
         self._statut(statut)
         return statut
@@ -823,13 +877,15 @@ def nouvel_essai(
     openupgrade: str = CHEMIN_OPENUPGRADE,
     lanceur: LanceurProgramme | None = None,
     journal: Journal | None = None,
+    arrets: str | None = None,
 ) -> str:
     """Étape 6 : copie fraîche, même montée, zéro écart exigé.
 
     Rôle : la base du client a vécu depuis la première copie ; on refait
     tout sur une copie du jour, juste avant la bascule (ADR-0010).
     Paramètres : racine ; ident — montée qui a reçu le feu vert ;
-    sauvegarde — nouvelle sauvegarde .zip ; openupgrade ; lanceur ; journal.
+    sauvegarde — nouvelle sauvegarde .zip ; openupgrade ; lanceur ;
+    journal ; arrets — dossier des fichiers d'arrêt (ADR-0015).
     Retour : statut du nouvel essai (« attente_feu_vert » = bon).
     Erreurs : ErreurMontee (feu vert absent, autre base, autre version) ;
     ErreurSauvegarde.
@@ -849,7 +905,13 @@ def nouvel_essai(
             % (essai["base_client"], essai["depart"])
         )
     statut = Montee(
-        racine, essai["id"], openupgrade, lanceur, journal
+        racine,
+        essai["id"],
+        openupgrade,
+        lanceur,
+        journal,
+        arrets,
+        ident,
     ).circuit()
     premiere._etape(
         "nouvel_essai",

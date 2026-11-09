@@ -1,0 +1,27 @@
+# CONCORDE — service de montée de version Odoo (ADR-0012). Root : Docker et
+# volume chiffré l'exigent ; l'interface ne lui parle que par la file de
+# demandes (core/montee_version/demandes.py).
+# Installation : sudo bash deploy/installer_montee.sh
+[Unit]
+Description=CONCORDE - montées de version Odoo
+After=docker.service network-online.target
+Requires=docker.service
+
+[Service]
+Type=simple
+WorkingDirectory=/opt/concorde
+Environment=PYTHONUNBUFFERED=1
+Environment=CONCORDE_UI_UTILISATEUR=ubuntu
+ExecStart=/usr/bin/python3 -m scripts.concorde_montee_service
+Restart=on-failure
+RestartSec=30
+# Priorité basse face au site.
+Nice=10
+IOSchedulingClass=idle
+NoNewPrivileges=yes
+PrivateTmp=yes
+ProtectHome=yes
+UMask=0077
+
+[Install]
+WantedBy=multi-user.target

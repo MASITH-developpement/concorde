@@ -6,7 +6,8 @@
 #   sudo systemctl daemon-reload && sudo systemctl enable --now concorde-interface
 [Unit]
 Description=CONCORDE - interface web
-After=network-online.target docker.service
+# Après le service de montée : ses dossiers du volume chiffré doivent exister.
+After=network-online.target docker.service concorde-montee.service
 Wants=network-online.target
 
 [Service]
@@ -38,6 +39,10 @@ ReadWritePaths=/var/lib/concorde-interface
 # Secrets des connexions, saisis dans l'écran Transferts (ADR-0011) : seul dossier
 # de /etc où le service peut écrire. « - » : absent, le service démarre quand même.
 ReadWritePaths=-/etc/concorde/connecteurs
+# Montées de version (ADR-0012) : sauvegardes déposées et demandes au service
+# de montée, dans le volume chiffré ; résumés et livraisons en lecture.
+ReadWritePaths=-/var/lib/concorde-montee/donnees/depots
+ReadWritePaths=-/var/lib/concorde-montee/donnees/demandes
 ProtectKernelTunables=yes
 ProtectKernelModules=yes
 ProtectControlGroups=yes

@@ -44,6 +44,7 @@ from .sauvegarde import (
     extraire_sauvegarde,
 )
 
+DISQUE_HOTE = os.environ.get("CONCORDE_DISQUE_HOTE", "/")
 MODULES_ODOO = "/usr/lib/python3/dist-packages/odoo/addons"
 SCRIPTS_MONTEE = "openupgrade_scripts/scripts"
 UTILISATEUR_PG = "odoo"
@@ -186,8 +187,14 @@ def creer(
 
 
 def place_libre(chemin: str) -> int:
-    """Octets libres sur le disque de `chemin`."""
-    return shutil.disk_usage(chemin).free
+    """Octets libres : le plus petit entre `chemin` et le disque du serveur.
+
+    Le volume chiffré est un fichier creux sur le disque du serveur : sa
+    place libre annoncée peut dépasser celle du disque réel (DISQUE_HOTE).
+    """
+    return min(
+        shutil.disk_usage(dossier).free for dossier in (chemin, DISQUE_HOTE)
+    )
 
 
 def verifier_place(chemin: str, octets_base: int) -> None:

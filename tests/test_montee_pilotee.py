@@ -14,7 +14,9 @@ import sys
 import tempfile
 import time
 import unittest
+import uuid
 import zipfile
+from datetime import datetime, timedelta
 from collections.abc import Sequence
 from decimal import Decimal
 from typing import Any
@@ -22,10 +24,12 @@ from unittest import mock
 
 from core.montee_version import (
     commandes,
+    demandes,
     inventaire,
     montee,
     openupgrade,
     photo,
+    volume,
 )
 from core.montee_version.commandes import ErreurCommande, executer
 from core.montee_version.inventaire import classer_module, inventorier
@@ -826,3 +830,196 @@ class TestCommandeMonteePilotee(Atelier):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class TestFileDeDemandes(Atelier):
+    """Service de montée : demandes vérifiées, exécutées, publiées."""
+
+    def service(self) -> Any:
+        """Service sur un volume simulé (dossier temporaire)."""
+        donnees = os.path.join(self._tmp.name, "volume")
+        for nom in ("depots", "demandes", "livraisons"):
+            os.makedirs(os.path.join(donnees, nom), exist_ok=True)
+        service = demandes.Service(
+            donnees,
+            os.path.join(self._tmp.name, "etats"),
+            self.openupgrade,
+            self.docker,
+            (os.getuid(), os.getgid()),
+        )
+        self.racine = service.racine
+        return service
+
+    def deposer_zip(self, service: Any, base: str = "client_a") -> str:
+        """Sauvegarde déposée par l'interface ; rend son nom."""
+        nom = uuid.uuid4().hex + ".zip"
+        sauvegarde_zip(os.path.join(service.depots, nom), base=base)
+        return nom
+
+    def resultat(self, service: Any, ident: str) -> Any:
+        """Résultat publié d'une demande."""
+        with open(
+            os.path.join(service.etats, "demande-%s.json" % ident),
+            encoding="utf-8",
+        ) as fichier:
+            return json.load(fichier)
+
+    def test_refus_avant_execution(self) -> None:
+        """Vérifie qu'une demande imprévue est refusée sans rien lancer."""
+        for action, valeurs in (
+            ("effacer_tout", {}),
+            ("circuit", {"montee": "../etc"}),
+            ("circuit", {"montee": "M20260101000000-abcd", "en_plus": 1}),
+            ("creer", {"depot": "x.zip", "arrivee": 17}),
+            ("creer", {"depot": "a" * 32 + ".zip", "arrivee": 19}),
+            (
+                "feu_vert",
+                {
+                    "montee": "M20260101000000-abcd",
+                    "confirmation": "",
+                    "par": "x",
+                },
+            ),
+        ):
+            with self.assertRaises(demandes.ErreurDemande):
+                demandes.deposer_demande(self._tmp.name, action, **valeurs)
+        with self.assertRaises(demandes.ErreurDemande):
+            demandes.verifier_demande(
+                {"id": "x", "action": "circuit", "valeurs": {}}
+            )
+        with self.assertRaises(demandes.ErreurDemande):
+            demandes.verifier_demande([])
+        service = self.service()
+        for nom, contenu in (
+            ("a" * 32 + ".json", "{pas du json"),
+            ("intrus.json", "{}"),
+        ):
+            with open(
+                os.path.join(service.demandes, nom), "w", encoding="utf-8"
+            ) as f:
+                f.write(contenu)
+        self.assertEqual(service.traiter_file(), 2)
+        self.assertEqual(os.listdir(service.demandes), [])
+        self.assertFalse(self.docker.commandes)
+
+    def test_parcours_par_la_file(self) -> None:
+        """Vérifie creer, circuit, feu vert, nouvel essai et livraison."""
+        service = self.service()
+        ident = demandes.deposer_demande(
+            service.demandes,
+            "creer",
+            depot=self.deposer_zip(service),
+            arrivee=17,
+        )
+        service.traiter_file()
+        montee_id = self.resultat(service, ident)["montee"]
+        for action, valeurs in (
+            ("circuit", {}),
+            ("feu_vert", {"confirmation": "client_a", "par": "écran"}),
+        ):
+            ident = demandes.deposer_demande(
+                service.demandes, action, montee=montee_id, **valeurs
+            )
+            service.traiter_file()
+            self.assertEqual(self.resultat(service, ident)["statut"], "fait")
+        self.photos = 0
+        demandes.deposer_demande(
+            service.demandes,
+            "nouvel_essai",
+            montee=montee_id,
+            depot=self.deposer_zip(service),
+        )
+        service.traiter_file()
+        essai = montee.charger(service.racine, montee_id)["etapes"][
+            "nouvel_essai"
+        ]
+        self.docker.donnees_pg = os.path.join(
+            service.racine, essai["infos"]["montee"], "donnees", "pgdata"
+        )
+        ident = demandes.deposer_demande(
+            service.demandes, "livrer", montee=montee_id
+        )
+        service.traiter_file()
+        self.assertEqual(self.resultat(service, ident)["statut"], "fait")
+        self.assertEqual(
+            os.listdir(service.livraisons), ["client_a_odoo17.zip"]
+        )
+        with open(
+            os.path.join(service.etats, montee_id + ".json"), encoding="utf-8"
+        ) as f:
+            public = json.load(f)
+        self.assertEqual(public["statut"], montee.LIVREE)
+        self.assertIn("inventaire", public)
+        ident = demandes.deposer_demande(
+            service.demandes, "creer", depot="b" * 32 + ".zip", arrivee=17
+        )
+        service.traiter_file()
+        self.assertIn("introuvable", self.resultat(service, ident)["message"])
+        plus_tard = datetime.now() + timedelta(days=31)
+        self.assertIn(montee_id, service.purger(plus_tard))
+        self.assertFalse(
+            os.path.exists(os.path.join(service.racine, montee_id))
+        )
+        self.assertEqual(os.listdir(service.livraisons), [])
+        self.assertEqual(service.purger(plus_tard), [])
+
+    def test_montee_en_cours_jamais_effacee(self) -> None:
+        """Vérifie qu'une montée en cours reste, même ancienne."""
+        service = self.service()
+        etat = montee.creer(
+            service.racine,
+            sauvegarde_zip(os.path.join(self._tmp.name, "c.zip")),
+            17,
+        )
+        etat["statut"] = montee.EN_COURS
+        montee.sauver(service.racine, etat)
+        self.assertEqual(
+            service.purger(datetime.now() + timedelta(days=90)), []
+        )
+        self.assertEqual(
+            demandes.Service(service.racine, service.etats).traiter_file(), 0
+        )
+
+
+class TestVolume(unittest.TestCase):
+    """Volume chiffré : clé protégée, création, réouverture."""
+
+    def test_cle_mal_protegee(self) -> None:
+        """Vérifie le refus d'une clé absente ou lisible par d'autres."""
+        with tempfile.TemporaryDirectory() as dossier:
+            cle = os.path.join(dossier, "cle")
+            with self.assertRaises(volume.ErreurVolume):
+                volume.verifier_cle(cle)
+            with open(cle, "w", encoding="utf-8") as fichier:
+                fichier.write("secret")
+            os.chmod(cle, 0o644)
+            with self.assertRaises(volume.ErreurVolume):
+                volume.verifier_cle(cle)
+
+    def test_creation_puis_reouverture(self) -> None:
+        """Vérifie les commandes : création creuse, LUKS, ext4, montage."""
+        appels: list[list[str]] = []
+        with tempfile.TemporaryDirectory() as dossier, mock.patch.object(
+            volume, "verifier_cle", lambda cle: None
+        ):
+            image = os.path.join(dossier, "v", "volume.luks")
+            montage = os.path.join(dossier, "donnees")
+            volume.ouvrir_volume(image, montage, "cle", "1G", appels.append)
+            self.assertEqual(
+                [appel[0] for appel in appels],
+                ["truncate", "cryptsetup", "cryptsetup", "mkfs.ext4", "mount"],
+            )
+            with open(image, "w", encoding="utf-8"):
+                pass
+            appels.clear()
+            volume.ouvrir_volume(image, montage, "cle", "1G", appels.append)
+            self.assertEqual(
+                [appel[:2] for appel in appels],
+                [
+                    ["cryptsetup", "open"],
+                    ["mount", "/dev/mapper/concorde-montee"],
+                ],
+            )
+            appels.clear()
+            volume.fermer_volume(montage, appels.append)
+            self.assertEqual(appels, [])

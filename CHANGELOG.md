@@ -3,7 +3,7 @@
 Format : [Keep a Changelog](https://keepachangelog.com/fr/1.1.0/), versions sémantiques.
 Le module Odoo porte la même version au format `17.0.X.Y.Z` (`deploy/addons/concorde/__manifest__.py`).
 
-## [Non publiée]
+## [1.10.0] — 2026-11-09
 ### Ajouté
 - **Facture électronique des tiers** (ADR-0014, acceptée le 09/11/2026) :
   nouvel écran. Tous les clients et fournisseurs d'une connexion Odoo sont

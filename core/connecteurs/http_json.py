@@ -81,7 +81,8 @@ class ClientJson:
         ) = None,
         attendre: Callable[[float], None] = time.sleep,
     ) -> None:
-        """Garde l'adresse (https:// exigé) et le jeton.
+        """Garde l'adresse (https:// exigé) et le jeton (vide : API publique,
+        sans en-tête Authorization).
 
         `ouvrir` : fabrique de connexion (défaut : connexion_https,
         certificat vérifié). Lève ErreurConnexion si l'adresse n'est pas
@@ -124,11 +125,9 @@ class ClientJson:
                 }
             )
         donnees = None if corps is None else json.dumps(corps).encode("utf-8")
-        entetes = dict(
-            self._entetes,
-            Authorization="Bearer " + self._jeton,
-            Accept="application/json",
-        )
+        entetes = dict(self._entetes, Accept="application/json")
+        if self._jeton:
+            entetes["Authorization"] = "Bearer " + self._jeton
         if donnees is not None:
             entetes["Content-Type"] = "application/json"
         for essai in range(1, self.essais + 1):

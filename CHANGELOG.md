@@ -5,6 +5,18 @@ Le module Odoo porte la même version au format `17.0.X.Y.Z` (`deploy/addons/con
 
 ## [Non publiée]
 ### Ajouté
+- **Compléter SIRET et TVA des tiers** (ADR-0013, acceptée le 09/11/2026) :
+  bouton « Compléter SIRET et TVA… » sur le constat « Sociétés françaises
+  sans SIREN ni TVA » d'une analyse. Annuaire public des entreprises de
+  l'État (nom et code postal seulement) ; SIRET de l'établissement au code
+  postal du tiers (sinon le siège), contrôlé par la clé de Luhn et le
+  SIREN ; TVA de l'annuaire, contrôlée par calcul. Propositions « sûres »
+  (même nom, même code postal, contrôles bons) cochées d'office, « à
+  choisir », « introuvables ». Écriture par l'API Odoo d'une connexion
+  (champs `siret` ou `company_registry`, et `vat` seulement), d'abord sur
+  sa connexion de test, puis feu vert (nom retapé, mêmes choix) ; fiche
+  complétée entre-temps jamais écrasée ; trace et annulation.
+  `core/tiers_siret.py`, `interface/siret.py`, `interface/static/siret.js`.
 - Montée de version conduite par CONCORDE (ADR-0012, acceptée le 08/11/2026),
   sur le serveur CONCORDE : `concorde_montee creer | circuit | feu-vert |
   nouvel-essai | livrer | etat`. Sauvegarde Odoo (.zip) déposée, inventaire
@@ -37,6 +49,10 @@ Le module Odoo porte la même version au format `17.0.X.Y.Z` (`deploy/addons/con
   suivis saut par saut ; un module standard non annoté est « à vérifier »,
   seul un module absent de la liste bloque.
 ### Modifié
+- `ClientJson` accepte une API publique sans jeton ; `CibleOdoo` a une
+  liste de méthodes autorisées par classe (`methodes_autorisees`) ;
+  `ConnecteurOdoo.cible` (accès en écriture d'une connexion, classe au
+  choix) ; `analyser.normaliser_nom` devient une routine partagée.
 - Routines partagées : `commandes.executer` (seul lancement de programme de
   la montée, sans shell), `photo.requete_lecture` et `photo.version_odoo`,
   `outils_cli.afficher_evenement` (repris par `concorde_comparer`),

@@ -8,7 +8,9 @@ const $$ = (s, r = document) => Array.from(r.querySelectorAll(s));
 
 const ACTIONS = { analyser: "Analyse", telecharger: "Téléchargement", comparer: "Comparaison",
                   supprimer_base: "Suppression de base", reinitialiser_base: "Réinitialisation",
-                  transfert: "Transfert", feu_vert: "Feu vert" };
+                  transfert: "Transfert", feu_vert: "Feu vert",
+                  siret_proposer: "SIRET et TVA — propositions", siret_ecrire: "SIRET et TVA — écriture",
+                  siret_annuler: "SIRET et TVA — annulation" };
 // Vue qui affiche le résultat d'une action, quand elle ne porte pas son nom.
 const VUE_ACTION = { transfert: "transferts", feu_vert: "transferts" };
 const STATUTS = {
@@ -414,6 +416,7 @@ function rendreTache(t) {
   }
   if (t.action === "comparer") return rendreComparaison(t);
   if (t.action === "transfert" || t.action === "feu_vert") return rendreTacheTransfert(t);
+  if (t.action.startsWith("siret_")) return rendreTacheSiret(t);
   if (t.action === "supprimer_base" || t.action === "reinitialiser_base") {
     return el("div", { class: "carte" },
       el("div", { class: "entete-resultat" }, el("h2", { texte: (t.action === "supprimer_base"
@@ -439,8 +442,12 @@ function rendreAnalyse(t) {
       el("ul", {}, c.exemples.map((e) => el("li", { texte: e }))),
       c.nombre > c.exemples.length
         ? el("p", { class: "note", texte: `${c.exemples.length} premiers sur ${nombre(c.nombre)}.` }) : null,
-      el("a", { class: "bouton petit", href: `/api/taches/${t.id}/constats/${c.code}.csv`,
-                texte: "Liste complète (CSV)" }))));
+      el("div", { class: "actions" },
+        el("a", { class: "bouton petit", href: `/api/taches/${t.id}/constats/${c.code}.csv`,
+                  texte: "Liste complète (CSV)" }),
+        c.code === "TIERS_SANS_SIREN_TVA"
+          ? el("button", { class: "bouton petit principal", type: "button", texte: "Compléter SIRET et TVA…",
+                           onclick: () => ouvrirSiret(t) }) : null))));
   return el("div", { class: "carte" },
     el("div", { class: "entete-resultat" },
       el("h2", { texte: "Résultat — " + t.base }),

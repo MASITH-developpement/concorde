@@ -143,8 +143,12 @@ class Rapport:
         return d
 
 
-def _normaliser_nom(nom: str | None) -> str:
-    """Nom en majuscules ASCII, sans forme juridique ni ponctuation."""
+def normaliser_nom(nom: str | None) -> str:
+    """Nom en majuscules ASCII, sans forme juridique ni ponctuation.
+
+    Usages : analyser (doublons de tiers), tiers_siret (rapprochement avec
+    l'annuaire des entreprises).
+    """
     s = (
         unicodedata.normalize("NFKD", nom or "")
         .encode("ascii", "ignore")
@@ -406,7 +410,7 @@ def _analyser_tiers(r: Rapport, tiers: Sequence[Mapping[str, Any]]) -> None:
             par_tva[tva].append(etiquette)
         if siren and fr:
             par_siren[siren].append(etiquette)
-        nom = _normaliser_nom(t["nom"])
+        nom = normaliser_nom(t["nom"])
         if nom:
             par_nom[nom].append(etiquette)
     r.constat(

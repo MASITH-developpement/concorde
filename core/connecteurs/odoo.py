@@ -101,10 +101,22 @@ class ConnecteurOdoo(Connecteur):
         except ERREURS_ODOO as exc:
             raise ErreurConnexion("Odoo : %s" % exc) from exc
 
-    def _cible(self) -> injection.CibleOdoo:
-        """Cible d'écriture. Lève ErreurConnexion."""
+    def cible(
+        self, classe: type[injection.CibleOdoo] | None = None
+    ) -> injection.CibleOdoo:
+        """Accès en écriture à la base, limité aux méthodes de `classe`.
+
+        Rôle : un seul endroit qui ouvre l'API d'écriture d'une connexion.
+        Paramètres : classe — None pour injection.CibleOdoo (transferts),
+        ou une classe plus restreinte (ex. tiers_siret.CibleTiers,
+        ADR-0013).
+        Retour : l'accès, identifié.
+        Erreurs : ErreurConnexion (identification refusée, adresse non
+        chiffrée).
+        Usages : écrire et relire (transferts), interface/siret.py.
+        """
         try:
-            return injection.CibleOdoo(
+            return (classe or injection.CibleOdoo)(
                 self.parametres["url"],
                 self.parametres["base"],
                 self.parametres["utilisateur"],
@@ -151,7 +163,7 @@ class ConnecteurOdoo(Connecteur):
         self, lot: Lot, reference: str, essai: bool, journal: Journal
     ) -> ResultatEcriture:
         """Essai : ce qui manque et ce qui serait créé. Sinon : envoi."""
-        cible = self._cible()
+        cible = self.cible()
         cles = list(lot.ecritures())
         refs = [injection.ref_ecriture(reference, cle) for cle in cles]
         try:

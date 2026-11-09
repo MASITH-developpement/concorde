@@ -363,3 +363,12 @@ input[type=checkbox] { width: 16px; height: 16px; accent-color: var(--accent); }
 .montee-carte h3 { margin: 0; }
 .montee-carte details { margin-top: .5rem; }
 .montee-carte ul.liste-modules { margin: .3rem 0 0; padding-left: 1.2rem; font-size: .88rem; overflow-wrap: anywhere; }
+
+/* --- compléter SIRET et TVA (ADR-0013) --- */
+.statut.sure { background: var(--ok-fond); color: var(--ok); }
+.statut.a_choisir { background: var(--alerte-fond); color: var(--alerte); }
+.statut.introuvable { background: var(--surface-2); color: var(--texte-2); }
+.siret-liste { display: grid; gap: .5rem; max-height: 55vh; overflow: auto; }
+.siret-tiers { border: 1px solid var(--bord); border-radius: 9px; padding: .5rem .7rem; display: grid; gap: .35rem; overflow-wrap: anywhere; }
+.siret-tiers label.case { align-items: start; font-size: .88rem; }
+.siret-tiers label.case input:disabled + span { color: var(--texte-2); }

@@ -301,7 +301,11 @@ class CibleOdoo:
 
     Destination d'un transfert (ADR-0008) : le transfert garantit la
     simulation, le test et le feu vert avant toute écriture réelle.
+    `methodes_autorisees` : seules méthodes que `appel` accepte (une
+    sous-classe peut en autoriser d'autres, pour un usage précis).
     """
+
+    methodes_autorisees: tuple[str, ...] = METHODES_AUTORISEES
 
     def __init__(
         self,
@@ -361,9 +365,9 @@ class CibleOdoo:
         """Appelle une méthode autorisée d'un modèle Odoo.
 
         Retourne la réponse XML-RPC (type dynamique). Lève PermissionError
-        si la méthode n'est pas dans METHODES_AUTORISEES.
+        si la méthode n'est pas dans `methodes_autorisees`.
         """
-        if methode not in METHODES_AUTORISEES:
+        if methode not in self.methodes_autorisees:
             raise PermissionError(
                 "Méthode %r interdite à l'envoi vers Odoo." % methode
             )

@@ -54,6 +54,10 @@ API (JSON ; toute requête qui modifie exige l'en-tête X-Concorde: 1) :
   POST /api/montees/depot?nom=…   (corps = la sauvegarde Odoo .zip)
   POST /api/montees {depot, arrivee}
   POST /api/montees/<id>/(circuit|feu-vert|nouvel-essai|livrer)
+  Compléter SIRET et TVA (ADR-0013, interface/siret.py) :
+  POST /api/siret {analyse, connexion}   GET /api/siret/<tâche>
+  POST /api/siret/<tâche>/ecrire {cible, choix, confirmation}
+  POST /api/siret/<tâche>/annuler {cible}
   (suppression / réinitialisation d'une base LOCALE : POST /api/taches avec
    action = supprimer_base | reinitialiser_base et confirmation = nom
    retapé — ADR-0005)
@@ -107,6 +111,7 @@ from core.surveillance import (
 )
 from interface.auth import Sessions, verifier
 from interface.montees import ERREURS_MONTEE_ECRAN, EcranMontees
+from interface.siret import ERREURS_SIRET, EcranSiret
 from interface.transferts import ERREURS_ECRAN, EcranTransferts
 
 # Objet JSON (tâche, base, constat, corps de requête) : contenu dynamique,
@@ -676,6 +681,9 @@ class Taches:
         "comparer": "comparaison",
         "transfert": "transfert",
         "feu_vert": "feu vert",
+        "siret_proposer": "propositions SIRET et TVA",
+        "siret_ecrire": "écriture SIRET et TVA",
+        "siret_annuler": "annulation SIRET et TVA",
     }
     # Actions sur une base de l'écran Bases (POST /api/taches).
     ACTIONS_BASE = (
@@ -1493,6 +1501,9 @@ class Application:
             dossier, self.taches, self.journal, fichier_secrets
         )
         self.montees = montees or EcranMontees(self.journal)
+        self.siret = EcranSiret(
+            self.taches, self.transferts.annuaire, self.journal
+        )
         self.journal.dire("Service CONCORDE démarré", "ok")
 
 
@@ -1640,6 +1651,15 @@ class Gestionnaire(BaseHTTPRequestHandler):
             if not self._connecte():
                 return self._erreur(401, "Connexion requise.")
             return self._get_montees(chemin)
+        if re.fullmatch(r"/api/siret/[\w-]+", chemin):
+            if not self._connecte():
+                return self._erreur(401, "Connexion requise.")
+            ident_siret = chemin.split("/")[3]
+            return self._ecran(
+                200,
+                lambda: self.app.siret.propositions(ident_siret),
+                ERREURS_SIRET,
+            )
         if not self._connecte():
             return self._erreur(401, "Connexion requise.")
         requete = self._requete()
@@ -1832,6 +1852,8 @@ class Gestionnaire(BaseHTTPRequestHandler):
             return self._post_transferts(chemin, corps)
         if chemin.startswith("/api/montees"):
             return self._post_montees(chemin, corps)
+        if chemin.startswith("/api/siret"):
+            return self._post_siret(chemin, corps)
         if chemin == "/api/cles/revoquer":
             return self._revoquer_cle(corps)
         if chemin == "/api/rapport":
@@ -2010,6 +2032,32 @@ class Gestionnaire(BaseHTTPRequestHandler):
                     self._ip(),
                 ),
                 ERREURS_MONTEE_ECRAN,
+            )
+        return self._erreur(404, "Route inconnue.")
+
+    def _post_siret(self, chemin: str, corps: ObjetJson) -> None:
+        """Compléter SIRET et TVA : propositions, écriture, annulation."""
+        ecran = self.app.siret
+        parties = chemin.split("/")  # ["", "api", "siret", <tâche>, <action>]
+        if chemin == "/api/siret":
+            return self._ecran(
+                201,
+                lambda: {"id": ecran.lancer_propositions(corps)},
+                ERREURS_SIRET,
+            )
+        if re.fullmatch(r"/api/siret/[\w-]+/ecrire", chemin):
+            return self._ecran(
+                201,
+                lambda: {
+                    "id": ecran.lancer_ecriture(parties[3], corps, self._ip())
+                },
+                ERREURS_SIRET,
+            )
+        if re.fullmatch(r"/api/siret/[\w-]+/annuler", chemin):
+            return self._ecran(
+                201,
+                lambda: {"id": ecran.lancer_annulation(parties[3], corps)},
+                ERREURS_SIRET,
             )
         return self._erreur(404, "Route inconnue.")
 

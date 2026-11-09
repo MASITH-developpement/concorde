@@ -1,6 +1,6 @@
 # ADR-0014 — Facture électronique : vérifier l'inscription des tiers et reprendre leur adresse dans l'ERP
 
-- **Statut** : Proposée
+- **Statut** : Acceptée — arbitrages de Stéphane Moreau du 09/11/2026
 - **Date** : 09/11/2026
 - **Décideur** : Stéphane Moreau
 
@@ -58,17 +58,12 @@ Résultat dans l'écran (par tiers, filtrable) et en CSV, avec un compte par cla
 - Appels au répertoire espacés (pas de limite publiée : environ 5 par seconde).
 - Le contrôle est une photo du jour : à refaire avant la bascule de facturation.
 
-## Questions à trancher
-1. Source : le répertoire Peppol public, avec « non trouvé = à vérifier » (pas
-   « non inscrit ») : d'accord ?
-2. Avez-vous (MASITH ou le client) un compte chez une **plateforme agréée** donnant
-   accès à l'API de l'annuaire officiel ? Si oui, laquelle : CONCORDE pourrait
-   l'interroger en plus, pour lever les « non trouvé ».
-3. Tiers contrôlés : tous les clients et fournisseurs français avec SIREN, ou seulement
-   ceux qui ont des écritures (comme l'analyse) ?
-4. Plusieurs adresses : celle sans code de routage proposée d'office, sinon votre choix :
-   d'accord ?
-5. Même circuit que pour le SIRET (copie de test, feu vert, trace, annulation) : d'accord ?
+## Arbitrages (Stéphane Moreau, 09/11/2026)
+1. Répertoire Peppol public ; « non trouvé » = à vérifier, jamais « non inscrit » : oui.
+2. Source : **Peppol** (pas d'API d'une plateforme agréée à ce jour).
+3. Tiers contrôlés : **tous** les clients et fournisseurs français (avec SIREN).
+4. Plusieurs adresses : celle sans code de routage proposée d'office, sinon choix : oui.
+5. Même circuit que l'ADR-0013 (copie de test, feu vert, trace, annulation) : oui.
 
 ## Options écartées
 - **Lire l'annuaire officiel en automatisant le portail Chorus Pro** (aspiration de

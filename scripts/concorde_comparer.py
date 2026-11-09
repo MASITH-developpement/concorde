@@ -15,14 +15,9 @@ import sys
 from datetime import date
 
 from core.comparaison import comparer_bases
-from core.journal import Evenement, Journal
+from core.journal import Journal
 from core.odoo_source import SourceSqlOdoo17
-from scripts.outils_cli import premiere_ligne
-
-
-def afficher(ev: Evenement) -> None:
-    """Affiche un événement du journal : heure puis message."""
-    print("%s  %s" % (ev["t"][11:19], ev["message"]), flush=True)
+from scripts.outils_cli import afficher_evenement, premiere_ligne
 
 
 def main(argv: list[str] | None = None) -> int:
@@ -40,7 +35,7 @@ def main(argv: list[str] | None = None) -> int:
     )
     ap.add_argument("-o", "--dossier", default="comparaisons")
     args = ap.parse_args(argv)
-    j = Journal(ecouteur=afficher)
+    j = Journal(ecouteur=afficher_evenement)
     try:
         a, b = SourceSqlOdoo17(args.a), SourceSqlOdoo17(args.b)
     except Exception as exc:

@@ -1381,6 +1381,54 @@
       "more_info": "https://bandit.readthedocs.io/en/1.9.4/plugins/b603_subprocess_without_shell_equals_true.html",
       "test_id": "B603",
       "test_name": "subprocess_without_shell_equals_true"
+    },
+    {
+      "code": "8 \n9 import subprocess  # lancement de git, docker et cryptsetup (liste d'arguments)\n10 from collections.abc import Sequence\n",
+      "col_offset": 0,
+      "end_col_offset": 17,
+      "filename": "core/montee_version/commandes.py",
+      "issue_confidence": "HIGH",
+      "issue_cwe": {
+        "id": 78,
+        "link": "https://cwe.mitre.org/data/definitions/78.html"
+      },
+      "issue_severity": "LOW",
+      "issue_text": "Consider possible security implications associated with the subprocess module.",
+      "line_number": 9,
+      "line_range": [
+        9
+      ],
+      "more_info": "https://bandit.readthedocs.io/en/1.9.4/blacklists/blacklist_imports.html#b404-import-subprocess",
+      "test_id": "B404",
+      "test_name": "blacklist"
+    },
+    {
+      "code": "46         try:\n47             fini = subprocess.run(\n48                 list(arguments),\n49                 input=donnees,\n50                 stdin=flux,\n51                 stdout=subprocess.PIPE if fichier is None else fichier,\n52                 stderr=subprocess.STDOUT,\n53                 timeout=delai,\n54                 check=False,\n55             )\n56         except subprocess.TimeoutExpired as exc:\n",
+      "col_offset": 19,
+      "end_col_offset": 13,
+      "filename": "core/montee_version/commandes.py",
+      "issue_confidence": "HIGH",
+      "issue_cwe": {
+        "id": 78,
+        "link": "https://cwe.mitre.org/data/definitions/78.html"
+      },
+      "issue_severity": "LOW",
+      "issue_text": "subprocess call - check for execution of untrusted input.",
+      "line_number": 47,
+      "line_range": [
+        47,
+        48,
+        49,
+        50,
+        51,
+        52,
+        53,
+        54,
+        55
+      ],
+      "more_info": "https://bandit.readthedocs.io/en/1.9.4/plugins/b603_subprocess_without_shell_equals_true.html",
+      "test_id": "B603",
+      "test_name": "subprocess_without_shell_equals_true"
     }
   ]
 }

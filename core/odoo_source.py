@@ -626,16 +626,19 @@ class ConnexionSql(Protocol):
         """Ferme la connexion."""
 
 
-def connexion_lecture_seule(base: str) -> ConnexionSql:
+def connexion_lecture_seule(
+    base: str, acces: Mapping[str, str] | None = None
+) -> ConnexionSql:
     """Ouvre une connexion PostgreSQL en lecture seule vers `base`.
 
     Rôle : la seule ouverture de connexion SQL vers une base Odoo.
-    Paramètres : base — nom de la base ; hôte, port, utilisateur et mot de
-    passe viennent des variables PG* (libpq), jamais d'un argument.
+    Paramètres : base — nom de la base ; acces — host, user, password
+    d'un PostgreSQL jetable de montée de version (ADR-0012) ; sans lui,
+    tout vient des variables PG* (libpq).
     Retour : connexion psycopg2, session en lecture seule.
     Erreurs : ErreurSource si psycopg2 n'est pas installé ;
     psycopg2.Error si la base est injoignable.
-    Usages : SourceSqlOdoo17, montee_version.photo.
+    Usages : SourceSqlOdoo17, montee_version (photo, inventaire).
     """
     try:
         import psycopg2  # dépendance optionnelle (ADR-0001)
@@ -644,7 +647,15 @@ def connexion_lecture_seule(base: str) -> ConnexionSql:
             "Lecture SQL indisponible : psycopg2 n'est pas installé "
             "(utilisez --source xmlrpc)."
         ) from exc
-    connexion: ConnexionSql = psycopg2.connect(dbname=base)
+    if acces is None:
+        connexion: ConnexionSql = psycopg2.connect(dbname=base)
+    else:
+        connexion = psycopg2.connect(
+            dbname=base,
+            host=acces["host"],
+            user=acces["user"],
+            password=acces["password"],
+        )
     connexion.set_session(readonly=True, autocommit=False)
     return connexion
 

@@ -11,9 +11,12 @@ Avant d'en créer une, vérifier (casse ignorée) qu'elle n'existe pas déjà.
 |---|---|---|
 | `__enter__` | `core/connecteurs/azalplus.py`, `tests/test_connecteurs.py` | Méthode : ouverture d'un bloc with (curseurs) |
 | `__exit__` | `core/connecteurs/azalplus.py`, `tests/test_connecteurs.py` | Méthode : fermeture d'un bloc with (curseurs) |
+| `_acces` | `core/montee_version/montee.py` | Méthode : mot de passe du PostgreSQL jetable (fichier 600) |
+| `_afficher_etat` | `scripts/concorde_montee.py` | Routine : affiche l'état d'une montée |
 | `_analyser` | `interface/serveur.py` | Méthode de Taches : exécution d'une analyse |
 | `_arguments` | `tests/test_assistant_import.py` | Paramètres ignorés de `champ_bouchon` |
 | `_attendre` | `core/connecteurs/http_json.py` | Fonction d'attente du client (time.sleep par défaut) |
+| `_attendre_postgres` | `core/montee_version/montee.py` | Méthode : attend que PostgreSQL réponde |
 | `_attente` | `core/connecteurs/http_json.py` | Routine : secondes à attendre d'après Retry-After |
 | `_avec_delai` | `core/odoo_source.py` | Routine : applique le délai d'attente à une connexion HTTP |
 | `_bilan_etape` | `deploy/addons/concorde/wizard/concorde_import_wizard.py` | Routine : dict produit par une étape du pipeline |
@@ -57,12 +60,14 @@ Avant d'en créer une, vérifier (casse ignorée) qu'elle n'existe pas déjà.
 | `_description_sql` | `interface/serveur.py` | Méthode de Bases : fiche d'une base du serveur |
 | `_disposition_piece_jointe` | `interface/serveur.py` | Routine : valeur de l'en-tête Content-Disposition |
 | `_DOC_OFFICE` | `core/xlsx_ecrire.py` | Espace de noms des relations officeDocument |
+| `_docker` | `core/montee_version/montee.py` | Méthode : lance docker |
 | `_Domaine` | `stubs/odoo/models.pyi` | Type d'un domaine de recherche Odoo (stub) |
 | `_dossier` | `core/connecteurs/transfert.py` | Routine : dossier d'un transfert |
 | `_ecran` | `interface/serveur.py` | Routine : exécute une action de l'écran Transferts, refus en HTTP 400 |
 | `_ecrire_csv` | `core/export_odoo.py` | Routine partagée : CSV CRLF préfixé du BOM UTF-8 |
 | `_ecrites` | `core/connecteurs/pennylane.py` | Identifiants Pennylane écrits sous chaque référence |
 | `_ecritures_de` | `core/connecteurs/pennylane.py` | Méthode Pennylane : écritures répondant à des filtres |
+| `_effacer_image` | `core/montee_version/montee.py` | Méthode : efface les images d'un saut |
 | `_Element` | `core/demat.py` | TypeVar : élément d'une liste découpée par `_lots` |
 | `_empreinte_maillon` | `core/guardian.py` | Routine partagée : empreinte SHA-256 d'un maillon chaînée à la précédente |
 | `_encoder_fec` | `core/xlsx_vers_fec.py` | Sérialise en-tête + lignes FEC en UTF-8 |
@@ -72,14 +77,18 @@ Avant d'en créer une, vérifier (casse ignorée) qu'elle n'existe pas déjà.
 | `_erreur_fichier` | `core/mapping.py` | Routine partagée : lève l'erreur « Fichier <quoi> <nom> : <message> » |
 | `_erreur_sans_ecriture` | `core/xlsx_vers_fec.py` | Routine : erreur « aucune ligne d'écriture exploitable » (standard et Quadra) |
 | `_est_tiret` | `core/yaml_min.py` | Routine : la ligne est-elle un élément de liste |
+| `_etape` | `core/montee_version/montee.py` | Méthode : remplace l'état d'une étape |
 | `_etat_etape` | `core/connecteurs/transfert.py` | Routine : état d'une étape jugée sur ses constats |
 | `_ETATS_TEXTE` | `core/odoo_source.py` | Libellé français des états d'écriture (journal) |
 | `_evenement_info` | `interface/serveur.py` | Routine : constat INFO pour le centre d'alertes |
 | `_executer` | `scripts/concorde_connexion.py` | Routine : exécute une sous-commande de concorde_connexion |
 | `_executer_pipeline` | `deploy/addons/concorde/wizard/concorde_import_wizard.py` | Routine : prépare mapping et plan puis exécute le moteur |
+| `_existe` | `core/montee_version/montee.py` | Méthode : conteneur ou réseau existant |
 | `_explication` | `interface/serveur.py` | Routine : explication Marceau d'un constat |
 | `_feuille` | `tests/test_mapping.py` | Paramètre ignoré d'un lecteur de feuille simulé |
 | `_fiches` | `core/connecteurs/connexions.py` | Connexions de l'annuaire, par identifiant |
+| `_fichier` | `core/montee_version/montee.py` | Méthode : chemin dans le dossier de la montée |
+| `_fichier_acces` | `core/montee_version/montee.py` | Méthode : fichier env du PostgreSQL jetable |
 | `_fichier_instantane` | `interface/serveur.py` | Routine : chemin de la photo de surveillance d'une base |
 | `_garde` | `tests/test_connecteurs.py` | Méthode de test : un élément passe-t-il un filtre Pennylane |
 | `_get_transferts` | `interface/serveur.py` | Routes GET de l'écran Transferts |
@@ -88,6 +97,7 @@ Avant d'en créer une, vérifier (casse ignorée) qu'elle n'existe pas déjà.
 | `_identifiant_sql` | `core/bases_locales.py` | Routine : vérifie un nom de base (`_NOM_VALIDE`) et le rend entre guillemets pour le SQL |
 | `_identifiants` | `tests/outils.py` | Paramètres ignorés de `FauxCommun.authenticate` |
 | `_ids_par_code` | `injectors/socle_odoo.py` | {code: id} d'un modèle Odoo pour une liste de codes |
+| `_image_saut` | `core/montee_version/montee.py` | Méthode : image Odoo d'un saut, avec openupgradelib |
 | `_jeton` | `core/connecteurs/http_json.py` | Jeton Bearer, gardé en mémoire seulement |
 | `_JETON_TABLE` | `interface/transferts.py` | Forme du jeton d'une table reçue (32 hex) |
 | `_jour_valide` | `interface/serveur.py` | Routine : vrai si le texte est une date AAAA-MM-JJ |
@@ -96,11 +106,13 @@ Avant d'en créer une, vérifier (casse ignorée) qu'elle n'existe pas déjà.
 | `_lecteur` | `tests/test_mapping.py` | Paramètre ignoré d'un lecteur de valeur simulé |
 | `_libelle` | `interface/transferts.py` | Méthode : libellé d'une connexion, ou « (retirée) » |
 | `_libelle_action` | `core/rapport_jour.py` | Libellé français d'une action de tâche |
+| `_LIGNE_MODULE` | `core/montee_version/openupgrade.py` | Ligne d'un module dans la table de couverture |
 | `_lignes_a_retirer` | `core/migration/filtres.py` | Lignes retirées par un filtre selon sa portée |
 | `_lignes_problemes` | `core/migration/circuit.py` | Lignes de problemes.xlsx (explication calculée une fois par constat) |
 | `_lignes_sans` | `core/connecteurs/secrets.py` | Routine : lignes du fichier env sans certaines variables |
 | `_lignes_seulement` | `core/comparaison.py` | Routine : décrit les lignes présentes d'un seul côté (A ou B) |
 | `_lignes_utiles` | `core/yaml_min.py` | Routine : lignes non vides avec numéro d'origine et retrait |
+| `_limites` | `core/montee_version/montee.py` | Méthode : bridage mémoire et processeur |
 | `_lire` | `core/connecteurs/azalplus.py` | Méthode d'AzalPlus : exécute une requête de lecture |
 | `_lire_bloc` | `core/yaml_min.py` | Routine : lit un bloc (table ou liste) à un retrait donné |
 | `_lire_enfant` | `core/yaml_min.py` | Routine : bloc indenté sous un parent, ou None |
@@ -115,7 +127,9 @@ Avant d'en créer une, vérifier (casse ignorée) qu'elle n'existe pas déjà.
 | `_liste_textes` | `core/migration/filtres.py` | Routine : critère liste ou texte à virgules -> liste de textes |
 | `_lot` | `core/connecteurs/odoo.py`, `core/connecteurs/pennylane.py` | Méthode de ConnecteurOdoo : lignes Odoo -> Lot |
 | `_mapping_depuis_json` | `core/mapping.py` | Routine : JSON décodé (objet ou liste) -> mapping validé |
+| `_membres_surs` | `core/montee_version/sauvegarde.py` | Routine : membres utiles, chemins vérifiés |
 | `_Methode` | `stubs/odoo/api.pyi` | Type d'une méthode décorée par api.model (stub) |
+| `_montee` | `scripts/concorde_montee.py` | Sous-commandes de conduite d'une montée |
 | `_motif_erreur` | `interface/serveur.py` | Routine : texte « Type : message » d'une exception |
 | `_NOM_VALIDE` | `core/connecteurs/secrets.py` | Motif d'un nom de variable de secret (majuscules) |
 | `_noms_bases_locales` | `interface/serveur.py` | Routine : noms des bases du serveur (SQL) |
@@ -133,6 +147,8 @@ Avant d'en créer une, vérifier (casse ignorée) qu'elle n'existe pas déjà.
 | `_plan` | `deploy/addons/concorde/wizard/concorde_import_wizard.py` | Plan comptable rendu par `_executer_pipeline`, inutile à l'export |
 | `_post_transferts` | `interface/serveur.py` | Routes POST (JSON) de l'écran Transferts |
 | `_preparer_destination` | `core/connecteurs/transfert.py` | Routine partagée : étapes 1 à 4 d'une destination (rapport et nouveau test) |
+| `_proprietaire_odoo` | `core/montee_version/montee.py` | Méthode : pièces jointes au compte odoo de l'image |
+| `_psql` | `core/montee_version/montee.py` | Méthode : outil PostgreSQL dans le conteneur jetable |
 | `_quand_borne` | `core/rapport_jour.py` | Borne un horodatage ISO à la seconde (champ « quand ») |
 | `_racine` | `tests/test_mapping.py` | Paramètre ignoré (racine XML) d'un lecteur simulé |
 | `_reecrire` | `core/connecteurs/secrets.py` | Routine : réécriture atomique du fichier de secrets, en 600 |
@@ -149,8 +165,11 @@ Avant d'en créer une, vérifier (casse ignorée) qu'elle n'existe pas déjà.
 | `_SIREN_DANS_NOM` | `core/connecteurs/fec.py` | Motif du SIREN dans un nom de FEC DGFiP |
 | `_source` | `core/connecteurs/odoo.py` | Méthode de ConnecteurOdoo : source de lecture (lecture seule) |
 | `_SQL_LIGNES_AZALPLUS` | `core/connecteurs/azalplus.py` | Requête : lignes validées d'une société AzalPlus |
+| `_SQL_MODULES_INSTALLES` | `core/montee_version/inventaire.py` | Requête : modules installés |
 | `_SQL_SOCIETE_AZALPLUS` | `core/connecteurs/azalplus.py` | Requête : lignes de la société, sans société, autres statuts |
 | `_SQL_TIERS_AZALPLUS` | `core/connecteurs/azalplus.py` | Requête : noms et codes des clients et fournisseurs actifs |
+| `_statut` | `core/montee_version/montee.py` | Méthode : statut de la montée |
+| `_surveiller_disque` | `core/montee_version/montee.py` | Méthode : arrête un saut si le disque se remplit |
 | `_table` | `interface/transferts.py` | Méthode : table reçue, par son jeton |
 | `_telecharger` | `interface/serveur.py` | Méthode de Taches : exécution d'un export |
 | `_televerser` | `interface/serveur.py` | Route d'un fichier envoyé brut (FEC déposé, table) |
@@ -169,89 +188,247 @@ Avant d'en créer une, vérifier (casse ignorée) qu'elle n'existe pas déjà.
 | `_valeur_en_ligne` | `core/yaml_min.py` | Routine : scalaire ou liste en ligne |
 | `_valeurs_fichier_fec` | `deploy/addons/concorde/wizard/concorde_import_wizard.py` | Routine : valeurs name / fec_filename / fec_file d'une fiche d'import |
 | `_verifier_ident` | `interface/transferts.py` | Méthode : refuse un identifiant de transfert mal formé |
+| `a_verifier` | `core/montee_version/inventaire.py` | Modules à vérifier d'un saut |
+| `acces` | `core/odoo_source.py`, `tests/test_montee_pilotee.py` | Accès à un PostgreSQL jetable (host, user, password) |
 | `ACTIONS_BASE` | `interface/serveur.py` | Actions de POST /api/taches (sur une base de l'écran Bases) |
+| `afficher_evenement` | `scripts/outils_cli.py` | Routine partagée : affiche un événement du journal |
 | `afficherConnexions` | `interface/static/transferts.js` | Tableau des connexions |
 | `app` | `tests/test_ecran_transferts.py` | Application de l'interface dans un test |
+| `appels` | `tests/test_montee_pilotee.py` | Appels git simulés |
+| `arreter` | `core/montee_version/montee.py` | Méthode : retire PostgreSQL et le réseau |
+| `arrivee` | `core/montee_version/inventaire.py`, `core/montee_version/montee.py`, `core/montee_version/openupgrade.py`, `scripts/concorde_montee.py` | Version d'Odoo voulue à la fin de la montée |
+| `Atelier` | `tests/test_montee_pilotee.py` | Classe de test : montée simulée |
+| `autres` | `tests/test_montee_pilotee.py` | Autres arguments du lanceur |
+| `base_client` | `core/montee_version/montee.py` | Nom de la base chez le client (à retaper au feu vert) |
+| `bavard` | `tests/test_montee_pilotee.py` | Lanceur simulé qui rend du texte |
+| `besoin` | `core/montee_version/montee.py` | Place nécessaire au départ |
 | `bloc` | `interface/transferts.py` | Bloc d'octets reçu |
+| `bloquant` | `core/montee_version/montee.py` | Module bloquant parcouru |
+| `bloquants` | `core/montee_version/inventaire.py`, `core/montee_version/montee.py` | Modules qui bloquent un saut |
+| `bloque` | `core/montee_version/inventaire.py` | Vrai si un module bloque un saut |
 | `brut_chemin` | `interface/transferts.py` | Fichier brut d'une table reçue (effacé après lecture) |
+| `calcul` | `core/montee_version/sauvegarde.py` | Calcul SHA-256 en cours |
 | `carteDestination` | `interface/static/transferts.js` | Carte d'une destination : 7 étapes, fichiers, feu vert |
 | `cause` | `tests/test_ecran_transferts.py` | Cause d'un refus |
+| `causes` | `core/montee_version/montee.py` | Cause d'arrêt d'un saut par le guetteur |
 | `champLibre` | `interface/static/transferts.js` | Routine JS : nom de paramètre lisible |
 | `chargerEcranTransferts` | `interface/static/transferts.js` | Charge l'écran Transferts |
 | `chargerListeTransferts` | `interface/static/transferts.js` | Tableau des transferts enregistrés |
 | `chemin_dans` | `interface/transferts.py` | Routine partagée : vrai si un chemin reste dans un dossier |
+| `CHEMIN_MONTEES` | `core/montee_version/montee.py` | Dossier des montées (CONCORDE_MONTEES) |
+| `CHEMIN_OPENUPGRADE` | `core/montee_version/montee.py` | Dossier des copies d'OpenUpgrade (CONCORDE_OPENUPGRADE) |
+| `cible_patch` | `tests/test_montee_pilotee.py` | Remplacement actif pendant un test |
+| `circuit` | `core/montee_version/montee.py`, `scripts/concorde_montee.py` | Étapes 1 à 4 d'une montée |
+| `classer_module` | `core/montee_version/inventaire.py` | Routine : règle de l'inventaire (couvert, à vérifier, bloquant) |
+| `classes` | `core/montee_version/inventaire.py` | Modules rangés par classe |
+| `cliche` | `core/montee_version/montee.py` | Photo comptable prise |
+| `code_ou` | `core/montee_version/montee.py` | Copie d'OpenUpgrade d'un saut |
+| `commandes` | `tests/test_montee_pilotee.py` | Commandes docker reçues |
+| `commandes_texte` | `tests/test_montee_pilotee.py` | Commandes docker en texte |
+| `commit` | `core/montee_version/openupgrade.py` | Commit figé attendu |
+| `COMMITS_OPENUPGRADE` | `core/montee_version/openupgrade.py` | Commit figé d'OpenUpgrade par version visée |
+| `complet` | `core/montee_version/sauvegarde.py` | Chemin complet d'une pièce jointe |
+| `COMPTES_MONTEE` | `tests/test_montee_pilotee.py` | Comptes de la base simulée |
+| `conduite` | `scripts/concorde_montee.py`, `tests/test_montee_pilotee.py` | Montée conduite |
 | `connexion_fec` | `tests/test_ecran_transferts.py` | Méthode de test : ajoute une connexion FEC |
+| `conteneur` | `core/montee_version/montee.py` | Nom d'un conteneur Odoo de saut |
+| `conteneur_pg` | `core/montee_version/montee.py` | Nom du PostgreSQL jetable |
+| `conteneurs` | `core/montee_version/montee.py` | Méthode : conteneurs prêts pendant un bloc |
 | `controler_feu_vert` | `core/connecteurs/transfert.py` | Routine partagée : vérifie qu'un feu vert peut être donné (écran et donner_feu_vert) |
 | `cookie` | `tests/test_ecran_transferts.py` | Cookie de session d'un test |
+| `couverts` | `core/montee_version/inventaire.py` | Nombre de modules couverts d'un saut |
+| `couverture_saut` | `core/montee_version/inventaire.py` | Routine : table de couverture d'un saut, lue sur le disque |
+| `couvertures` | `core/montee_version/inventaire.py`, `core/montee_version/montee.py`, `tests/test_montee_pilotee.py` | Tables de couverture par version visée |
 | `cx` | `tests/test_ecran_transferts.py` | Connexion parcourue dans un test |
 | `depot` | `interface/transferts.py`, `tests/test_ecran_transferts.py` | Fiche d'un FEC déposé (nom, taille, lignes, totaux) |
 | `depot_max` | `interface/transferts.py` | Plafond d'un FEC déposé, en octets |
 | `DEPOT_MAX_MO_DEFAUT` | `interface/transferts.py` | Plafond par défaut d'un FEC déposé (200 Mo) |
+| `DEPOT_OPENUPGRADE` | `core/montee_version/openupgrade.py` | Dépôt OCA d'OpenUpgrade |
 | `depots` | `interface/transferts.py`, `tests/test_ecran_transferts.py` | Dossier des FEC déposés |
 | `description` | `interface/transferts.py` | Fichier depot.json ; aussi : description d'une connexion |
 | `detail_transfert` | `interface/transferts.py` | Méthode : état complet d'un transfert, libellés et fichiers |
 | `dialogueDepot` | `interface/static/transferts.js` | Dépôt d'un FEC |
 | `dialogueSecret` | `interface/static/transferts.js` | Saisie masquée d'un secret |
+| `docker` | `tests/test_montee_pilotee.py` | Docker simulé d'un test |
+| `donnees_pg` | `tests/test_montee_pilotee.py` | Dossier pgdata simulé |
 | `dossier_depot` | `interface/transferts.py` | Dossier du FEC déposé d'une connexion |
 | `dossier_fec` | `interface/transferts.py` | Nom du dossier choisi par CONCORDE pour un FEC |
+| `dossier_montee` | `core/montee_version/montee.py` | Routine : dossier d'une montée (identifiant vérifié) |
+| `dossier_openupgrade` | `core/montee_version/inventaire.py` | Copie d'OpenUpgrade d'un saut |
+| `DOSSIER_PIECES` | `core/montee_version/sauvegarde.py` | Dossier des pièces jointes dans une sauvegarde |
+| `dossiers` | `core/montee_version/montee.py` | Sous-dossiers parcourus |
+| `dump` | `core/montee_version/montee.py`, `core/montee_version/sauvegarde.py`, `tests/test_montee_pilotee.py` | Fichier dump.sql |
+| `duree` | `tests/test_montee_pilotee.py` | Durée ignorée (sleep simulé) |
+| `duree_s` | `core/montee_version/montee.py` | Durée d'une étape, en secondes |
+| `duree_saut` | `tests/test_montee_pilotee.py` | Durée simulée d'un saut |
+| `ECARTS_GARDES` | `core/montee_version/montee.py` | Écarts gardés dans l'état d'une montée |
 | `ecran` | `interface/serveur.py` | L'écran Transferts de l'application, dans une route |
 | `EcranTransferts` | `interface/transferts.py` | Classe : ce que fait l'écran Transferts (ADR-0011) |
+| `ecrire_sauvegarde` | `core/montee_version/sauvegarde.py` | Routine : sauvegarde Odoo de la base montée |
 | `ecrire_secret` | `interface/transferts.py` | Méthode : écrit un secret saisi, rend « renseigné ou non » |
+| `empreinte_fichier` | `core/montee_version/sauvegarde.py` | Routine partagée : SHA-256 d'un fichier |
+| `EN_COURS` | `core/montee_version/montee.py` | Statut : étape ou montée en cours |
 | `environnement` | `interface/transferts.py` | Variables d'environnement lues |
 | `envoyer` | `tests/test_ecran_transferts.py` | Méthode de test : requête JSON ou fichier brut |
 | `envoyerFichier` | `interface/static/transferts.js` | Routine JS : envoie un fichier brut (FEC, table) |
+| `ErreurCommande` | `core/montee_version/commandes.py` | Programme en échec : code et fin de sortie |
 | `ErreurEcran` | `interface/transferts.py` | Demande refusée par l'écran Transferts |
+| `ErreurMontee` | `core/montee_version/montee.py` | Montée refusée ou arrêtée |
+| `ErreurOpenUpgrade` | `core/montee_version/openupgrade.py` | Saut impossible ou table illisible |
 | `ERREURS_ECRAN` | `interface/transferts.py` | Refus rendus au navigateur avec leur cause (HTTP 400) |
+| `ErreurSauvegarde` | `core/montee_version/sauvegarde.py` | Sauvegarde Odoo refusée |
+| `essai_lanceur` | `tests/test_montee_pilotee.py` | Lanceur du nouvel essai |
+| `ESSAIS_ODOO` | `tests/integration/attendre_odoo.py` | Essais avant d'abandonner l'attente d'Odoo |
+| `EtapeMontee` | `core/montee_version/montee.py` | Type : état d'une étape de montée |
+| `ETAPES_MONTEE` | `core/montee_version/montee.py` | Étapes d'une montée, dans l'ordre |
 | `ETAPES_TRANSFERT` | `interface/static/transferts.js` | Les 7 étapes d'une destination, avec leur nom affiché |
+| `etat_couvert` | `core/montee_version/openupgrade.py` | Routine : état de table « couvert » |
+| `EtatMontee` | `core/montee_version/montee.py` | Type : état complet d'une montée (montee.json) |
+| `etats` | `core/montee_version/openupgrade.py` | États lus dans la table |
+| `ETATS_COUVERTS` | `core/montee_version/openupgrade.py` | États de la table qui valent « couvert » |
 | `etatTransferts` | `interface/static/transferts.js` | État de l'écran : logiciels, plafond de dépôt, connexions |
+| `examiner_sauvegarde` | `core/montee_version/sauvegarde.py` | Routine : relit une sauvegarde sans l'extraire |
 | `exc` | `interface/transferts.py` | Erreur attrapée |
+| `extraction` | `core/montee_version/montee.py` | Dossier d'extraction de la sauvegarde |
+| `extraire_sauvegarde` | `core/montee_version/sauvegarde.py` | Routine : extrait dump et pièces jointes |
+| `faire_inventaire` | `core/montee_version/montee.py` | Méthode : étape 1 de la montée |
+| `FauxDocker` | `tests/test_montee_pilotee.py` | Docker simulé |
 | `FEC_VENTES` | `tests/test_ecran_transferts.py` | FEC d'essai : à-nouveaux et une vente |
+| `fichier_couverture` | `core/montee_version/openupgrade.py` | Routine : chemin de la table d'un saut |
+| `filestore` | `core/montee_version/montee.py` | Pièces jointes de la base restaurée |
+| `fin_de_journal` | `core/montee_version/montee.py` | Routine : fin d'un journal de montée |
+| `fin_de_sortie` | `core/montee_version/commandes.py` | Routine partagée : dernières lignes d'une sortie ou d'un journal |
+| `fini` | `core/montee_version/commandes.py`, `core/montee_version/montee.py` | Programme terminé ; aussi : signal de fin du guetteur de disque |
 | `flux` | `interface/transferts.py` | Corps de requête à lire |
 | `FluxEntrant` | `interface/transferts.py` | Protocole : corps de requête lisible par blocs |
 | `formulaireFeuVert` | `interface/static/transferts.js` | Feu vert : libellé retapé et date de sauvegarde |
+| `fraiche` | `tests/test_montee_pilotee.py` | Sauvegarde fraîche |
+| `git` | `tests/test_montee_pilotee.py` | git simulé |
+| `GO` | `core/montee_version/montee.py` | Un gigaoctet, en octets |
+| `guetter` | `core/montee_version/montee.py` | Fonction du guetteur de disque |
+| `guetteur` | `core/montee_version/montee.py` | Fil qui mesure le disque pendant un saut |
 | `ident_connexion` | `interface/serveur.py` | Identifiant de connexion lu dans l'URL |
 | `ident_cx` | `interface/transferts.py` | Identifiant d'une connexion d'un transfert |
 | `ident_tache` | `interface/transferts.py` | Identifiant de la tâche lancée |
+| `identite` | `core/montee_version/montee.py` | Sortie de « id -u » de l'image |
+| `image` | `core/montee_version/montee.py` | Image Docker d'un saut |
+| `IMAGE_POSTGRES` | `core/montee_version/montee.py` | Image du PostgreSQL jetable |
 | `inconnus` | `core/connecteurs/connexions.py` | Paramètres reçus inconnus du connecteur |
+| `InfoSauvegarde` | `core/montee_version/sauvegarde.py` | Type : ce que dit une sauvegarde |
+| `Inventaire` | `core/montee_version/inventaire.py` | Type : résultat de l'inventaire d'une base |
+| `inventorier` | `core/montee_version/inventaire.py` | Routine : classe chaque module, saut par saut |
 | `ip` | `interface/transferts.py` | Adresse IP de la session qui donne le feu vert |
 | `json_ok` | `tests/test_ecran_transferts.py` | Méthode de test : requête qui doit réussir |
+| `lancements` | `tests/test_montee_pilotee.py` | Commandes docker run |
 | `lancer_transfert` | `interface/transferts.py` | Méthode : valide puis lance les étapes 1 à 4 |
+| `lanceur` | `core/montee_version/montee.py` | Paramètre : lanceur de programmes |
+| `LanceurProgramme` | `core/montee_version/montee.py` | Type : lance un programme (simulé dans les tests) |
 | `libelleConnexion` | `interface/static/transferts.js` | Libellé d'une connexion par son identifiant |
+| `libre` | `core/montee_version/montee.py`, `tests/test_montee_pilotee.py` | Place libre mesurée |
+| `LIBRE_MINIMUM` | `core/montee_version/montee.py` | Garde-fou : place libre minimale pendant un saut (2 Go) |
+| `libres` | `tests/test_montee_pilotee.py` | Places libres successives simulées |
+| `LIGNES_ERREUR` | `core/montee_version/commandes.py` | Lignes de sortie gardées dans un message d'échec |
+| `lire_couverture` | `core/montee_version/openupgrade.py` | Routine : table de couverture -> {module: état} |
+| `lire_modules` | `core/montee_version/inventaire.py` | Routine : version et modules installés d'une base |
+| `liste_sauts` | `core/montee_version/inventaire.py` | Sauts de l'inventaire |
 | `lister_transferts` | `interface/transferts.py` | Méthode : transferts enregistrés, plus récent d'abord |
+| `LIVREE` | `core/montee_version/montee.py` | Statut : montée livrée |
+| `livrer` | `core/montee_version/montee.py` | Méthode : étape 7, sauvegarde livrée |
 | `logicielBranche` | `interface/static/transferts.js` | Routine JS : description d'un logiciel branché |
 | `logiciels` | `interface/transferts.py` | Méthode : logiciels branchés et ce que chacun demande |
 | `majDestinations` | `interface/static/transferts.js` | Destinations possibles (jamais la source) |
 | `majFormulaireAjout` | `interface/static/transferts.js` | Champs du formulaire d'ajout selon le logiciel |
+| `manifeste` | `core/montee_version/sauvegarde.py` | Contenu de manifest.json |
+| `MARGE_DEPART` | `core/montee_version/montee.py` | Garde-fou : marge de départ (3 Go) |
+| `marque` | `core/montee_version/montee.py` | Fichier qui marque la restauration faite |
 | `mauvaise` | `tests/test_ecran_transferts.py` | Valeur refusée de CONCORDE_DEPOT_MAX_MO |
+| `membre` | `core/montee_version/sauvegarde.py` | Membre d'une archive zip |
+| `membres` | `core/montee_version/sauvegarde.py` | Membres utiles d'une archive |
+| `MEMOIRE_CONTENEUR` | `core/montee_version/montee.py` | Mémoire maximale d'un conteneur de montée |
+| `module` | `core/montee_version/inventaire.py`, `tests/test_montee_pilotee.py` | Nom d'un module Odoo |
+| `ModuleBloquant` | `core/montee_version/inventaire.py` | Type : module et cause (bloquant ou à vérifier) |
+| `modules` | `core/montee_version/inventaire.py`, `core/montee_version/montee.py` | Modules installés d'une base |
+| `MODULES_CLIENT` | `tests/test_montee_pilotee.py` | Modules de la base simulée |
+| `MODULES_ODOO` | `core/montee_version/montee.py` | Dossier des modules d'Odoo dans l'image officielle |
+| `Montee` | `core/montee_version/montee.py` | Classe : conduite d'une montée |
+| `montee_photo_sql` | `tests/test_montee_pilotee.py` | Requête des lignes de la photo |
+| `monter` | `core/montee_version/montee.py` | Méthode : étape 3, saut par saut |
+| `muet` | `tests/test_montee_pilotee.py` | Lanceur simulé où PostgreSQL ne répond pas |
+| `NOM_DUMP` | `core/montee_version/sauvegarde.py` | Nom du dump dans une sauvegarde |
+| `NOM_MANIFESTE` | `core/montee_version/sauvegarde.py` | Nom du manifeste dans une sauvegarde |
 | `NOMS_FICHIERS` | `interface/static/transferts.js` | Nom affiché des fichiers d'un transfert |
+| `nouvel_essai` | `core/montee_version/montee.py` | Routine : étape 6, copie fraîche |
+| `obtenu` | `core/montee_version/openupgrade.py` | Commit obtenu après récupération |
+| `octets` | `core/montee_version/sauvegarde.py` | Taille d'un fichier, en octets |
+| `octets_base` | `core/montee_version/montee.py` | Taille décompressée de la base |
+| `octets_decompresses` | `core/montee_version/sauvegarde.py` | Taille décompressée d'une sauvegarde |
+| `odoo_repond` | `tests/integration/attendre_odoo.py` | Routine : Odoo répond-il ? |
+| `openupgrade` | `core/montee_version/montee.py`, `tests/test_montee_pilotee.py` | Dossier des copies d'OpenUpgrade |
+| `OPENUPGRADELIB` | `core/montee_version/openupgrade.py` | Bibliothèque installée dans l'image (figée) |
 | `ouvrirTransfert` | `interface/static/transferts.js` | Détail d'un transfert |
 | `par_nom` | `tests/test_ecran_transferts.py` | Logiciels rangés par nom |
 | `parametres_facultatifs` | `core/connecteurs/base.py`, `core/connecteurs/fec.py`, `core/connecteurs/odoo.py`, `core/connecteurs/azalplus.py`, `core/connecteurs/pennylane.py`, `tests/test_connecteurs.py` | Paramètres acceptés en plus des requis ; l'annuaire refuse tout autre nom |
 | `parent` | `interface/transferts.py` | Dossier parcouru (os.walk) |
+| `PART_PROCESSEUR` | `core/montee_version/montee.py` | Priorité processeur basse des conteneurs |
+| `pas_zip` | `tests/test_montee_pilotee.py` | Fichier qui n'est pas un zip |
+| `PAUSE_S` | `tests/integration/attendre_odoo.py` | Pause entre deux essais |
+| `photos` | `tests/test_montee_pilotee.py` | Photos prises (avant ou après) |
+| `place_libre` | `core/montee_version/montee.py`, `tests/test_montee_pilotee.py` | Routine : octets libres sur un disque |
+| `PREFIXE_LOCALISATION` | `core/montee_version/inventaire.py` | Préfixe des modules de localisation (l10n_) |
+| `preparer` | `core/montee_version/montee.py` | Méthode : place, réseau, PostgreSQL, restauration |
 | `preparerAjout` | `interface/static/transferts.js` | Prépare le formulaire d'ajout |
 | `preparerTransfert` | `interface/static/transferts.js` | Prépare le formulaire de nouveau transfert |
+| `PROCESSEURS_CONTENEUR` | `core/montee_version/montee.py` | Processeurs au plus par conteneur |
+| `programme` | `core/montee_version/montee.py` | Outil PostgreSQL lancé |
+| `quoi` | `core/montee_version/montee.py` | Conteneur ou réseau |
+| `recette` | `core/montee_version/montee.py` | Dockerfile d'un saut |
 | `recevoir_fichier` | `interface/transferts.py` | Routine partagée : corps de requête -> fichier, par blocs, plafonné |
 | `recevoir_table` | `interface/transferts.py` | Méthode : reçoit une table de correspondance, rend un jeton |
 | `rechargerConnexions` | `interface/static/transferts.js` | Relit les connexions et met l'écran à jour |
 | `recu` | `interface/transferts.py` | Fichier reçu avant sa relecture |
+| `recuperer` | `core/montee_version/openupgrade.py`, `tests/test_montee_pilotee.py` | Routine : copie d'OpenUpgrade au commit figé |
 | `recus` | `interface/transferts.py` | Paramètres reçus du navigateur |
 | `relatif` | `interface/transferts.py` | Chemin d'un fichier relatif au dossier d'un transfert |
 | `rendreTacheTransfert` | `interface/static/transferts.js` | Résultat d'une tâche de transfert ou de feu vert |
+| `reponses_apres` | `tests/test_montee_pilotee.py` | Base simulée après la montée |
+| `reponses_avant` | `tests/test_montee_pilotee.py` | Base simulée avant la montée |
+| `requete_lecture` | `core/montee_version/photo.py` | Routine partagée : requête de lecture SQL (photo, inventaire) |
+| `reseau` | `core/montee_version/montee.py` | Réseau Docker interne d'une montée |
 | `restant` | `interface/transferts.py` | Octets restant à recevoir |
+| `restauree` | `core/montee_version/montee.py` | Marque de restauration faite |
 | `resumes` | `interface/transferts.py` | Résumés des transferts |
 | `retirerConnexion` | `interface/static/transferts.js` | Retire une connexion après confirmation |
 | `SAISIE_PENNYLANE` | `tests/test_ecran_transferts.py` | Valeur de secret saisie dans un test (jamais renvoyée) |
+| `saut` | `core/montee_version/inventaire.py`, `core/montee_version/montee.py`, `tests/test_montee_pilotee.py` | Saut de version parcouru |
+| `saut_en_echec` | `tests/test_montee_pilotee.py` | Saut simulé en échec |
+| `SautInventaire` | `core/montee_version/inventaire.py` | Type : un saut de l'inventaire |
+| `sauts` | `core/montee_version/openupgrade.py`, `core/montee_version/inventaire.py` | Routine : versions visées une à une ; aussi : sauts d'un inventaire |
+| `sauvegarde_livree` | `tests/test_montee_pilotee.py` | Sauvegarde livrée |
+| `sauvegarde_zip` | `tests/test_montee_pilotee.py` | Routine de test : petite sauvegarde Odoo |
+| `sauver` | `core/montee_version/montee.py` | Routine : écrit montee.json |
+| `SCRIPTS_MONTEE` | `core/montee_version/montee.py` | Dossier des scripts de montée dans OpenUpgrade |
 | `sertDe` | `interface/static/transferts.js` | Routine JS : rôle d'une connexion (source, destination) |
 | `serveur` | `tests/test_ecran_transferts.py` | Serveur HTTP d'un test |
+| `sha256` | `core/montee_version/sauvegarde.py` | Empreinte d'un fichier |
 | `sorties` | `interface/transferts.py` | Dossier des FEC produits |
 | `suivreTransfert` | `interface/static/transferts.js` | Suit une tâche de transfert puis ouvre le transfert |
+| `SURVEILLANCE_S` | `core/montee_version/montee.py` | Intervalle de mesure du disque pendant un saut |
+| `table_couverture` | `tests/test_montee_pilotee.py` | Routine de test : table de couverture |
 | `TABLE_MAX_OCTETS` | `interface/transferts.py` | Plafond d'une table de correspondance (5 Mo) |
 | `taches` | `interface/transferts.py` | Tâches de l'interface, dans l'écran Transferts |
 | `taille_depot_max` | `interface/transferts.py` | Routine : plafond d'un FEC déposé (CONCORDE_DEPOT_MAX_MO) |
 | `taille_max` | `interface/transferts.py` | Plafond de réception, en octets |
+| `TestCasLimites` | `tests/test_montee_pilotee.py` | Classe de test : pannes nommées |
+| `TestCircuit` | `tests/test_montee_pilotee.py` | Classe de test : étapes 1 à 4 |
+| `TestCommandeMonteePilotee` | `tests/test_montee_pilotee.py` | Classe de test : sous-commandes |
+| `TestCommandes` | `tests/test_montee_pilotee.py` | Classe de test : lancement des programmes |
+| `TestCreation` | `tests/test_montee_pilotee.py` | Classe de test : création d'une montée |
 | `TestEcranTransferts` | `tests/test_ecran_transferts.py` | Classe de test : écran Transferts par HTTP |
 | `testerConnexion` | `interface/static/transferts.js` | Teste une connexion et montre le résultat |
+| `TestFeuVertEtLivraison` | `tests/test_montee_pilotee.py` | Classe de test : étapes 5 à 7 |
+| `TestOpenUpgradeEtInventaire` | `tests/test_montee_pilotee.py` | Classe de test : OpenUpgrade et inventaire |
 | `TestOutilsEcran` | `tests/test_ecran_transferts.py` | Classe de test : routines de l'écran |
+| `TestSauvegarde` | `tests/test_montee_pilotee.py` | Classe de test : sauvegarde Odoo |
 | `texte_date` | `interface/transferts.py` | Date de sauvegarde reçue, en texte |
 | `tiroir` | `interface/static/transferts.js` | Routine JS : ouvre le tiroir avec un titre et un contenu |
 | `Travail` | `interface/serveur.py` | Type : travail d'une tâche branchée par un autre module |
@@ -1269,6 +1446,7 @@ Avant d'en créer une, vérifier (casse ignorée) qu'elle n'existe pas déjà.
 | `uniques` | `core/connecteurs/pennylane.py` | Comptes à un seul identifiant : {numéro: id} |
 | `url` | `tests/test_connecteurs.py`, `core/connecteurs/http_json.py` | Adresse du serveur Odoo |
 | `utilisateur` | `tests/test_connecteurs.py` | Login Odoo |
+| `UTILISATEUR_PG` | `core/montee_version/montee.py` | Utilisateur du PostgreSQL jetable |
 | `utilisateurs` | `core/connecteurs/connexions.py` | Connexions qui utilisent une connexion de test |
 | `valeur` | `core/migration/circuit.py`, `filtres.py`, `core/connecteurs/secrets.py`, `scripts/concorde_connexion.py`, `core/connecteurs/azalplus.py`, `core/connecteurs/http_json.py`, `tests/test_connecteurs.py` | Paramètre de `_vers_json` / des routines de normalisation ; aussi : valeur d'un secret (connecteurs/secrets) |
 | `valeur_champ` | `core/migration/connecteur_fec.py` | Fonction : valeur nettoyée d'une colonne (remplace `val`) ; dans `filtres._condition` : valeur brute du champ testé |
@@ -1294,13 +1472,19 @@ Avant d'en créer une, vérifier (casse ignorée) qu'elle n'existe pas déjà.
 | `variable_docker` | `interface/serveur.py` | Nom de variable POSTGRES_* (docker) |
 | `variable_pg` | `interface/serveur.py` | Nom de variable PG* (libpq) |
 | `verifier_erreur` | `tests/test_yaml_min.py` | Routine : vérifie l'ErreurYaml et la ligne citée |
+| `verifier_place` | `core/montee_version/montee.py` | Routine : garde-fou de départ |
 | `verifier_refus` | `tests/test_plan_comptable.py` | Routine : refus avec le nom du fichier et la cause |
 | `verrou` | `core/connecteurs/transfert.py` | Verrou d'une connexion |
 | `verrou_connexion` | `core/connecteurs/transfert.py` | Routine : une seule écriture à la fois par connexion |
+| `vers` | `core/montee_version/inventaire.py` | Version visée d'un saut |
 | `version` | `core/odoo_source.py`, `core/connecteurs/base.py` | Version du module base lue en SQL (`_version`) ; aussi : version d'API ou de format lue au test (connecteurs/base) |
 | `version_attendue` | `injectors/socle_odoo.py` | Préfixe de version Odoo attendu (ex. « 17 ») |
+| `version_majeure` | `core/montee_version/openupgrade.py` | Routine : numéro majeur d'une version d'Odoo |
+| `VERSION_MAX` | `core/montee_version/openupgrade.py` | Version d'Odoo la plus haute prise en charge |
+| `VERSION_MIN` | `core/montee_version/openupgrade.py` | Version d'Odoo la plus basse prise en charge |
 | `version_odoo` | `interface/serveur.py` | Réponse version() d'Odoo (XML-RPC) |
 | `version_texte_odoo` | `deploy/addons/concorde/wizard/concorde_import_wizard.py` | Texte de version d'Odoo (odoo.release.version), repli de _version_majeure_odoo |
+| `VERTE` | `core/montee_version/montee.py` | Statut : étape bonne |
 | `vide` | `tests/test_connecteurs.py` | Fichier vide, dans un test |
 | `vraie` | `tests/test_connecteurs.py` | Connexion destination réelle, dans un test |
 | `VUE_ACTION` | `interface/static/app.js` | Vue qui affiche le résultat d'une action (transfert, feu vert -> transferts) |
@@ -1400,3 +1584,4 @@ Avant d'en créer une, vérifier (casse ignorée) qu'elle n'existe pas déjà.
 | `photo` | `scripts/concorde_montee.py`, `tests/test_montee_version.py` | Photo comptable (ou analyseur de la sous-commande photo) |
 | `relue` | `tests/test_montee_version.py` | Photo relue dans un test |
 | `TestCommandeMontee` | `tests/test_montee_version.py` | Tests de charger_photo et de la commande concorde_montee |
+| `zip_client` | `tests/test_montee_pilotee.py` | Sauvegarde du client simulée |

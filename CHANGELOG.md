@@ -3,6 +3,32 @@
 Format : [Keep a Changelog](https://keepachangelog.com/fr/1.1.0/), versions sémantiques.
 Le module Odoo porte la même version au format `17.0.X.Y.Z` (`deploy/addons/concorde/__manifest__.py`).
 
+## [Non publiée]
+### Ajouté
+- Montée de version conduite par CONCORDE (ADR-0012, acceptée le 08/11/2026),
+  sur le serveur CONCORDE : `concorde_montee creer | circuit | feu-vert |
+  nouvel-essai | livrer | etat`. Sauvegarde Odoo (.zip) déposée, inventaire
+  des modules saut par saut (table de couverture d'OpenUpgrade au commit
+  figé : couvert, à vérifier, bloquant), PostgreSQL et Odoo dans des
+  conteneurs sur un réseau Docker interne sans port publié, OpenUpgrade non
+  modifié une version à la fois, photo avant / après au centime, feu vert
+  (nom de la base retapé, une seule fois), nouvel essai sur une copie
+  fraîche, livraison d'une sauvegarde Odoo standard avec son empreinte.
+- Garde-fous : place disque (3 fois la base + 3 Go au départ, arrêt sous
+  2 Go pendant un saut), conteneurs bridés (1,5 Go, 1 processeur, priorité
+  basse), mot de passe du PostgreSQL jetable dans un fichier 600, jamais en
+  argument ; base restaurée d'une autre version que la sauvegarde : refus.
+- CI : job `montee-pilotee` (remplace `montee-odoo`) : base Odoo 14 →
+  sauvegarde .zip → montée 14 → 17 par la commande → nouvel essai →
+  livraison → restauration de la base livrée dans un vrai Odoo 17 → zéro
+  écart. Commits d'OpenUpgrade figés dans `core/montee_version/openupgrade.py`.
+### Modifié
+- Routines partagées : `commandes.executer` (seul lancement de programme de
+  la montée, sans shell), `photo.requete_lecture` et `photo.version_odoo`,
+  `outils_cli.afficher_evenement` (repris par `concorde_comparer`),
+  `odoo_source.connexion_lecture_seule` (accès d'un PostgreSQL jetable),
+  `tests/integration/attendre_odoo` (attente d'Odoo dans la CI).
+
 ## [1.8.0] — 2026-11-08
 ### Modifié
 - Secrets des connexions (ADR-0011, acceptée le 08/11/2026) : nouveau chemin

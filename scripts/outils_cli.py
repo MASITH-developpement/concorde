@@ -5,6 +5,8 @@ import json
 import sys
 from typing import Any
 
+from core.journal import Evenement
+
 # Adresses où la clé API peut circuler : chiffrées, ou locales au serveur.
 PREFIXES_SURS = ("https://", "http://localhost", "http://127.0.0.1")
 
@@ -54,3 +56,15 @@ def ecrire_rapport_json(chemin: str, rapport: dict[str, Any]) -> None:
     """
     with open(chemin, "w", encoding="utf-8") as fichier:
         json.dump(rapport, fichier, ensure_ascii=False, indent=2, default=str)
+
+
+def afficher_evenement(evenement: Evenement) -> None:
+    """Affiche un événement du journal : heure puis message.
+
+    Rôle : suivi en direct d'une commande longue (écouteur du Journal).
+    Paramètres : evenement — événement du journal.
+    Retour : aucun.
+    Erreurs : aucune.
+    Usages : scripts/concorde_comparer.py, scripts/concorde_montee.py.
+    """
+    print("%s  %s" % (evenement["t"][11:19], evenement["message"]), flush=True)

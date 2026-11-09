@@ -84,8 +84,18 @@ class EcartPhoto(TypedDict):
     apres: str
 
 
-def _requete(connexion: ConnexionSql, sql: str) -> list[tuple[Any, ...]]:
-    """Exécute une requête de lecture ; rend toutes ses lignes."""
+def requete_lecture(
+    connexion: ConnexionSql, sql: str
+) -> list[tuple[Any, ...]]:
+    """Exécute une requête de lecture ; rend toutes ses lignes.
+
+    Rôle : un seul point de lecture SQL pour la montée de version.
+    Paramètres : connexion — session en lecture seule ; sql — requête
+    fixe (aucune valeur venue de l'extérieur).
+    Retour : les lignes lues.
+    Erreurs : psycopg2.Error (table absente, droits).
+    Usages : photo, inventaire.
+    """
     with connexion.cursor() as curseur:
         curseur.execute(sql)
         lignes: list[tuple[Any, ...]] = curseur.fetchall()
@@ -136,7 +146,9 @@ def _codes_comptes(connexion: ConnexionSql) -> dict[tuple[int, int], str]:
     société (schéma inconnu).
     """
     codes: dict[tuple[int, int], str] = {}
-    for ident, code, codes_societes in _requete(connexion, _SQL_COMPTES_PHOTO):
+    for ident, code, codes_societes in requete_lecture(
+        connexion, _SQL_COMPTES_PHOTO
+    ):
         if code:
             codes[(0, ident)] = code
         elif isinstance(codes_societes, dict) and codes_societes:
@@ -176,7 +188,7 @@ def _sections_lignes(
         credit,
         lettrees,
         reste,
-    ) in _requete(connexion, _SQL_LIGNES_PHOTO):
+    ) in requete_lecture(connexion, _SQL_LIGNES_PHOTO):
         code = _code(codes, societe, compte)
         montants = [centimes(debit), centimes(credit)]
         ajouter_valeurs(
@@ -199,16 +211,24 @@ def _sections_pieces(
     connexion: ConnexionSql, sections: dict[str, dict[str, list[int]]]
 ) -> None:
     """Journaux (écritures, lignes, débit, crédit) et analytique."""
-    journaux = dict(_requete(connexion, _SQL_JOURNAUX_PHOTO))
-    for societe, annee, journal, ecritures, lignes, debit, credit in _requete(
-        connexion, _SQL_PIECES_PHOTO
-    ):
+    journaux = dict(requete_lecture(connexion, _SQL_JOURNAUX_PHOTO))
+    for (
+        societe,
+        annee,
+        journal,
+        ecritures,
+        lignes,
+        debit,
+        credit,
+    ) in requete_lecture(connexion, _SQL_PIECES_PHOTO):
         ajouter_valeurs(
             sections["journaux"],
             "s%s|%s|%s" % (societe, annee, journaux.get(journal, journal)),
             [int(ecritures), int(lignes), centimes(debit), centimes(credit)],
         )
-    for compte, nombre, montant in _requete(connexion, _SQL_ANALYTIQUE_PHOTO):
+    for compte, nombre, montant in requete_lecture(
+        connexion, _SQL_ANALYTIQUE_PHOTO
+    ):
         ajouter_valeurs(
             sections["analytique"],
             "a%s" % compte,
@@ -219,7 +239,7 @@ def _sections_pieces(
 def _dates_verrous(connexion: ConnexionSql) -> dict[str, str]:
     """{"s<société>|<colonne>": date ISO ou ""} pour chaque *_lock_date."""
     verrous: dict[str, str] = {}
-    for societe, colonnes in _requete(connexion, _SQL_SOCIETES_PHOTO):
+    for societe, colonnes in requete_lecture(connexion, _SQL_SOCIETES_PHOTO):
         for nom, valeur in colonnes.items():
             if nom.endswith("_lock_date"):
                 verrous["s%s|%s" % (societe, nom)] = str(valeur or "")
@@ -239,6 +259,22 @@ def empreinte_sections(sections: Mapping[str, Mapping[str, str]]) -> str:
     return hashlib.sha256(texte.encode("utf-8")).hexdigest()
 
 
+def version_odoo(connexion: ConnexionSql, base: str) -> str:
+    """Version d'Odoo d'une base (ex. « 14.0.1.3 »).
+
+    Rôle : savoir de quelle version part une montée.
+    Paramètres : connexion — session en lecture seule ; base — nom, pour
+    le message d'erreur.
+    Retour : la version du module base.
+    Erreurs : ErreurPhoto si la base n'est pas une base Odoo.
+    Usages : prendre_photo, inventaire.lire_modules.
+    """
+    version = requete_lecture(connexion, _SQL_VERSION_PHOTO)
+    if not version:
+        raise ErreurPhoto("Base %s : module base absent, pas Odoo." % base)
+    return str(version[0][0])
+
+
 def prendre_photo(connexion: ConnexionSql, base: str) -> PhotoComptable:
     """Photo comptable d'une base Odoo 14 à 18 (lecture seule).
 
@@ -250,9 +286,7 @@ def prendre_photo(connexion: ConnexionSql, base: str) -> PhotoComptable:
     (montant non exact au centime) ; psycopg2.Error (table absente).
     Usages : montée de version (ADR-0010), tests/integration/verifier_photo.
     """
-    version = _requete(connexion, _SQL_VERSION_PHOTO)
-    if not version:
-        raise ErreurPhoto("Base %s : module base absent, pas Odoo." % base)
+    version = version_odoo(connexion, base)
     cumuls: dict[str, dict[str, list[int]]] = {
         section: {} for section in SECTIONS_PHOTO if section != "verrous"
     }
@@ -263,7 +297,7 @@ def prendre_photo(connexion: ConnexionSql, base: str) -> PhotoComptable:
     connexion.rollback()
     return {
         "base": base,
-        "version": str(version[0][0]),
+        "version": version,
         "sections": sections,
         "empreinte": empreinte_sections(sections),
     }

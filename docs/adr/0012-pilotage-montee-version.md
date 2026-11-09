@@ -86,8 +86,14 @@ Mesures du 08/11/2026 :
 - Lecture de la version et des modules installés de la copie.
 - Pour chaque saut, l'état de chaque module est lu dans la table d'OpenUpgrade **du même
   commit figé** que celui qui fera la montée.
-- Couvert = « Done » ou « Nothing to do ». Vide, inconnu ou module Enterprise = **non
-  couvert : bloque**, avec la liste nommée par saut. Le client choisit : migrer par son
+- **Couvert** : « Done » ou « Nothing to do ».
+- **À vérifier** (ne bloque pas seul, figure au rapport) : « Done (partial) », et les
+  modules de localisation `l10n_*` non marqués ou retirés de la liste (données du plan
+  comptable, dont l'effet est contrôlé par la photo comptable au centime). Mesure du
+  08/11/2026 : le module `base` lui-même est « Done (partial) » pour 15 → 16, et la
+  montée 14 → 17 de la CI donne pourtant zéro écart.
+- **Bloquant** : état vide, ou module absent de la liste (sur mesure, OCA ou
+  Enterprise), avec la liste nommée par saut. Le client choisit : migrer par son
   développeur, ou désinstaller avant (arbitrage 5 de l'ADR-0010).
 
 ### 5. Le circuit de l'ADR-0010, piloté par la commande puis par l'écran

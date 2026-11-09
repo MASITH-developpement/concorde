@@ -3,7 +3,7 @@
 Format : [Keep a Changelog](https://keepachangelog.com/fr/1.1.0/), versions sémantiques.
 Le module Odoo porte la même version au format `17.0.X.Y.Z` (`deploy/addons/concorde/__manifest__.py`).
 
-## [Non publiée]
+## [1.9.0] — 2026-11-09
 ### Ajouté
 - **Compléter SIRET et TVA des tiers** (ADR-0013, acceptée le 09/11/2026) :
   bouton « Compléter SIRET et TVA… » sur le constat « Sociétés françaises

@@ -168,12 +168,8 @@ jobs:
           python -m tests.integration.verifier_photo
       - name: Sauvegarde Odoo (.zip), comme celle que donnerait le client
         run: |
-          for nom in premiere fraiche; do
-            curl -sf -X POST -o "$nom.zip" \
-              -F master_pwd=admin -F name="$ODOO_BASE" -F backup_format=zip \
-              "$ODOO_URL/web/database/backup"
-            unzip -l "$nom.zip" | tail -n 1
-          done
+          python -m tests.integration.base_odoo sauvegarder premiere.zip
+          python -m tests.integration.base_odoo sauvegarder fraiche.zip
           docker stop odoo14
       - name: Montée conduite par CONCORDE (étapes 1 à 4)
         run: |
@@ -222,9 +218,8 @@ jobs:
           docker run -d --name odoo17 --network host -e HOST=127.0.0.1 \
             odoo:17.0
           python -m tests.integration.attendre_odoo
-          curl -sf -X POST -o restauration.html \
-            -F master_pwd=admin -F name=concorde_livree -F copy=true \
-            -F backup_file=@livree.zip "$ODOO_URL/web/database/restore"
+          python -m tests.integration.base_odoo restaurer livree.zip \
+            concorde_livree
           python -m scripts.concorde_montee photo concorde_livree livree.json
           if ! python -m scripts.concorde_montee comparer avant.json \
                livree.json > comparaison.txt; then

@@ -61,7 +61,9 @@ def main() -> int:
         else:
             restaurer(chemin, sys.argv[3])
     except FauteXmlRpc as exc:
-        print("::error::Odoo refuse (%s) : %s" % (action, exc.faultString))
+        cause = [ligne for ligne in str(exc.faultString).splitlines() if ligne]
+        for ligne in cause[-4:]:
+            print("::error::Odoo refuse (%s) : %s" % (action, ligne))
         return 1
     if not zipfile.is_zipfile(chemin):
         print("::error::Odoo n'a pas rendu une sauvegarde .zip.")

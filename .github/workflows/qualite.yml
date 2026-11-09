@@ -182,12 +182,14 @@ jobs:
               --racine "$RUNNER_TEMP/montees" \
               --openupgrade "$RUNNER_TEMP/openupgrade" "$@"
           }
-          ident=$(montee creer premiere.zip 17 | tail -n 1)
+          if ! montee creer premiere.zip 17 > creer.log 2>&1; then
+            tail -n 15 creer.log | sed 's/^/::error::creer : /'
+            exit 1
+          fi
+          ident=$(tail -n 1 creer.log)
           echo "MONTEE=$ident" >> "$GITHUB_ENV"
           if ! montee circuit "$ident" > circuit.log 2>&1; then
-            awk '/bloquee|ÉCART|Saut|arrêtée/ && n < 30 {print; n++}' \
-              circuit.log | sed 's/^/::error::/'
-            tail -n 15 circuit.log
+            tail -n 25 circuit.log | sed 's/^/::error::circuit : /'
             exit 1
           fi
           cat circuit.log
@@ -198,14 +200,19 @@ jobs:
               --racine "$RUNNER_TEMP/montees" \
               --openupgrade "$RUNNER_TEMP/openupgrade" "$@"
           }
-          montee feu-vert "$MONTEE" "$ODOO_BASE"
-          if ! montee nouvel-essai "$MONTEE" fraiche.zip > essai.log 2>&1; then
-            awk '/bloquee|ÉCART|Saut|arrêtée/ && n < 30 {print; n++}' \
-              essai.log | sed 's/^/::error::/'
-            tail -n 15 essai.log
+          if ! montee feu-vert "$MONTEE" "$ODOO_BASE" > feu.log 2>&1; then
+            tail -n 15 feu.log | sed 's/^/::error::feu-vert : /'
             exit 1
           fi
-          montee livrer "$MONTEE" | tee livraison.log
+          if ! montee nouvel-essai "$MONTEE" fraiche.zip > essai.log 2>&1; then
+            tail -n 25 essai.log | sed 's/^/::error::nouvel-essai : /'
+            exit 1
+          fi
+          if ! montee livrer "$MONTEE" > livraison.log 2>&1; then
+            tail -n 15 livraison.log | sed 's/^/::error::livrer : /'
+            exit 1
+          fi
+          cat livraison.log
           livre=$(sudo find "$RUNNER_TEMP/montees/$MONTEE/livraison" -name '*.zip')
           sudo cp "$livre" livree.zip
           sudo cp "$RUNNER_TEMP/montees/$MONTEE/photo_avant.json" avant.json

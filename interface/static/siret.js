@@ -16,35 +16,42 @@ async function attendreTache(id, zone) {
   }
 }
 
+const AIDE_DEUX_BASES = "Il faut deux bases où CONCORDE peut écrire : la base à compléter et sa copie de test. "
+  + "Branchez-les dans l'écran Bases (Odoo distant avec sa clé API) ou dans Transferts → Connexions.";
+
+// Deux listes : base à compléter (par défaut celle du sélecteur du haut) et
+// copie de test (par défaut une base dont le nom contient « test »).
+function selecteursBases(sources) {
+  const options = (choisie) => sources.map((s) => el("option", { value: s.id, texte: s.libelle, selected: s.id === choisie }));
+  const enHaut = "base:" + baseCourante();
+  const production = sources.some((s) => s.id === enHaut) ? enHaut : (sources[0] || {}).id;
+  const test = (sources.find((s) => s.id !== production && /test/i.test(s.libelle)) || sources.find((s) => s.id !== production) || {}).id;
+  return [el("select", { name: "production" }, options(production)), el("select", { name: "test" }, options(test))];
+}
+
 async function ouvrirSiret(analyse) {
-  const connexions = (await api("/api/connexions")).filter((c) => c.logiciel === "odoo" && c.connexion_test);
+  const sources = await api("/api/tiers/bases");
   const erreur = el("p", { class: "erreur", role: "alert" });
   const suiviZone = el("div", { id: "suivi-siret" });
-  if (!connexions.length) {
-    return tiroir("Compléter SIRET et TVA", el("p", { class: "aide",
-      texte: "Il faut une connexion Odoo vers la base à compléter, avec sa connexion de test (copie de la base). Ajoutez-les dans Transferts → Connexions, avec leur clé API." }));
+  if (sources.length < 2) {
+    return tiroir("Compléter SIRET et TVA", el("p", { class: "aide", texte: AIDE_DEUX_BASES }));
   }
-  const choix = el("select", {}, connexions.map((c) => el("option", { value: c.id,
-    texte: `${c.libelle} (test : ${libelleConnexionSiret(connexions, c.connexion_test)})` })));
+  const [production, test] = selecteursBases(sources);
   const bouton = el("button", { class: "bouton principal", type: "submit", texte: "Chercher dans l'annuaire des entreprises" });
   const form = el("form", { class: "formulaire" },
     el("p", { class: "aide", texte: "Les tiers signalés sont relus dans la base choisie, puis cherchés dans l'annuaire public de l'État (nom et code postal seulement). SIRET et TVA sont contrôlés par calcul. Rien n'est écrit à cette étape." }),
-    el("label", {}, "Base à compléter", choix), erreur, bouton, suiviZone);
+    el("div", { class: "ligne-champs" }, el("label", {}, "Base à compléter", production), el("label", {}, "Copie de test (écrite d'abord)", test)),
+    erreur, bouton, suiviZone);
   form.addEventListener("submit", async (ev) => {
     ev.preventDefault(); bouton.disabled = true; erreur.textContent = "";
     try {
-      const { id } = await api("/api/siret", { method: "POST", corps: { analyse: analyse.id, connexion: choix.value } });
+      const { id } = await api("/api/siret", { method: "POST", corps: { analyse: analyse.id, production: production.value, test: test.value } });
       const t = await attendreTache(id, suiviZone);
       if (t.statut !== "terminee") throw new Error(t.erreur || "Échec des propositions.");
       afficherPropositions(await api("/api/siret/" + id));
     } catch (e) { erreur.textContent = e.message; bouton.disabled = false; }
   });
   tiroir("Compléter SIRET et TVA — " + analyse.base, form);
-}
-
-function libelleConnexionSiret(connexions, ident) {
-  const c = connexions.find((x) => x.id === ident);
-  return c ? c.libelle : ident;
 }
 
 function ligneCandidate(proposition, candidate, rang) {

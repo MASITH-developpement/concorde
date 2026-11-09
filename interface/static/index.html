@@ -331,9 +331,7 @@
       <h1>Facture électronique des tiers</h1>
       <p class="aide">Pour chaque client et fournisseur de la base, CONCORDE cherche son inscription dans le répertoire public Peppol, où les plateformes agréées publient les adresses de facturation électronique (seul le SIREN est envoyé). « Inscrit » est une preuve ; « non trouvé » veut dire « à vérifier » : sa plateforme peut ne pas publier.</p>
       <form id="form-peppol" class="carte formulaire" autocomplete="off">
-        <div class="ligne-champs">
-          <label>Base <select id="peppol-connexion"></select></label>
-        </div>
+        <div class="ligne-champs" id="peppol-bases"></div>
         <p class="note" id="peppol-note"></p>
         <p class="erreur" id="erreur-peppol" role="alert"></p>
         <button class="bouton principal" type="submit">Vérifier tous les clients et fournisseurs</button>

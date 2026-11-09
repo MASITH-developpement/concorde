@@ -55,11 +55,13 @@ API (JSON ; toute requête qui modifie exige l'en-tête X-Concorde: 1) :
   POST /api/montees {depot, arrivee}
   POST /api/montees/<id>/(circuit|feu-vert|nouvel-essai|livrer)
   Compléter SIRET et TVA (ADR-0013, interface/siret.py) :
-  POST /api/siret {analyse, connexion}   GET /api/siret/<tâche>
+  GET  /api/tiers/bases   (bases où CONCORDE peut écrire : sélecteur et
+       connexions Odoo de Transferts ; pour les deux écrans de tiers)
+  POST /api/siret {analyse, production, test}   GET /api/siret/<tâche>
   POST /api/siret/<tâche>/ecrire {cible, choix, confirmation}
   POST /api/siret/<tâche>/annuler {cible}
   Facture électronique des tiers (ADR-0014, interface/peppol.py) :
-  POST /api/peppol {connexion}   GET /api/peppol/<tâche>   GET …/csv
+  POST /api/peppol {production, test}   GET /api/peppol/<tâche>   GET …/csv
   POST /api/peppol/<tâche>/ecrire {cible, choix, confirmation}
   POST /api/peppol/<tâche>/annuler {cible}
   (suppression / réinitialisation d'une base LOCALE : POST /api/taches avec
@@ -96,6 +98,7 @@ from core.fichier_json import ecrire_json_atomique
 from core.guardian import Guardian
 from core.journal import Journal, duree_texte, nombre_texte
 from core.marceau import Marceau
+from core.migration.injection import CibleOdoo
 from core.odoo_source import (
     ETATS,
     ErreurSource,
@@ -630,6 +633,54 @@ class Bases:
             distant["utilisateur"],
             distant["cle"],
             journal=journal,
+        )
+
+    def acces_ecriture(
+        self, ident: str, classe: type[CibleOdoo] = CibleOdoo
+    ) -> CibleOdoo:
+        """Accès en écriture (API Odoo) à une base, limité par `classe`.
+
+        Rôle : écrire dans une base du sélecteur sans la ressaisir ailleurs
+        (ADR-0013, ADR-0014).
+        Paramètres : ident — id de la base ; classe — accès plus restreint
+        (ex. tiers_odoo.CibleTiers).
+        Retour : l'accès, identifié.
+        Erreurs : ErreurSource (base inconnue, clé supprimée, base du
+        serveur sans identifiants d'écriture) ; ErreurInjection
+        (identification refusée).
+        Usages : interface/tiers.py.
+        """
+        if ident.startswith("sql:"):
+            nom = ident[4:]
+            if nom not in _bases_ecriture_configurees():
+                raise ErreurSource(
+                    "Écriture non configurée pour la base %s du serveur "
+                    "(identifiants CONCORDE_TEST_* dans "
+                    "/etc/concorde/interface.env)." % nom
+                )
+            return classe(
+                os.environ.get("CONCORDE_TEST_URL", "http://127.0.0.1:8017"),
+                nom,
+                os.environ.get("CONCORDE_TEST_USER", "admin"),
+                os.environ["CONCORDE_TEST_MDP"],
+            )
+        with self._verrou:
+            distant = dict(self._distants.get(ident) or {})
+        if not distant:
+            raise ErreurSource(
+                "Base inconnue : %s (un redémarrage oublie les Odoo "
+                "distants : rebranchez-la dans l'écran Bases)." % ident
+            )
+        if not distant.get("cle"):
+            raise ErreurSource(
+                "Clé API supprimée pour « %s » : ressaisissez-la dans "
+                "l'écran Bases." % distant["nom"]
+            )
+        return classe(
+            distant["url"],
+            distant["nom"],
+            distant["utilisateur"],
+            distant["cle"],
         )
 
     def nom(self, ident: str) -> str:
@@ -1532,10 +1583,10 @@ class Application:
         )
         self.montees = montees or EcranMontees(self.journal)
         self.siret = EcranSiret(
-            self.taches, self.transferts.annuaire, self.journal
+            self.taches, self.bases, self.transferts.annuaire, self.journal
         )
         self.peppol = EcranPeppol(
-            self.taches, self.transferts.annuaire, self.journal
+            self.taches, self.bases, self.transferts.annuaire, self.journal
         )
         self.journal.dire("Service CONCORDE démarré", "ok")
 
@@ -1692,6 +1743,10 @@ class Gestionnaire(BaseHTTPRequestHandler):
             if not self._connecte():
                 return self._erreur(401, "Connexion requise.")
             return self._get_montees(chemin)
+        if chemin == "/api/tiers/bases":
+            if not self._connecte():
+                return self._erreur(401, "Connexion requise.")
+            return self._ecran(200, self.app.siret.sources, ERREURS_SIRET)
         if re.fullmatch(r"/api/(siret|peppol)/[\w-]+(/csv)?", chemin):
             if not self._connecte():
                 return self._erreur(401, "Connexion requise.")

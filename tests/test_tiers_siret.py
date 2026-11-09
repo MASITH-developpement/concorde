@@ -29,7 +29,9 @@ from core.tiers_siret import (
 )
 from core.xml_sur import FauteXmlRpc
 from interface import auth
-from interface.serveur import Application, creer_serveur
+from core.migration.injection import CibleOdoo
+from core.odoo_source import ErreurSource
+from interface.serveur import Application, Bases, creer_serveur
 from interface.transferts import ErreurEcran
 from tests.test_interface import MDP, FaussesBases, entete_obligatoire
 
@@ -267,6 +269,10 @@ class TestEcranSiret(unittest.TestCase):
             "odoo", "Albhades production", parametres, self.test
         )["id"]
         self.sans_test = annuaire.ajouter("odoo", "Seule", parametres)["id"]
+        self.couple = {
+            "production": "connexion:" + self.prod,
+            "test": "connexion:" + self.test,
+        }
         for ident in (self.test, self.prod, self.sans_test):
             ecrire_variable(secrets, nom_variable(ident, "cle_api"), "k")
         self.odoo = {self.test: FauxOdoo(), self.prod: FauxOdoo()}
@@ -381,18 +387,32 @@ class TestEcranSiret(unittest.TestCase):
     def test_parcours(self) -> None:
         """Vérifie propositions, essai, feu vert, annulation, et les refus."""
         self.assertIn(
-            "connexion de test",
+            "autre base",
             self.refus(
                 "/api/siret",
-                {"analyse": self.analyse, "connexion": self.sans_test},
+                dict(
+                    self.couple,
+                    analyse=self.analyse,
+                    test=self.couple["production"],
+                ),
+            ),
+        )
+        self.assertIn(
+            "copie de test",
+            self.refus(
+                "/api/siret",
+                {
+                    "analyse": self.analyse,
+                    "production": self.couple["production"],
+                },
             ),
         )
         self.assertIn(
             "Analyse inconnue",
-            self.refus("/api/siret", {"analyse": "x", "connexion": self.prod}),
+            self.refus("/api/siret", dict(self.couple, analyse="x")),
         )
         etat = self.tache(
-            "/api/siret", {"analyse": self.analyse, "connexion": self.prod}
+            "/api/siret", dict(self.couple, analyse=self.analyse)
         )
         self.assertEqual(etat["statut"], "terminee", etat.get("erreur"))
         self.assertEqual(
@@ -480,9 +500,14 @@ class TestEcranSiret(unittest.TestCase):
             "fec", "Fichier", {"dossier": os.path.join(self._tmp.name, "f")}
         )["id"]
         self.assertIn(
-            "connexion Odoo",
+            "base à compléter",
             self.refus(
-                "/api/siret", {"analyse": self.analyse, "connexion": fec}
+                "/api/siret",
+                dict(
+                    self.couple,
+                    analyse=self.analyse,
+                    production="connexion:" + fec,
+                ),
             ),
         )
         with self.assertRaises(ErreurEcran):
@@ -494,9 +519,7 @@ class TestEcranSiret(unittest.TestCase):
             json.dump({"constats": []}, fichier)
         self.assertIn(
             "aucun tiers",
-            self.refus(
-                "/api/siret", {"analyse": self.analyse, "connexion": self.prod}
-            ),
+            self.refus("/api/siret", dict(self.couple, analyse=self.analyse)),
         )
         self.assertIn(
             "pas encore prêts", self.refus("/api/siret/inconnue/ecrire", {})
@@ -506,7 +529,7 @@ class TestEcranSiret(unittest.TestCase):
             "id": ident,
             "action": "siret_proposer",
             "statut": "terminee",
-            "params": {"connexion": self.prod},
+            "params": dict(self.couple),
             "fichiers": [],
         }
         url = "/api/siret/%s/ecrire" % ident
@@ -523,3 +546,120 @@ class TestEcranSiret(unittest.TestCase):
         )
         reponse, _ = self.envoyer("POST", "/api/siret/x/inconnue", {})
         self.assertEqual(reponse.status, 404)
+
+
+class CibleNotee(CibleOdoo):
+    """Accès simulé (sans réseau) : garde les identifiants reçus."""
+
+    def __init__(
+        self, url: str, base: str, utilisateur: str, cle: str
+    ) -> None:
+        """Garde ce que Bases.acces_ecriture lui passe."""
+        self.recu = (url, base, utilisateur, cle)
+
+
+def identifiants_recus(acces: CibleOdoo) -> tuple[str, str, str, str]:
+    """Identifiants gardés par un accès simulé."""
+    if not isinstance(acces, CibleNotee):
+        raise AssertionError("accès simulé attendu")
+    return acces.recu
+
+
+class TestBasesEcriture(unittest.TestCase):
+    """Bases du sélecteur où CONCORDE peut écrire (ADR-0013, ADR-0014)."""
+
+    def test_acces_ecriture(self) -> None:
+        """Vérifie les bases du serveur et les Odoo distants."""
+        bases = Bases()
+        with mock.patch.dict(os.environ, {}, clear=False):
+            os.environ.pop("CONCORDE_TEST_BASE", None)
+            with self.assertRaises(ErreurSource) as contexte:
+                bases.acces_ecriture("sql:testalbhade", CibleNotee)
+            self.assertIn("CONCORDE_TEST", str(contexte.exception))
+        with mock.patch.dict(
+            os.environ,
+            {"CONCORDE_TEST_BASE": "testalbhade", "CONCORDE_TEST_MDP": "m"},
+        ):
+            acces = bases.acces_ecriture("sql:testalbhade", CibleNotee)
+        self.assertEqual(
+            identifiants_recus(acces)[1:], ("testalbhade", "admin", "m")
+        )
+        with self.assertRaises(ErreurSource) as contexte:
+            bases.acces_ecriture("xmlrpc:inconnu", CibleNotee)
+        self.assertIn("rebranchez", str(contexte.exception))
+        bases._distants["xmlrpc:alb"] = {
+            "id": "xmlrpc:alb",
+            "nom": "alb_alpha",
+            "url": "https://albhades.example",
+            "utilisateur": "u",
+            "cle": "",
+        }
+        with self.assertRaises(ErreurSource):
+            bases.acces_ecriture("xmlrpc:alb", CibleNotee)
+        bases._distants["xmlrpc:alb"]["cle"] = "k"
+        acces = bases.acces_ecriture("xmlrpc:alb", CibleNotee)
+        self.assertEqual(
+            identifiants_recus(acces),
+            ("https://albhades.example", "alb_alpha", "u", "k"),
+        )
+
+
+class TestBasesDuSelecteur(TestEcranSiret):
+    """Une base du sélecteur (Odoo distant) choisie comme base à compléter."""
+
+    def test_parcours(self) -> None:
+        """Vérifie la liste des bases et des propositions sur une base."""
+        bases = self.app.bases
+        with mock.patch.object(
+            type(bases),
+            "lister",
+            lambda instance, rafraichir=False: [
+                {
+                    "id": "xmlrpc:alb",
+                    "nom": "alb_alpha",
+                    "libelle": "albhades prod",
+                    "ecriture_ok": True,
+                },
+                {
+                    "id": "sql:autre",
+                    "nom": "autre",
+                    "libelle": "",
+                    "ecriture_ok": False,
+                },
+            ],
+        ), mock.patch.object(
+            type(bases),
+            "acces_ecriture",
+            lambda instance, ident, classe=None: self.odoo[self.prod],
+        ):
+            _, sources = self.envoyer("GET", "/api/tiers/bases")
+            self.assertEqual(
+                sources[0],
+                {"id": "base:xmlrpc:alb", "libelle": "albhades prod"},
+            )
+            self.assertEqual(
+                sorted(source["id"] for source in sources[1:]),
+                sorted(
+                    "connexion:" + ident
+                    for ident in (self.test, self.prod, self.sans_test)
+                ),
+            )
+            etat = self.tache(
+                "/api/siret",
+                {
+                    "analyse": self.analyse,
+                    "production": "base:xmlrpc:alb",
+                    "test": "connexion:" + self.test,
+                },
+            )
+            self.assertEqual(etat["statut"], "terminee", etat.get("erreur"))
+            _, donnees = self.envoyer("GET", "/api/siret/" + etat["id"])
+            self.assertEqual(
+                (donnees["connexion"], donnees["connexion_test"]),
+                ("albhades prod", "Albhades test"),
+            )
+        with self.assertRaises(ErreurEcran):
+            self.app.siret.acces("autre:x")
+
+    def test_refus(self) -> None:
+        """Couverts par l'écran SIRET."""

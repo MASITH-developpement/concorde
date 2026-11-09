@@ -48,9 +48,9 @@ Résultat dans l'écran (par tiers, filtrable) et en CSV, avec un compte par cla
   rien n'est écrit et la cause est donnée.
 - Plusieurs adresses pour un tiers : proposée d'office celle **sans code de routage**
   (SIREN seul) si elle existe ; sinon, choix par Stéphane.
-- Même circuit que l'ADR-0013 : écriture par l'API d'Odoo, d'abord sur la copie de test,
-  feu vert (nom retapé, mêmes choix), fiche déjà renseignée jamais écrasée, trace et
-  annulation.
+- Même circuit que l'ADR-0013 : bases choisies dans la même liste (base à compléter et
+  sa copie de test), écriture par l'API d'Odoo, d'abord sur la copie de test, feu vert
+  (nom retapé, mêmes choix), fiche déjà renseignée jamais écrasée, trace et annulation.
 - Autres ERP : par leur connecteur (ADR-0008) quand il sait écrire un tiers ; aujourd'hui
   seul Odoo le sait.
 

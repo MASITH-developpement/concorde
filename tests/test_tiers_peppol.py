@@ -243,10 +243,13 @@ class TestEcranPeppol(test_tiers_siret.TestEcranSiret):
     def test_parcours(self) -> None:
         """Vérifie la vérification, le CSV, l'essai et le feu vert."""
         self.assertIn(
-            "connexion de test",
-            self.refus("/api/peppol", {"connexion": self.sans_test}),
+            "autre base",
+            self.refus(
+                "/api/peppol",
+                dict(self.couple, test=self.couple["production"]),
+            ),
         )
-        etat = self.tache("/api/peppol", {"connexion": self.prod})
+        etat = self.tache("/api/peppol", dict(self.couple))
         self.assertEqual(etat["statut"], "terminee", etat.get("erreur"))
         self.assertEqual(
             etat["resultat"]["classes"],
@@ -323,7 +326,7 @@ class TestEcranPeppol(test_tiers_siret.TestEcranSiret):
             "id": ident,
             "action": "peppol_verifier",
             "statut": "terminee",
-            "params": {"connexion": self.prod},
+            "params": dict(self.couple),
             "fichiers": [],
         }
         return self.refus(

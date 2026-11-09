@@ -17,7 +17,7 @@ from typing import Any
 
 from core.guardian import Guardian
 from core.journal import Journal
-from core.tiers_odoo import AccesOdoo, CibleTiers
+from core.tiers_odoo import AccesOdoo
 from core.tiers_peppol import (
     ErreurPeppol,
     Verification,
@@ -32,7 +32,7 @@ from interface.tiers import (
     ObjetJson,
     compter_classes,
 )
-from interface.transferts import ErreurEcran, texte_corps
+from interface.transferts import ErreurEcran
 
 # Refus de l'écran Facture électronique, rendus avec leur cause.
 ERREURS_PEPPOL = (*ERREURS_TIERS, ErreurPeppol)
@@ -51,26 +51,27 @@ class EcranPeppol(EcranTiers):
     titre = "facture électronique des tiers"
 
     def lancer_verification(self, corps: Mapping[str, Any]) -> str:
-        """Lance la vérification de tous les tiers d'une connexion Odoo.
+        """Lance la vérification de tous les tiers d'une base.
 
-        Corps : connexion (Odoo, avec une connexion de test). Lève
-        ErreurEcran.
+        Corps : production (base à vérifier et compléter) et test (sa copie
+        de test). Lève ErreurEcran.
         """
-        fiche = self.connexion_avec_test(texte_corps(corps, "connexion"))
+        production, test = self.couple(corps)
         return self.taches.lancer(
             self.action_preparer,
             None,
-            "%s — %s" % (fiche["libelle"], self.titre),
+            "%s — %s" % (self.libelle_source(production), self.titre),
             "",
-            {"connexion": fiche["id"]},
+            {"production": production, "test": test},
         )
 
     def _travail_preparer(
         self, tache: ObjetJson, journal: Journal, guardian: Guardian
     ) -> None:
         """Tâche « peppol_verifier » : tiers lus, répertoire Peppol."""
-        cible = self.connecteur(tache["params"]["connexion"]).cible(CibleTiers)
-        tiers = lire_tiers_facturation(cible)
+        tiers = lire_tiers_facturation(
+            self.acces(tache["params"]["production"])
+        )
         journal.dire(
             "%d clients et fournisseurs à vérifier" % len(tiers), "etape"
         )

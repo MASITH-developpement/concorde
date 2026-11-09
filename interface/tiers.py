@@ -3,11 +3,16 @@
 
 1. préparation (tâche propre à chaque écran) : résultats rangés dans
    « propositions.json », dans le dossier de la tâche ;
-2. essai sur la connexion de test (tâche « <écran>_ecrire », cible test) ;
-3. feu vert : mêmes choix, nom de la connexion retapé, production ;
+2. essai sur la copie de test (tâche « <écran>_ecrire », cible test) ;
+3. feu vert : mêmes choix, nom de la base retapé, production ;
 4. annulation à partir de la trace (tâche « <écran>_annuler »).
 Seule une valeur venue des résultats de la préparation peut être écrite :
 chaque écran vérifie les choix reçus (`choix_valides`).
+
+Bases où écrire (« sources ») : celles du sélecteur de l'interface où
+CONCORDE peut écrire (« base:<id> ») et les connexions Odoo de l'écran
+Transferts (« connexion:<id> »). On choisit la base à compléter et sa
+copie de test, qui doit être une autre base.
 """
 
 import json
@@ -16,18 +21,20 @@ from collections.abc import Mapping
 from typing import TYPE_CHECKING, Any, ClassVar
 
 from core.connecteurs.base import ErreurConnexion
-from core.connecteurs.connexions import Annuaire, FicheConnexion
+from core.connecteurs.connexions import Annuaire
 from core.connecteurs.odoo import ConnecteurOdoo
 from core.connecteurs.secrets import ErreurSecrets
 from core.guardian import Guardian
 from core.journal import Journal
+from core.migration.injection import ErreurInjection
+from core.odoo_source import ErreurSource
 from core.tiers_odoo import AccesOdoo, CibleTiers, annuler
 from interface.transferts import ErreurEcran, texte_corps
 
 if (
     TYPE_CHECKING
 ):  # import seulement pour les types : serveur importe ce module
-    from interface.serveur import Taches
+    from interface.serveur import Bases, Taches
 
 ObjetJson = dict[str, Any]
 CIBLES = ("test", "production")
@@ -38,6 +45,8 @@ ERREURS_TIERS = (
     ErreurEcran,
     ErreurConnexion,
     ErreurSecrets,
+    ErreurSource,
+    ErreurInjection,
     ValueError,
 )
 
@@ -55,10 +64,15 @@ class EcranTiers:
     titre: ClassVar[str]
 
     def __init__(
-        self, taches: "Taches", annuaire: Annuaire, journal: Journal
+        self,
+        taches: "Taches",
+        bases: "Bases",
+        annuaire: Annuaire,
+        journal: Journal,
     ) -> None:
         """Branche les tâches de l'écran."""
         self.taches = taches
+        self.bases = bases
         self.annuaire = annuaire
         self.journal = journal
         taches.travaux[self.action_preparer] = self._travail_preparer
@@ -90,18 +104,69 @@ class EcranTiers:
             raise ErreurEcran("La connexion %s n'est pas un Odoo." % ident)
         return ouvert
 
-    def connexion_avec_test(self, ident: str) -> FicheConnexion:
-        """Connexion Odoo qui a une connexion de test. Lève ErreurEcran."""
-        fiche = self.annuaire.obtenir(ident)
-        if fiche["logiciel"] != ConnecteurOdoo.logiciel:
-            raise ErreurEcran("Choisir une connexion Odoo.")
-        if not fiche["connexion_test"]:
+    def sources(self) -> list[ObjetJson]:
+        """Bases où CONCORDE peut écrire : sélecteur, puis Transferts."""
+        trouvees: list[ObjetJson] = [
+            {
+                "id": "base:" + str(base["id"]),
+                "libelle": str(base.get("libelle") or base["nom"]),
+            }
+            for base in self.bases.lister()
+            if base.get("ecriture_ok")
+        ]
+        for fiche in self.annuaire.lister():
+            if fiche["logiciel"] == ConnecteurOdoo.logiciel:
+                trouvees.append(
+                    {
+                        "id": "connexion:" + fiche["id"],
+                        "libelle": fiche["libelle"],
+                    }
+                )
+        return trouvees
+
+    def libelle_source(self, ident: str) -> str:
+        """Nom affiché d'une base où écrire (son identifiant si inconnue)."""
+        return next(
+            (
+                str(source["libelle"])
+                for source in self.sources()
+                if source["id"] == ident
+            ),
+            ident,
+        )
+
+    def acces(self, ident: str) -> AccesOdoo:
+        """Accès en écriture, réduit à lire et compléter des tiers.
+
+        Lève ErreurEcran (base inconnue), ErreurSource, ErreurConnexion.
+        """
+        genre, _, cle = ident.partition(":")
+        if genre == "base":
+            return self.bases.acces_ecriture(cle, CibleTiers)
+        if genre == "connexion":
+            return self.connecteur(cle).cible(CibleTiers)
+        raise ErreurEcran("Base inconnue : %s" % ident)
+
+    def couple(self, corps: Mapping[str, Any]) -> tuple[str, str]:
+        """(base à compléter, copie de test) choisies. Lève ErreurEcran."""
+        connues = {source["id"] for source in self.sources()}
+        production = texte_corps(corps, "production")
+        test = texte_corps(corps, "test")
+        if production not in connues:
             raise ErreurEcran(
-                "« %s » n'a pas de connexion de test : les écritures passent "
-                "d'abord par la copie de test. Ajoutez-la dans Transferts."
-                % fiche["libelle"]
+                "Choisir la base à compléter parmi celles où CONCORDE peut "
+                "écrire."
             )
-        return fiche
+        if test not in connues:
+            raise ErreurEcran(
+                "Choisir la copie de test : les écritures y passent d'abord."
+            )
+        if test == production:
+            raise ErreurEcran(
+                "La copie de test doit être une autre base que celle à "
+                "compléter."
+            )
+        return production, test
 
     def fichier(self, tache: str, nom: str) -> str:
         """Fichier dans le dossier d'une tâche de préparation."""
@@ -133,29 +198,23 @@ class EcranTiers:
         return tache
 
     def resultats(self, ident: str) -> ObjetJson:
-        """Résultats, connexions et essai sur la copie de test."""
-        tache = self.tache_preparee(ident)
-        fiche = self.annuaire.obtenir(tache["params"]["connexion"])
-        test = self.annuaire.obtenir(str(fiche["connexion_test"]))
+        """Résultats, bases (à compléter et de test), essai sur le test."""
+        parametres = self.tache_preparee(ident)["params"]
         return {
             "tache": ident,
-            "connexion": fiche["libelle"],
-            "connexion_test": test["libelle"],
+            "connexion": self.libelle_source(parametres["production"]),
+            "connexion_test": self.libelle_source(parametres["test"]),
             "propositions": self.lire(self.fichier(ident, NOM_PROPOSITIONS)),
             "essai_test": self.lire(self.fichier(ident, NOM_ESSAI)),
         }
 
     def _cible(self, ident: str, corps: Mapping[str, Any]) -> tuple[str, str]:
-        """(cible, connexion à écrire) d'une demande. Lève ErreurEcran."""
-        tache = self.tache_preparee(ident)
+        """(cible, base à écrire) d'une demande. Lève ErreurEcran."""
+        parametres = self.tache_preparee(ident)["params"]
         cible = texte_corps(corps, "cible")
         if cible not in CIBLES:
             raise ErreurEcran("Cible inconnue : test ou production.")
-        fiche = self.annuaire.obtenir(tache["params"]["connexion"])
-        connexion = (
-            str(fiche["connexion_test"]) if cible == "test" else fiche["id"]
-        )
-        return cible, connexion
+        return cible, str(parametres[cible])
 
     # --- essai, feu vert, annulation -----------------------------------------
     def lancer_ecriture(
@@ -164,12 +223,12 @@ class EcranTiers:
         """Essai sur la copie de test, ou production après feu vert.
 
         Production : mêmes choix que l'essai sur la copie de test, et nom
-        de la connexion de production retapé. Lève ErreurEcran.
+        de la base à compléter retapé. Lève ErreurEcran.
         """
-        cible, connexion = self._cible(ident, corps)
+        cible, source = self._cible(ident, corps)
         choix = self.choix_valides(ident, corps.get("choix"))
-        fiche = self.annuaire.obtenir(
-            self.tache_preparee(ident)["params"]["connexion"]
+        nom_production = self.libelle_source(
+            self.tache_preparee(ident)["params"]["production"]
         )
         if cible == "production":
             essai = self.lire(self.fichier(ident, NOM_ESSAI))
@@ -178,18 +237,18 @@ class EcranTiers:
                     "Feu vert impossible : faire d'abord l'essai sur la copie "
                     "de test avec exactement les mêmes choix."
                 )
-            if texte_corps(corps, "confirmation") != fiche["libelle"]:
+            if texte_corps(corps, "confirmation") != nom_production:
                 raise ErreurEcran(
-                    "Nom de la connexion mal retapé : rien n'est écrit."
+                    "Nom de la base mal retapé : rien n'est écrit."
                 )
         return self.taches.lancer(
             self.prefixe + "_ecrire",
             None,
-            "%s — %s (%s)" % (fiche["libelle"], self.titre, cible),
+            "%s — %s (%s)" % (nom_production, self.titre, cible),
             "",
             {
                 "propositions": ident,
-                "connexion": connexion,
+                "source": source,
                 "cible": cible,
                 "choix": choix,
                 "par": "session de l'interface depuis %s" % ip,
@@ -201,9 +260,9 @@ class EcranTiers:
     ) -> None:
         """Tâche « <écran>_ecrire » : écriture tracée, bilan."""
         parametres = tache["params"]
-        libelle = self.annuaire.obtenir(parametres["connexion"])["libelle"]
+        libelle = self.libelle_source(parametres["source"])
         bilan = self.ecrire_choix(
-            self.connecteur(parametres["connexion"]).cible(CibleTiers),
+            self.acces(parametres["source"]),
             parametres["choix"],
             libelle,
             self.fichier(
@@ -246,16 +305,16 @@ class EcranTiers:
 
         Lève ErreurEcran.
         """
-        cible, connexion = self._cible(ident, corps)
+        cible, source = self._cible(ident, corps)
         if not os.path.isfile(self.fichier(ident, "trace-%s.jsonl" % cible)):
             raise ErreurEcran("Rien à annuler : aucune écriture tracée.")
-        libelle = self.annuaire.obtenir(connexion)["libelle"]
+        libelle = self.libelle_source(source)
         return self.taches.lancer(
             self.prefixe + "_annuler",
             None,
             "%s — annulation %s (%s)" % (libelle, self.titre, cible),
             "",
-            {"propositions": ident, "connexion": connexion, "cible": cible},
+            {"propositions": ident, "source": source, "cible": cible},
         )
 
     def _travail_annuler(
@@ -264,7 +323,7 @@ class EcranTiers:
         """Tâche « <écran>_annuler » : anciennes valeurs remises."""
         parametres = tache["params"]
         bilan = annuler(
-            self.connecteur(parametres["connexion"]).cible(CibleTiers),
+            self.acces(parametres["source"]),
             self.fichier(
                 parametres["propositions"],
                 "trace-%s.jsonl" % parametres["cible"],

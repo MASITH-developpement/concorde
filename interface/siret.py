@@ -14,7 +14,7 @@ from typing import Any
 
 from core.guardian import Guardian
 from core.journal import Journal
-from core.tiers_odoo import AccesOdoo, CibleTiers
+from core.tiers_odoo import AccesOdoo
 from core.tiers_siret import (
     Choix,
     ErreurSiret,
@@ -48,8 +48,8 @@ class EcranSiret(EcranTiers):
     def lancer_propositions(self, corps: Mapping[str, Any]) -> str:
         """Lance les propositions pour le constat d'une analyse.
 
-        Corps : analyse (tâche d'analyse terminée), connexion (Odoo, avec
-        une connexion de test). Lève ErreurEcran.
+        Corps : analyse (tâche d'analyse terminée), production (base à
+        compléter) et test (sa copie de test). Lève ErreurEcran.
         """
         analyse = texte_corps(corps, "analyse")
         rapport = self.taches.rapport(analyse)
@@ -69,15 +69,16 @@ class EcranSiret(EcranTiers):
             raise ErreurEcran(
                 "Cette analyse ne signale aucun tiers à compléter."
             )
-        fiche = self.connexion_avec_test(texte_corps(corps, "connexion"))
+        production, test = self.couple(corps)
         return self.taches.lancer(
             self.action_preparer,
             None,
-            "%s — %s" % (fiche["libelle"], self.titre),
+            "%s — %s" % (self.libelle_source(production), self.titre),
             "",
             {
                 "analyse": analyse,
-                "connexion": fiche["id"],
+                "production": production,
+                "test": test,
                 "identifiants": identifiants_constat(constat["elements"]),
             },
         )
@@ -87,8 +88,9 @@ class EcranSiret(EcranTiers):
     ) -> None:
         """Tâche « siret_proposer » : tiers relus, annuaire, contrôles."""
         parametres = tache["params"]
-        cible = self.connecteur(parametres["connexion"]).cible(CibleTiers)
-        tiers = lire_tiers(cible, parametres["identifiants"])
+        tiers = lire_tiers(
+            self.acces(parametres["production"]), parametres["identifiants"]
+        )
         journal.dire(
             "%d tiers à compléter sur %d signalés (les autres le sont déjà)"
             % (len(tiers), len(parametres["identifiants"])),

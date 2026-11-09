@@ -7,12 +7,13 @@
 const CLASSES_PEPPOL = { inscrit: "Inscrit", non_trouve: "Non trouvé — à vérifier", sans_siren: "Sans SIREN" };
 
 async function chargerEcranPeppol() {
-  const connexions = (await api("/api/connexions")).filter((c) => c.logiciel === "odoo" && c.connexion_test);
-  const choix = $("#peppol-connexion");
-  choix.replaceChildren(...connexions.map((c) => el("option", { value: c.id, texte: c.libelle })));
-  $("#form-peppol button").disabled = !connexions.length;
-  $("#peppol-note").textContent = connexions.length ? ""
-    : "Il faut une connexion Odoo vers la base, avec sa connexion de test (copie). Ajoutez-les dans Transferts → Connexions, avec leur clé API.";
+  let sources = [];
+  try { sources = await api("/api/tiers/bases"); } catch (e) { $("#erreur-peppol").textContent = e.message; return; }
+  const [production, test] = selecteursBases(sources);
+  $("#peppol-bases").replaceChildren(el("label", {}, "Base à vérifier et compléter", production),
+    el("label", {}, "Copie de test (écrite d'abord)", test));
+  $("#form-peppol button").disabled = sources.length < 2;
+  $("#peppol-note").textContent = sources.length < 2 ? AIDE_DEUX_BASES : "";
 }
 
 document.getElementById("form-peppol").addEventListener("submit", async (ev) => {
@@ -21,7 +22,8 @@ document.getElementById("form-peppol").addEventListener("submit", async (ev) => 
   const erreur = $("#erreur-peppol");
   erreur.textContent = ""; bouton.disabled = true;
   try {
-    const { id } = await api("/api/peppol", { method: "POST", corps: { connexion: $("#peppol-connexion").value } });
+    const { id } = await api("/api/peppol", { method: "POST", corps: {
+      production: $("#peppol-bases select[name=production]").value, test: $("#peppol-bases select[name=test]").value } });
     const t = await attendreTache(id, $("#suivi-peppol"));
     if (t.statut !== "terminee") throw new Error(t.erreur || "Échec de la vérification.");
     afficherVerification(await api("/api/peppol/" + id));

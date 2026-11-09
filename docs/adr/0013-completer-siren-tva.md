@@ -50,10 +50,13 @@ choisir » demandent de choisir la bonne candidate ; les « introuvables » rest
 compléter dans Odoo.
 
 ### 4. Écriture par l'API Odoo, copie de test d'abord (arbitrage 4)
-- La base est une **connexion Odoo** de l'écran Transferts (ADR-0011) : adresse, base,
-  utilisateur, clé API saisie en masqué. Sa **connexion de test** (ex. `testalbhade`)
-  reçoit d'abord les mêmes écritures ; puis **feu vert**, nom de la connexion retapé,
-  pour la production.
+- On choisit **la base à compléter** et **sa copie de test** parmi les bases où CONCORDE
+  peut écrire : celles du sélecteur de l'interface (Odoo distant branché avec sa clé
+  API, ou base du serveur dont les identifiants d'écriture sont configurés) et les
+  connexions Odoo de l'écran Transferts. La copie de test (ex. `testalbhade`) reçoit
+  d'abord les mêmes écritures ; puis **feu vert**, nom de la base retapé, pour la
+  production. *Mis à jour le 09/11/2026 : au départ, seules les connexions de
+  Transferts étaient proposées, ce qui obligeait à ressaisir une base déjà branchée.*
 - Toujours par l'API d'Odoo (ADR-0001), jamais en SQL, et seulement trois champs de
   `res.partner` : le SIRET dans `siret` s'il existe (localisation française), sinon dans
   `company_registry`, et la TVA dans `vat` (Odoo refait son propre contrôle).

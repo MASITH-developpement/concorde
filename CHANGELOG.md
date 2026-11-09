@@ -3,6 +3,17 @@
 Format : [Keep a Changelog](https://keepachangelog.com/fr/1.1.0/), versions sémantiques.
 Le module Odoo porte la même version au format `17.0.X.Y.Z` (`deploy/addons/concorde/__manifest__.py`).
 
+## [Non publiée]
+### Corrigé
+- « Facture électronique » et « Compléter SIRET et TVA » ne proposaient que
+  les connexions de l'écran Transferts : une base déjà branchée dans le
+  sélecteur (ex. `albhades prod`) devait être ressaisie, et la liste restait
+  vide. Ils proposent maintenant toutes les bases où CONCORDE peut écrire
+  (sélecteur et Transferts) : on choisit la base à compléter et sa copie de
+  test. `Bases.acces_ecriture`, route `GET /api/tiers/bases`.
+- Écran Facture électronique : plus d'erreur non gérée dans la console
+  quand la session a expiré.
+
 ## [1.10.0] — 2026-11-09
 ### Ajouté
 - **Facture électronique des tiers** (ADR-0014, acceptée le 09/11/2026) :

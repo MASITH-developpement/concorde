@@ -13,7 +13,7 @@ from typing import Any
 from core.journal import Journal
 from core.odoo_source import SourceXmlRpcOdoo17
 from interface import auth
-from interface.serveur import Application, Bases, creer_serveur
+from interface.serveur import Application, Bases, creer_serveur, lire_version
 from tests.outils import FauxCommun, FauxObjet
 
 MDP = "mot-de-passe-de-test"
@@ -197,6 +197,18 @@ class TestHttp(unittest.TestCase):
             entete_obligatoire(r, "Content-Security-Policy"),
         )
         self.assertEqual(r.getheader("X-Frame-Options"), "DENY")
+
+    def test_version_affichee(self) -> None:
+        """Vérifie la version : donnée à une session ouverte seulement."""
+        _, brut = self.requete("GET", "/api/etat")
+        self.assertEqual(
+            json.loads(brut), {"connecte": False, "version": None}
+        )
+        _, brut = self.requete("GET", "/api/etat", cookie=self.connecter())
+        with open("VERSION", encoding="utf-8") as fichier:
+            attendue = fichier.read().strip()
+        self.assertEqual(json.loads(brut)["version"], attendue)
+        self.assertEqual(lire_version("/inexistant/VERSION"), "inconnue")
 
     def test_api_protegee(self) -> None:
         """Vérifie que l'API refuse les requêtes sans session valide."""

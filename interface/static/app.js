@@ -100,8 +100,9 @@ function afficherConnexion() {
 }
 
 async function demarrer() {
-  const { connecte } = await api("/api/etat");
+  const { connecte, version } = await api("/api/etat");
   if (!connecte) return afficherConnexion();
+  $("#version-concorde").textContent = "version " + version;
   $("#ecran-connexion").hidden = true;
   $("#ecran-app").hidden = false;
   await chargerBases();

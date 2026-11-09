@@ -125,6 +125,27 @@ Travail = Callable[[ObjetJson, Journal, Guardian], None]
 SourceOdoo = SourceSqlOdoo17 | SourceXmlRpcOdoo17
 
 STATIQUE = os.path.join(os.path.dirname(os.path.abspath(__file__)), "static")
+
+
+def lire_version(chemin: str) -> str:
+    """Version publiée de CONCORDE (fichier VERSION), affichée à l'écran.
+
+    Rôle : savoir d'un coup d'œil quelle version tourne.
+    Paramètres : chemin — fichier VERSION à la racine du dépôt.
+    Retour : la version (« 1.9.1 ») ; « inconnue » si le fichier manque.
+    Erreurs : aucune.
+    Usages : VERSION_CONCORDE (au démarrage du service), tests.
+    """
+    try:
+        with open(chemin, encoding="utf-8") as fichier:
+            return fichier.read().strip() or "inconnue"
+    except OSError:
+        return "inconnue"
+
+
+VERSION_CONCORDE = lire_version(
+    os.path.join(os.path.dirname(os.path.dirname(STATIQUE)), "VERSION")
+)
 COOKIE = "concorde_session"
 CORPS_MAX = 64 * 1024
 TACHES_SIMULTANEES = 2
@@ -1640,7 +1661,15 @@ class Gestionnaire(BaseHTTPRequestHandler):
         if not chemin.startswith("/api/"):
             return self._statique(chemin)
         if chemin == "/api/etat":
-            return self._json(200, {"connecte": self._connecte()})
+            connecte = self._connecte()
+            # La version n'est donnée qu'à une session ouverte.
+            return self._json(
+                200,
+                {
+                    "connecte": connecte,
+                    "version": VERSION_CONCORDE if connecte else None,
+                },
+            )
         if chemin.startswith(
             ("/api/logiciels", "/api/connexions", "/api/transferts")
         ):

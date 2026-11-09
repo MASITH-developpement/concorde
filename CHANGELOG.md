@@ -4,6 +4,10 @@ Format : [Keep a Changelog](https://keepachangelog.com/fr/1.1.0/), versions sém
 Le module Odoo porte la même version au format `17.0.X.Y.Z` (`deploy/addons/concorde/__manifest__.py`).
 
 ## [1.9.1] — 2026-11-09
+### Ajouté
+- La version de CONCORDE s'affiche sous son nom, dans le menu (« version
+  1.9.1 »), à la place de l'ancien sous-titre « Odoo 17 ». Elle n'est
+  donnée qu'à une session ouverte.
 ### Corrigé
 - Service de montée : le volume chiffré était monté dans l'espace privé du
   service (option systemd `PrivateTmp`), invisible du serveur et donc de

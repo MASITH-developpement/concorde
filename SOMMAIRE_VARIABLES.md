@@ -230,6 +230,7 @@ Avant d'en créer une, vérifier (casse ignorée) qu'elle n'existe pas déjà.
 | `arrivee` | `core/montee_version/inventaire.py`, `core/montee_version/montee.py`, `core/montee_version/openupgrade.py`, `scripts/concorde_montee.py` | Version d'Odoo voulue à la fin de la montée |
 | `Atelier` | `tests/test_montee_pilotee.py` | Classe de test : montée simulée |
 | `attendreTache` | `interface/static/siret.js` | Attend la fin d'une tâche |
+| `attendue` | `tests/test_interface.py` | Version attendue |
 | `autres` | `tests/test_montee_pilotee.py` | Autres arguments du lanceur |
 | `base_client` | `core/montee_version/montee.py` | Nom de la base chez le client (à retaper au feu vert) |
 | `bavard` | `tests/test_montee_pilotee.py` | Lanceur simulé qui rend du texte |
@@ -284,6 +285,7 @@ Avant d'en créer une, vérifier (casse ignorée) qu'elle n'existe pas déjà.
 | `complet` | `core/montee_version/sauvegarde.py` | Chemin complet d'une pièce jointe |
 | `COMPTES_MONTEE` | `tests/test_montee_pilotee.py` | Comptes de la base simulée |
 | `conduite` | `scripts/concorde_montee.py`, `tests/test_montee_pilotee.py` | Montée conduite |
+| `connecte` | `interface/serveur.py` | Session ouverte |
 | `connexion_fec` | `tests/test_ecran_transferts.py` | Méthode de test : ajoute une connexion FEC |
 | `CONSTAT_TIERS` | `interface/siret.py` | Code du constat des tiers sans SIREN ni TVA |
 | `conteneur` | `core/montee_version/montee.py` | Nom d'un conteneur Odoo de saut |
@@ -455,6 +457,7 @@ Avant d'en créer une, vérifier (casse ignorée) qu'elle n'existe pas déjà.
 | `lire_demande` | `core/montee_version/demandes.py` | Routine : relit et vérifie une demande |
 | `lire_modules` | `core/montee_version/inventaire.py` | Routine : version et modules installés d'une base |
 | `lire_tiers` | `core/tiers_siret.py` | Routine : tiers relus, déjà complétés écartés |
+| `lire_version` | `interface/serveur.py` | Routine : version publiée (fichier VERSION) |
 | `liste_sauts` | `core/montee_version/inventaire.py` | Sauts de l'inventaire |
 | `listeModules` | `interface/static/montees.js` | Liste de modules d'un saut |
 | `lister_transferts` | `interface/transferts.py` | Méthode : transferts enregistrés, plus récent d'abord |
@@ -1702,6 +1705,7 @@ Avant d'en créer une, vérifier (casse ignorée) qu'elle n'existe pas déjà.
 | `vers` | `core/montee_version/inventaire.py` | Version visée d'un saut |
 | `version` | `core/odoo_source.py`, `core/connecteurs/base.py` | Version du module base lue en SQL (`_version`) ; aussi : version d'API ou de format lue au test (connecteurs/base) |
 | `version_attendue` | `injectors/socle_odoo.py` | Préfixe de version Odoo attendu (ex. « 17 ») |
+| `VERSION_CONCORDE` | `interface/serveur.py` | Version affichée sous le nom CONCORDE |
 | `version_majeure` | `core/montee_version/openupgrade.py` | Routine : numéro majeur d'une version d'Odoo |
 | `VERSION_MAX` | `core/montee_version/openupgrade.py` | Version d'Odoo la plus haute prise en charge |
 | `VERSION_MIN` | `core/montee_version/openupgrade.py` | Version d'Odoo la plus basse prise en charge |

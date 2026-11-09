@@ -168,7 +168,13 @@ jobs:
           python -m tests.integration.verifier_photo
       - name: Sauvegarde Odoo (.zip), comme celle que donnerait le client
         run: |
-          python -m tests.integration.base_odoo sauvegarder premiere.zip
+          if ! python -m tests.integration.base_odoo sauvegarder premiere.zip; then
+            docker exec -e PGPASSWORD=odoo odoo14 pg_dump -h 127.0.0.1 \
+              -U odoo --no-owner -f /tmp/diag.sql "$ODOO_BASE" 2>&1 \
+              | tail -n 5 | sed 's/^/::error::pg_dump : /'
+            docker exec odoo14 pg_dump --version | sed 's/^/::error::/'
+            exit 1
+          fi
           python -m tests.integration.base_odoo sauvegarder fraiche.zip
           docker stop odoo14
       - name: Montée conduite par CONCORDE (étapes 1 à 4)

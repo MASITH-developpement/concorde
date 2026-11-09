@@ -23,6 +23,7 @@ Avant d'en créer une, vérifier (casse ignorée) qu'elle n'existe pas déjà.
 | `_bilan_etape` | `deploy/addons/concorde/wizard/concorde_import_wizard.py` | Routine : dict produit par une étape du pipeline |
 | `_BLOC` | `interface/transferts.py` | Taille d'un bloc de réception (64 Kio) |
 | `_bloquer` | `core/connecteurs/transfert.py` | Routine : arrête une destination à une étape, motif au journal |
+| `_brut` | `tests/test_azalplus_documents.py` | Doublure de test : le corps de la réponse préparée |
 | `_centimes_base` | `core/migration/injection.py` | Montant SQL en euros -> centimes (remplace la fonction locale `c`) |
 | `_centimes_ou_rien` | `core/migration/filtres.py` | Routine : montant en euros -> centimes, ou None |
 | `_champs_peppol` | `core/tiers_peppol.py` | Routine : champs Peppol de la base |
@@ -31,6 +32,7 @@ Avant d'en créer une, vérifier (casse ignorée) qu'elle n'existe pas déjà.
 | `_chemin_fec` | `core/connecteurs/fec.py` | Méthode de ConnecteurFec : chemin du FEC d'une référence |
 | `_chemins_cible_feuille` | `core/mapping.py` | Routine : chemins candidats d'une cible de relation (absolue ou relative) |
 | `_cible` | `core/connecteurs/odoo.py` | Méthode de ConnecteurOdoo : cible d'écriture |
+| `_cle` | `core/azalplus_documents.py` | Attribut de l'émetteur : la clé d'API d'AzalPlus (jamais affichée) |
 | `_codes_html` | `deploy/addons/concorde/wizard/concorde_import_wizard.py` | Routine : liste de codes de comptes échappée (au plus 30) |
 | `_colonne_entete_unique` | `core/mapping.py` | Routine : colonne unique d'un intitulé d'en-tête, ErreurMapping si ambiguë |
 | `_colonnes_reconnues` | `core/xlsx_vers_fec.py` | Reconnaît les colonnes (synonymes) d'une ligne candidate à l'en-tête |
@@ -48,6 +50,8 @@ Avant d'en créer une, vérifier (casse ignorée) qu'elle n'existe pas déjà.
 | `_continue_le_bloc` | `core/yaml_min.py` | Routine : la ligne continue-t-elle le bloc (erreur si trop indentée) |
 | `_cookie_session` | `interface/serveur.py` | Routine : en-tête Set-Cookie de session (None = effacement) |
 | `_corps` | `tests/test_connecteurs.py` | Corps d'une réponse simulée |
+| `_corps_devis` | `core/azalplus_documents.py` | Méthode de l'émetteur : le devis demandé (sans numéro ni total) |
+| `_corps_multipart` | `core/azalplus_documents.py` | Routine : corps multipart d'un dépôt de fichier, et son type |
 | `_couche_superflue` | `deploy/addons/concorde/wizard/concorde_import_wizard.py` | Compteur (non utilisé) des couches base64 en trop retirées par `_lire_binaire`, 3 au maximum |
 | `_creer` | `tests/test_connecteurs.py` | Méthode de test : création d'une écriture simulée |
 | `_creer_fiche_erreur` | `deploy/addons/concorde/wizard/concorde_import_wizard.py` | Routine : crée la fiche d'import en erreur et rend son action |
@@ -58,13 +62,17 @@ Avant d'en créer une, vérifier (casse ignorée) qu'elle n'existe pas déjà.
 | `_decouper_liste_en_ligne` | `core/yaml_min.py` | Routine : éléments d'une liste en ligne [a, b] |
 | `_decrire` | `interface/transferts.py` | Méthode : description d'une connexion pour l'écran (sans secret) |
 | `_DEMANDE` | `core/montee_version/demandes.py` | Nom de fichier d'une demande |
+| `_deposer_fichier` | `core/azalplus_documents.py` | Méthode de l'émetteur : dépose une pièce dans la GED d'AzalPlus |
+| `_deposer_rapport` | `core/azalplus_documents.py` | Méthode de l'émetteur : range le rapport chez le client |
 | `_depot` | `interface/transferts.py` | Méthode : fiche du dernier FEC déposé |
 | `_derniere_empreinte_valide` | `core/guardian.py` | Méthode partagée : recalcule la chaîne d'audit, None si un maillon est altéré |
 | `_description_sql` | `interface/serveur.py` | Méthode de Bases : fiche d'une base du serveur |
+| `_dire` | `scripts/concorde_azalplus.py` | Routine : une ligne de rapport alignée |
 | `_disposition_piece_jointe` | `interface/serveur.py` | Routine : valeur de l'en-tête Content-Disposition |
 | `_DOC_OFFICE` | `core/xlsx_ecrire.py` | Espace de noms des relations officeDocument |
 | `_docker` | `core/montee_version/montee.py` | Méthode : lance docker |
 | `_Domaine` | `stubs/odoo/models.pyi` | Type d'un domaine de recherche Odoo (stub) |
+| `_donnees` | `core/azalplus_documents.py` | Routine : les enregistrements d'une réponse de liste d'AzalPlus |
 | `_dossier` | `core/connecteurs/transfert.py` | Routine : dossier d'un transfert |
 | `_ecran` | `interface/serveur.py` | Routine : exécute une action de l'écran Transferts, refus en HTTP 400 |
 | `_ecrire_csv` | `core/export_odoo.py` | Routine partagée : CSV CRLF préfixé du BOM UTF-8 |
@@ -72,8 +80,11 @@ Avant d'en créer une, vérifier (casse ignorée) qu'elle n'existe pas déjà.
 | `_ecritures_de` | `core/connecteurs/pennylane.py` | Méthode Pennylane : écritures répondant à des filtres |
 | `_effacer_image` | `core/montee_version/montee.py` | Méthode : efface les images d'un saut |
 | `_Element` | `core/demat.py` | TypeVar : élément d'une liste découpée par `_lots` |
+| `_emettre` | `scripts/concorde_azalplus.py` | Routine : rejoue la demande pour un transfert abouti |
+| `_emettre_vers_azalplus` | `core/connecteurs/transfert.py` | Routine : demande le devis et le rapport du transfert abouti |
 | `_empreinte_maillon` | `core/guardian.py` | Routine partagée : empreinte SHA-256 d'un maillon chaînée à la précédente |
 | `_encoder_fec` | `core/xlsx_vers_fec.py` | Sérialise en-tête + lignes FEC en UTF-8 |
+| `_enregistrement` | `core/azalplus_documents.py` | Routine : l'enregistrement d'une réponse de création d'AzalPlus |
 | `_enregistrer_rapport` | `interface/serveur.py` | Méthode de Gestionnaire : POST /api/rapport |
 | `_ENTETE_XML` | `core/xlsx_ecrire.py` | Déclaration XML commune aux parties du classeur |
 | `_entetes` | `core/connecteurs/http_json.py`, `tests/test_connecteurs.py` | En-têtes HTTP ajoutés à chaque requête |
@@ -105,6 +116,7 @@ Avant d'en créer une, vérifier (casse ignorée) qu'elle n'existe pas déjà.
 | `_identifiants` | `tests/outils.py` | Paramètres ignorés de `FauxCommun.authenticate` |
 | `_ids_par_code` | `injectors/socle_odoo.py` | {code: id} d'un modèle Odoo pour une liste de codes |
 | `_image_saut` | `core/montee_version/montee.py` | Méthode : image Odoo d'un saut, avec openupgradelib |
+| `_inscrire` | `core/azalplus_documents.py` | Méthode de l'émetteur : inscrit l'émission au registre |
 | `_jeton` | `core/connecteurs/http_json.py` | Jeton Bearer, gardé en mémoire seulement |
 | `_JETON_DEPOT` | `interface/montees.py` | Forme du nom d'une sauvegarde déposée |
 | `_JETON_TABLE` | `interface/transferts.py` | Forme du jeton d'une table reçue (32 hex) |
@@ -130,6 +142,7 @@ Avant d'en créer une, vérifier (casse ignorée) qu'elle n'existe pas déjà.
 | `_lire_parametres` | `scripts/concorde_connexion.py` | Routine : paires « nom=valeur » de la ligne de commande -> dict |
 | `_lire_partie` | `core/mapping.py` | Routine : lit une partie XML de l'archive, ErreurMapping si illisible |
 | `_lire_rangs` | `core/migration/injection.py` | Routine : requête SQL de relecture du lot |
+| `_lire_registre` | `core/azalplus_documents.py` | Routine : les missions déjà émises ({} si aucun registre) |
 | `_lire_societe` | `core/odoo_source.py` | Routine : lecture XML-RPC de champs de la société (societe_info, verrous) |
 | `_lire_table` | `core/yaml_min.py` | Routine : lit une table YAML |
 | `_liste_textes` | `core/migration/filtres.py` | Routine : critère liste ou texte à virgules -> liste de textes |
@@ -142,6 +155,7 @@ Avant d'en créer une, vérifier (casse ignorée) qu'elle n'existe pas déjà.
 | `_motif_erreur` | `interface/serveur.py` | Routine : texte « Type : message » d'une exception |
 | `_NOM_VALIDE` | `core/connecteurs/secrets.py` | Motif d'un nom de variable de secret (majuscules) |
 | `_noms_bases_locales` | `interface/serveur.py` | Routine : noms des bases du serveur (SQL) |
+| `_NON_CHIFFRE` | `core/azalplus_documents.py` | Motif des caractères retirés d'un SIREN |
 | `_NOTE_FUSION` | `core/montee_version/openupgrade.py` | Note « Merged into » / « Renamed to » |
 | `_OPENPYXL_DISPONIBLE` | `core/xlsx_vers_fec.py` | Vrai si openpyxl est importable |
 | `_options` | `tests/test_assistant_import.py` | Paramètres ignorés de `champ_bouchon` |
@@ -149,7 +163,7 @@ Avant d'en créer une, vérifier (casse ignorée) qu'elle n'existe pas déjà.
 | `_ouvreur_https` | `core/marceau.py` | Ouvreur d'URL limité au schéma https |
 | `_ouvrir` | `core/connecteurs/http_json.py` | Fabrique de connexion HTTP du client |
 | `_paire_mapping` | `core/mapping.py` | Routine : paire (compte Quadra, compte Odoo) validée |
-| `_Parametres` | `core/guardian.py` | ParamSpec des arguments de l'étape enveloppée |
+| `_Parametres` | `core/guardian.py`, `tests/test_azalplus_documents.py` | ParamSpec des arguments de l'étape enveloppée |
 | `_parametres_sql` | `core/connecteurs/azalplus.py` | Méthode d'AzalPlus : entreprise, société et statuts des requêtes |
 | `_parties` | `deploy/addons/concorde/wizard/concorde_import_wizard.py` | Colonnes de la ligne FEC, inutilisées lors des correspondances |
 | `_perimetre` | `core/connecteurs/transfert.py` | Routine : période d'une demande, en dates |
@@ -165,17 +179,21 @@ Avant d'en créer une, vérifier (casse ignorée) qu'elle n'existe pas déjà.
 | `_psql` | `core/montee_version/montee.py` | Méthode : outil PostgreSQL dans le conteneur jetable |
 | `_publication` | `core/montee_version/demandes.py` | Méthode : republie une montée pendant un bloc |
 | `_quand_borne` | `core/rapport_jour.py` | Borne un horodatage ISO à la seconde (champ « quand ») |
+| `_quantite` | `core/azalplus_documents.py` | Méthode de l'émetteur : quantité d'une ligne (forfait ou mesure) |
 | `_racine` | `tests/test_mapping.py` | Paramètre ignoré (racine XML) d'un lecteur simulé |
 | `_rang` | `core/tiers_siret.py` | Routine : ordre d'affichage des candidates |
 | `_reecrire` | `core/connecteurs/secrets.py` | Routine : réécriture atomique du fichier de secrets, en 600 |
 | `_refus` | `core/connecteurs/pennylane.py` | Méthode Pennylane : motifs de refus et comptes uniques |
+| `_repondre` | `tests/test_azalplus_documents.py` | Doublure de test : la réponse d'AzalPlus pour un appel |
 | `_requete` | `tests/test_injection.py`, `tests/test_connecteurs.py` | Paramètres ignorés de `CurseurRelecture.execute` |
 | `_Resultat` | `core/guardian.py` | TypeVar du résultat de l'étape enveloppée |
 | `_retirer_commentaire` | `core/yaml_min.py` | Routine : retire le commentaire de fin de ligne (hors guillemets) |
 | `_revoquer_cle` | `interface/serveur.py` | Méthode de Gestionnaire : POST /api/cles/revoquer |
+| `_rien` | `core/azalplus_documents.py` | Méthode de l'émetteur : une émission qui n'a pas eu lieu, avec son motif |
 | `_sauver` | `core/connecteurs/connexions.py`, `core/connecteurs/transfert.py` | Méthode de l'annuaire / routine du transfert : écriture du fichier JSON |
 | `_SCHEMAS_OPENXML` | `core/xlsx_ecrire.py` | Préfixe d'URL des espaces de noms Office Open XML |
 | `_secrets` | `core/connecteurs/base.py` | Secrets d'un connecteur, gardés en mémoire seulement |
+| `_separateur` | `tests/test_azalplus_documents.py` | Doublure de test : le séparateur de la chaîne de requête, ignoré |
 | `_separer_cle` | `core/yaml_min.py` | Routine : sépare la clé et la valeur d'une ligne de table |
 | `_serveur_xmlrpc` | `core/migration/injection.py` | Routine : client XML-RPC (allow_none) |
 | `_SIREN_DANS_NOM` | `core/connecteurs/fec.py` | Motif du SIREN dans un nom de FEC DGFiP |
@@ -205,11 +223,13 @@ Avant d'en créer une, vérifier (casse ignorée) qu'elle n'existe pas déjà.
 | `_valeur_colonne` | `core/xlsx_vers_fec.py` | Lit la cellule d'un champ dans une ligne (None si absente) |
 | `_valeur_en_ligne` | `core/yaml_min.py` | Routine : scalaire ou liste en ligne |
 | `_valeurs_fichier_fec` | `deploy/addons/concorde/wizard/concorde_import_wizard.py` | Routine : valeurs name / fec_filename / fec_file d'une fiche d'import |
+| `_verifier` | `scripts/concorde_azalplus.py` | Routine : dit l'état de la liaison sans rien créer |
 | `_verifier_ident` | `interface/transferts.py` | Méthode : refuse un identifiant de transfert mal formé |
 | `_verifier_valeur` | `core/montee_version/demandes.py` | Routine : refuse une valeur de demande mal formée |
 | `_vide` | `core/tiers_siret.py` | Routine : valeur Odoo vide |
 | `A_CHOISIR` | `core/tiers_siret.py` | Classe de proposition : à choisir |
 | `a_verifier` | `core/montee_version/inventaire.py` | Modules à vérifier d'un saut |
+| `aboutie` | `core/connecteurs/transfert.py` | L'état final de la destination, une fois le transfert conclu |
 | `acceptes` | `core/tiers_peppol.py` | Schémas acceptés par Odoo |
 | `acces` | `core/odoo_source.py`, `tests/test_montee_pilotee.py` | Accès à un PostgreSQL jetable (host, user, password) |
 | `acces_ecriture` | `interface/serveur.py` | Méthode Bases : accès en écriture (API Odoo) à une base du sélecteur |
@@ -247,6 +267,8 @@ Avant d'en créer une, vérifier (casse ignorée) qu'elle n'existe pas déjà.
 | `autres` | `tests/test_montee_pilotee.py` | Autres arguments du lanceur |
 | `AVOIR_UBL` | `tests/test_tiers_peppol.py` | Document d'essai : avoir UBL |
 | `base_client` | `core/montee_version/montee.py` | Nom de la base chez le client (à retaper au feu vert) |
+| `base_clients` | `tests/test_azalplus_documents.py` | Doublure de test : les clients qu'AzalPlus rendra |
+| `base_produits` | `tests/test_azalplus_documents.py` | Doublure de test : le catalogue qu'AzalPlus rendra |
 | `bases` | `interface/tiers.py`, `tests/test_tiers_siret.py` | Bases du sélecteur de l'interface |
 | `bavard` | `tests/test_montee_pilotee.py` | Lanceur simulé qui rend du texte |
 | `besoin` | `core/montee_version/montee.py` | Place nécessaire au départ |
@@ -284,6 +306,10 @@ Avant d'en créer une, vérifier (casse ignorée) qu'elle n'existe pas déjà.
 | `CHEMIN_MONTAGE` | `core/montee_version/volume.py` | Dossier où le volume est monté |
 | `CHEMIN_MONTEES` | `core/montee_version/montee.py` | Dossier des montées (CONCORDE_MONTEES) |
 | `CHEMIN_OPENUPGRADE` | `core/montee_version/montee.py` | Dossier des copies d'OpenUpgrade (CONCORDE_OPENUPGRADE) |
+| `CHEMIN_REGISTRE_AZALPLUS` | `core/azalplus_documents.py` | Registre des missions déjà émises (idempotence) |
+| `CHEMIN_REGLAGES_AZALPLUS` | `core/azalplus_documents.py`, `scripts/concorde_azalplus.py` | Fichier des réglages d'émission vers AzalPlus |
+| `cherche` | `core/azalplus_documents.py` | Le SIREN normalisé que l'on cherche chez AzalPlus |
+| `chiffres` | `core/azalplus_documents.py` | Les seuls chiffres gardés d'un SIREN |
 | `choix_valides` | `interface/tiers.py`, `interface/siret.py`, `interface/peppol.py` | Méthode : choix acceptés s'ils viennent des résultats |
 | `cible_patch` | `tests/test_montee_pilotee.py` | Remplacement actif pendant un test |
 | `CibleNotee` | `tests/test_tiers_siret.py` | Accès simulé qui garde les identifiants reçus |
@@ -296,9 +322,14 @@ Avant d'en créer une, vérifier (casse ignorée) qu'elle n'existe pas déjà.
 | `CLASSES_CSV` | `interface/peppol.py` | Libellés des classes dans le CSV |
 | `CLASSES_PEPPOL` | `interface/static/peppol.js` | Libellés des classes Peppol |
 | `CLASSES_SIRET` | `interface/static/siret.js` | Libellés des classes de proposition |
+| `cle_api_azalplus` | `core/azalplus_documents.py` | Routine : lit la clé d'API dans le fichier de secrets |
 | `cliche` | `core/montee_version/montee.py` | Photo comptable prise |
+| `CLIENT_ABSENT_CREER` | `core/azalplus_documents.py`, `tests/test_azalplus_documents.py` | Réglage : créer le client absent au lieu de refuser |
+| `client_par_siren` | `core/azalplus_documents.py` | Méthode de l'émetteur : le client AzalPlus, par son SIREN |
+| `CLIENT_TEST` | `tests/test_azalplus_documents.py` | Doublure de test : le client AzalPlus de référence |
 | `ClientAnnuaire` | `core/tiers_siret.py` | Protocole : requêtes JSON vers l'annuaire |
 | `ClientRepertoire` | `core/tiers_peppol.py` | Protocole : requêtes vers le répertoire Peppol |
+| `clients` | `core/azalplus_documents.py`, `tests/test_azalplus_documents.py` | Méthode de l'émetteur : tous les clients du tenant AzalPlus ; base de la doublure de test |
 | `code_ou` | `core/montee_version/montee.py` | Copie d'OpenUpgrade d'un saut |
 | `code_postal` | `core/tiers_siret.py` | Code postal du tiers ou de l'établissement |
 | `commandes` | `tests/test_montee_pilotee.py` | Commandes docker reçues |
@@ -328,8 +359,11 @@ Avant d'en créer une, vérifier (casse ignorée) qu'elle n'existe pas déjà.
 | `couvertures` | `core/montee_version/inventaire.py`, `core/montee_version/montee.py`, `tests/test_montee_pilotee.py` | Tables de couverture par version visée |
 | `CouvertureSaut` | `core/montee_version/inventaire.py` | Type : table et fusions d'un saut |
 | `cx` | `tests/test_ecran_transferts.py` | Connexion parcourue dans un test |
+| `declencheur_ouvert` | `core/azalplus_documents.py`, `scripts/concorde_azalplus.py` | Méthode de l'émetteur : autorité unique des verrous |
+| `declencheurs` | `core/azalplus_documents.py`, `scripts/concorde_azalplus.py` | Table des déclencheurs lue dans les réglages |
 | `decoupe` | `core/tiers_peppol.py` | Adresse découpée (schéma, SIREN, suite) |
 | `defaut_mo` | `interface/transferts.py` | Plafond par défaut, en Mo |
+| `deja_emise` | `core/azalplus_documents.py` | Méthode de l'émetteur : l'émission déjà faite pour cette mission |
 | `DELAI_BASE_S` | `tests/integration/base_odoo.py` | Délai d'un appel au service db d'Odoo |
 | `DemandeMontee` | `core/montee_version/demandes.py` | Type : demande vérifiée |
 | `demander` | `interface/montees.py` | Méthode : dépose une demande au service |
@@ -349,6 +383,7 @@ Avant d'en créer une, vérifier (casse ignorée) qu'elle n'existe pas déjà.
 | `detailsEcarts` | `interface/static/montees.js` | Détail des écarts |
 | `detailsInventaire` | `interface/static/montees.js` | Détail de l'inventaire |
 | `detailsSauts` | `interface/static/montees.js` | Détail des sauts |
+| `devis` | `core/azalplus_documents.py` | Le devis rendu par AzalPlus après sa création |
 | `dialogueDepot` | `interface/static/transferts.js` | Dépôt d'un FEC |
 | `dialogueSecret` | `interface/static/transferts.js` | Saisie masquée d'un secret |
 | `disposition` | `tests/test_tiers_peppol.py` | En-tête Content-Disposition |
@@ -386,13 +421,23 @@ Avant d'en créer une, vérifier (casse ignorée) qu'elle n'existe pas déjà.
 | `EcritureTiers` | `core/tiers_odoo.py` | Type : valeurs à écrire sur un tiers |
 | `effacees` | `core/montee_version/demandes.py` | Montées effacées |
 | `emballer` | `tests/integration/base_odoo.py` | Routine : sauvegarde .zip au format d'Odoo |
+| `emetteur` | `core/azalplus_documents.py`, `tests/test_azalplus_documents.py`, `scripts/concorde_azalplus.py` | L'émetteur AzalPlus utilisé par un déclencheur, un test ou la commande |
+| `emetteur_azalplus` | `core/azalplus_documents.py`, `scripts/concorde_azalplus.py` | Routine : l'émetteur, réglages et clé lus sur le serveur |
+| `EmetteurAzalPlus` | `core/azalplus_documents.py`, `tests/test_azalplus_documents.py`, `scripts/concorde_azalplus.py` | Demande à AzalPlus le devis et le rangement du rapport |
+| `emettre` | `core/azalplus_documents.py`, `scripts/concorde_azalplus.py` | Méthode de l'émetteur : demande le devis et le rapport ; sous-commande de la CLI |
+| `emettre_sans_bloquer` | `core/azalplus_documents.py`, `core/connecteurs/transfert.py` | Routine : émet, et dit son refus sans casser la mission |
+| `emission` | `core/azalplus_documents.py`, `tests/test_azalplus_documents.py`, `scripts/concorde_azalplus.py` | Le résultat d'une émission vers AzalPlus |
+| `emission_activee` | `core/azalplus_documents.py`, `core/connecteurs/transfert.py` | Routine : les verrous sont-ils ouverts pour ce genre de mission |
+| `EmissionAzalPlus` | `core/azalplus_documents.py` | Ce que CONCORDE a demandé, ou aurait demandé en essai à blanc |
 | `empreinte_fichier` | `core/montee_version/sauvegarde.py` | Routine partagée : SHA-256 d'un fichier |
 | `EN_COURS` | `core/montee_version/montee.py` | Statut : étape ou montée en cours |
 | `enregistrer` | `interface/tiers.py` | Méthode : range les résultats |
+| `entete_fichier` | `core/azalplus_documents.py` | En-tête multipart de la pièce déposée |
 | `EntreeCouverture` | `core/montee_version/openupgrade.py` | Type : ligne d'un module dans la table |
 | `environnement` | `interface/transferts.py` | Variables d'environnement lues |
 | `envoyer` | `tests/test_ecran_transferts.py` | Méthode de test : requête JSON ou fichier brut |
 | `envoyerFichier` | `interface/static/transferts.js` | Routine JS : envoie un fichier brut (FEC, table) |
+| `ErreurAzalPlusDocuments` | `core/azalplus_documents.py`, `tests/test_azalplus_documents.py`, `scripts/concorde_azalplus.py` | Émission refusée : réglage, client, prestation ou mesure en défaut |
 | `ErreurCommande` | `core/montee_version/commandes.py` | Programme en échec : code et fin de sortie |
 | `ErreurDemande` | `core/montee_version/demandes.py` | Demande mal formée, refusée |
 | `ErreurEcran` | `interface/transferts.py` | Demande refusée par l'écran Transferts |
@@ -431,7 +476,9 @@ Avant d'en créer une, vérifier (casse ignorée) qu'elle n'existe pas déjà.
 | `FACTURE_UBL` | `tests/test_tiers_peppol.py` | Document d'essai : facture UBL |
 | `faire` | `tests/test_ecran_montees.py` | Méthode de test : demande traitée par le service |
 | `faire_inventaire` | `core/montee_version/montee.py` | Méthode : étape 1 de la montée |
+| `faite` | `core/azalplus_documents.py` | L'émission déjà inscrite au registre pour cette mission |
 | `FauxAnnuaire` | `tests/test_tiers_siret.py` | Annuaire simulé |
+| `FauxAzalPlus` | `tests/test_azalplus_documents.py` | Doublure de test : AzalPlus de bureau, répond comme /api/v1 |
 | `FauxDocker` | `tests/test_montee_pilotee.py` | Docker simulé |
 | `FauxOdoo` | `tests/test_tiers_siret.py` | Odoo simulé (res.partner) |
 | `FauxOdooFacturation` | `tests/test_tiers_peppol.py` | Odoo simulé avec champs Peppol |
@@ -479,6 +526,7 @@ Avant d'en créer une, vérifier (casse ignorée) qu'elle n'existe pas déjà.
 | `InfoSauvegarde` | `core/montee_version/sauvegarde.py` | Type : ce que dit une sauvegarde |
 | `INSCRIT` | `core/tiers_peppol.py` | Classe : tiers inscrit |
 | `inscrit_le` | `core/tiers_peppol.py` | Date d'inscription sur Peppol |
+| `inscrites` | `core/azalplus_documents.py` | Les missions déjà émises, lues au registre |
 | `instance` | `tests/test_tiers_siret.py` | Bases dont une méthode est simulée |
 | `INTROUVABLE` | `core/tiers_siret.py` | Classe de proposition : introuvable |
 | `Inventaire` | `core/montee_version/inventaire.py` | Type : résultat de l'inventaire d'une base |
@@ -496,6 +544,7 @@ Avant d'en créer une, vérifier (casse ignorée) qu'elle n'existe pas déjà.
 | `lancer_verification` | `interface/peppol.py` | Méthode : lance la vérification |
 | `lanceur` | `core/montee_version/montee.py` | Paramètre : lanceur de programmes |
 | `LanceurProgramme` | `core/montee_version/montee.py` | Type : lance un programme (simulé dans les tests) |
+| `leve` | `tests/test_azalplus_documents.py` | Le refus attendu par un test (assertRaises) |
 | `libelle_source` | `interface/tiers.py` | Méthode : nom affiché d'une base où écrire |
 | `libelleConnexion` | `interface/static/transferts.js` | Libellé d'une connexion par son identifiant |
 | `libelleConnexionSiret` | `interface/static/siret.js` | Libellé d'une connexion |
@@ -505,7 +554,9 @@ Avant d'en créer une, vérifier (casse ignorée) qu'elle n'existe pas déjà.
 | `ligneAdresse` | `interface/static/peppol.js` | Ligne d'une adresse Peppol |
 | `ligneCandidate` | `interface/static/siret.js` | Ligne d'une candidate |
 | `ligneEtapeMontee` | `interface/static/montees.js` | Ligne d'une étape |
+| `lignes_devis` | `core/azalplus_documents.py` | Méthode de l'émetteur : les lignes du devis, prix lus au catalogue |
 | `LIGNES_ERREUR` | `core/montee_version/commandes.py` | Lignes de sortie gardées dans un message d'échec |
+| `LIMITE_PAGE_AZALPLUS` | `core/azalplus_documents.py` | Taille d'une page de liste lue chez AzalPlus |
 | `lire_apriori` | `core/montee_version/openupgrade.py` | Routine : fusions lues dans apriori.py, sans exécution |
 | `lire_candidate` | `core/tiers_siret.py` | Routine : entreprise de l'annuaire -> candidate |
 | `lire_couverture` | `core/montee_version/openupgrade.py` | Routine : table de couverture -> {module: état} |
@@ -524,6 +575,8 @@ Avant d'en créer une, vérifier (casse ignorée) qu'elle n'existe pas déjà.
 | `logicielBranche` | `interface/static/transferts.js` | Routine JS : description d'un logiciel branché |
 | `logiciels` | `interface/transferts.py` | Méthode : logiciels branchés et ce que chacun demande |
 | `LOT_TIERS` | `core/tiers_peppol.py` | Tiers lus par lot dans Odoo |
+| `lu` | `core/azalplus_documents.py` | La réponse JSON décodée d'un dépôt de fichier |
+| `lus` | `core/azalplus_documents.py`, `scripts/concorde_azalplus.py` | Les enregistrements lus chez AzalPlus |
 | `maintenant` | `core/montee_version/demandes.py` | Date de référence de l'effacement |
 | `majDestinations` | `interface/static/transferts.js` | Destinations possibles (jamais la source) |
 | `majeure` | `core/montee_version/sauvegarde.py` | Version majeure lue |
@@ -538,7 +591,13 @@ Avant d'en créer une, vérifier (casse ignorée) qu'elle n'existe pas déjà.
 | `meme_code_postal` | `core/tiers_siret.py` | Candidate au code postal du tiers |
 | `meme_nom` | `core/tiers_siret.py` | Candidate au même nom que le tiers |
 | `MEMOIRE_CONTENEUR` | `core/montee_version/montee.py` | Mémoire maximale d'un conteneur de montée |
+| `mesures` | `core/azalplus_documents.py`, `tests/test_azalplus_documents.py` | Les quantités facturables d'une mission (lignes, écritures) |
 | `methodes_autorisees` | `core/migration/injection.py`, `core/tiers_siret.py` | Méthodes Odoo qu'un accès en écriture accepte |
+| `mission` | `core/azalplus_documents.py`, `scripts/concorde_azalplus.py` | La mission terminée décrite à AzalPlus |
+| `mission_azalplus` | `core/connecteurs/transfert.py`, `scripts/concorde_azalplus.py` | Routine : décrit à AzalPlus le transfert qui vient d'aboutir |
+| `mission_test` | `tests/test_azalplus_documents.py` | Routine de test : une mission terminée type |
+| `MissionAzalPlus` | `core/azalplus_documents.py`, `tests/test_azalplus_documents.py`, `core/connecteurs/transfert.py` | Mission terminée, telle que CONCORDE la décrit à AzalPlus |
+| `modeles` | `core/azalplus_documents.py`, `scripts/concorde_azalplus.py` | Les prestations réglées pour un genre de mission |
 | `module` | `core/montee_version/inventaire.py`, `tests/test_montee_pilotee.py` | Nom d'un module Odoo |
 | `module_ancien` | `core/montee_version/openupgrade.py` | Ancien nom de module |
 | `module_repreneur` | `core/montee_version/openupgrade.py` | Module qui reprend l'ancien |
@@ -555,11 +614,16 @@ Avant d'en créer une, vérifier (casse ignorée) qu'elle n'existe pas déjà.
 | `muet` | `tests/test_montee_pilotee.py` | Lanceur simulé où PostgreSQL ne répond pas |
 | `neuf` | `core/montee_version/volume.py` | Volume à créer |
 | `noeud` | `core/montee_version/openupgrade.py` | Nœud de l'arbre d'apriori.py |
+| `nom_client` | `core/azalplus_documents.py` | Le nom du client AzalPlus, pour le journal et le devis |
+| `nom_dest` | `core/connecteurs/transfert.py` | La fiche de la connexion destination, pour son libellé |
 | `NOM_DUMP` | `core/montee_version/sauvegarde.py` | Nom du dump dans une sauvegarde |
 | `NOM_ESSAI` | `interface/tiers.py` | Fichier de l'essai sur la copie de test |
+| `nom_fichier` | `core/azalplus_documents.py` | Le nom de la pièce déposée dans la GED |
 | `NOM_MANIFESTE` | `core/montee_version/sauvegarde.py` | Nom du manifeste dans une sauvegarde |
 | `nom_production` | `interface/tiers.py` | Nom de la base à compléter (à retaper au feu vert) |
 | `NOM_PROPOSITIONS` | `interface/tiers.py` | Fichier des propositions |
+| `nom_source` | `core/connecteurs/transfert.py` | La fiche de la connexion source, pour son libellé |
+| `NOM_VARIABLE_CLE_AZALPLUS` | `core/azalplus_documents.py` | Nom de la variable qui porte la clé d'API d'AzalPlus |
 | `NOM_VOLUME` | `core/montee_version/volume.py` | Nom du volume ouvert |
 | `NOMS_FICHIERS` | `interface/static/transferts.js` | Nom affiché des fichiers d'un transfert |
 | `NON_TROUVE` | `core/tiers_peppol.py` | Classe : non trouvé (à vérifier) |
@@ -577,6 +641,7 @@ Avant d'en créer une, vérifier (casse ignorée) qu'elle n'existe pas déjà.
 | `openupgrade` | `core/montee_version/montee.py`, `tests/test_montee_pilotee.py` | Dossier des copies d'OpenUpgrade |
 | `OPENUPGRADELIB` | `core/montee_version/openupgrade.py` | Bibliothèque installée dans l'image (figée) |
 | `original` | `tests/test_tiers_siret.py` | Méthode ouvrir d'origine |
+| `OUI_NON` | `scripts/concorde_azalplus.py` | Traduction d'un booléen en oui / non pour le rapport affiché |
 | `ouvrir_volume` | `core/montee_version/volume.py` | Routine : crée, ouvre et monte le volume |
 | `ouvrirSiret` | `interface/static/siret.js` | Ouvre le complément SIRET et TVA |
 | `ouvrirTransfert` | `interface/static/transferts.js` | Détail d'un transfert |
@@ -609,10 +674,15 @@ Avant d'en créer une, vérifier (casse ignorée) qu'elle n'existe pas déjà.
 | `preparer_dossiers` | `scripts/concorde_montee_service.py` | Routine : dossiers de l'interface dans le volume |
 | `preparerAjout` | `interface/static/transferts.js` | Prépare le formulaire d'ajout |
 | `preparerTransfert` | `interface/static/transferts.js` | Prépare le formulaire de nouveau transfert |
+| `prestations` | `scripts/concorde_azalplus.py` | Les prestations réglées, affichées par la vérification |
 | `pret` | `interface/montees.py` | Service de montée prêt |
 | `PROCESSEURS_CONTENEUR` | `core/montee_version/montee.py` | Processeurs au plus par conteneur |
 | `prod` | `tests/test_tiers_siret.py` | Connexion de production d'un test |
 | `production` | `interface/tiers.py`, `interface/siret.py`, `interface/peppol.py` | Base à compléter |
+| `PRODUIT_ECRITURE` | `tests/test_azalplus_documents.py` | Doublure de test : la prestation comptée à l'écriture |
+| `produit_par_code` | `core/azalplus_documents.py`, `scripts/concorde_azalplus.py` | Méthode de l'émetteur : le produit du catalogue AzalPlus |
+| `PRODUIT_TEST` | `tests/test_azalplus_documents.py` | Doublure de test : la prestation au forfait du catalogue |
+| `produits` | `tests/test_azalplus_documents.py` | Doublure de test : catalogue passé à la doublure |
 | `programme` | `core/montee_version/montee.py` | Outil PostgreSQL lancé |
 | `proposee` | `core/tiers_peppol.py` | Adresse proposée d'office |
 | `proposer` | `core/tiers_siret.py` | Routine : propositions de l'annuaire, contrôlées |
@@ -625,9 +695,13 @@ Avant d'en créer une, vérifier (casse ignorée) qu'elle n'existe pas déjà.
 | `publier` | `core/montee_version/demandes.py` | Méthode : résumé d'une montée pour l'écran |
 | `PURGE_S` | `scripts/concorde_montee_service.py` | Intervalle entre deux effacements |
 | `purger` | `core/montee_version/demandes.py` | Méthode : efface les montées de plus de 30 jours |
+| `quantite` | `core/azalplus_documents.py` | La quantité calculée d'une ligne de devis |
+| `QUANTITE_FORFAIT` | `core/azalplus_documents.py` | Règle de quantité « forfait » (une unité) |
 | `quoi` | `core/montee_version/montee.py` | Conteneur ou réseau |
+| `RACINE_CONCORDE` | `core/azalplus_documents.py` | Racine du dépôt CONCORDE, pour trouver les réglages |
 | `racine_copie` | `tests/test_montee_pilotee.py` | Copie d'OpenUpgrade simulée |
 | `rafraichir` | `tests/test_tiers_siret.py` | Paramètre de Bases.lister simulé |
+| `RAPPORT_GED` | `core/azalplus_documents.py` | Réglage : le rapport est rangé dans la GED d'AzalPlus |
 | `recette` | `core/montee_version/montee.py` | Dockerfile d'un saut |
 | `recevoir_fichier` | `interface/transferts.py` | Routine partagée : corps de requête -> fichier, par blocs, plafonné |
 | `recevoir_table` | `interface/transferts.py` | Méthode : reçoit une table de correspondance, rend un jeton |
@@ -638,6 +712,9 @@ Avant d'en créer une, vérifier (casse ignorée) qu'elle n'existe pas déjà.
 | `refus_choix_vide` | `tests/test_tiers_peppol.py` | Méthode de test : choix vide refusé |
 | `refuser` | `tests/test_tiers_siret.py` | Tiers dont l'Odoo simulé refuse l'écriture |
 | `reglages` | `tests/test_montee_pilotee.py` | Réglages du service de montée |
+| `reglages_azalplus` | `core/azalplus_documents.py`, `tests/test_azalplus_documents.py`, `scripts/concorde_azalplus.py` | Routine : lit les réglages d'émission vers AzalPlus |
+| `reglages_test` | `tests/test_azalplus_documents.py` | Routine de test : réglages d'émission, verrous ouverts |
+| `reglees` | `core/azalplus_documents.py` | Les prestations réglées pour le genre de la mission en cours |
 | `relatif` | `interface/transferts.py` | Chemin d'un fichier relatif au dossier d'un transfert |
 | `rendreTacheTiers` | `interface/static/siret.js` | Résultat d'une tâche d'un écran de tiers |
 | `rendreTacheTransfert` | `interface/static/transferts.js` | Résultat d'une tâche de transfert ou de feu vert |
@@ -685,6 +762,7 @@ Avant d'en créer une, vérifier (casse ignorée) qu'elle n'existe pas déjà.
 | `sha256` | `core/montee_version/sauvegarde.py` | Empreinte d'un fichier |
 | `siege` | `core/tiers_siret.py` | Siège de l'entreprise |
 | `signal_recu` | `scripts/concorde_montee_service.py` | Signal reçu |
+| `siren_normalise` | `core/azalplus_documents.py`, `tests/test_azalplus_documents.py` | Routine : les neuf chiffres d'un SIREN, quelle que soit sa présentation |
 | `siret` | `core/tiers_siret.py`, `interface/siret.py`, `interface/serveur.py`, `tests/test_tiers_siret.py` | SIRET (14 chiffres) ; aussi : écran SIRET de l'application |
 | `sorties` | `interface/transferts.py` | Dossier des FEC produits |
 | `suivants` | `core/montee_version/inventaire.py` | Modules présents après un saut |
@@ -711,11 +789,13 @@ Avant d'en créer une, vérifier (casse ignorée) qu'elle n'existe pas déjà.
 | `TestEcranPeppol` | `tests/test_tiers_peppol.py` | Classe de test : parcours HTTP |
 | `TestEcranSiret` | `tests/test_tiers_siret.py` | Classe de test : parcours HTTP |
 | `TestEcranTransferts` | `tests/test_ecran_transferts.py` | Classe de test : écran Transferts par HTTP |
+| `TestEmissionAzalPlus` | `tests/test_azalplus_documents.py` | Tests : verrous, refus nommés et émission réelle |
 | `testerConnexion` | `interface/static/transferts.js` | Teste une connexion et montre le résultat |
 | `TestFeuVertEtLivraison` | `tests/test_montee_pilotee.py` | Classe de test : étapes 5 à 7 |
 | `TestFileDeDemandes` | `tests/test_montee_pilotee.py` | Classe de test : service de montée |
 | `TestOpenUpgradeEtInventaire` | `tests/test_montee_pilotee.py` | Classe de test : OpenUpgrade et inventaire |
 | `TestOutilsEcran` | `tests/test_ecran_transferts.py` | Classe de test : routines de l'écran |
+| `TestReglagesAzalPlus` | `tests/test_azalplus_documents.py` | Tests : réglages livrés et lecture d'un SIREN |
 | `TestRegles` | `tests/test_tiers_siret.py` | Classe de test : contrôles et écriture |
 | `TestReglesPeppol` | `tests/test_tiers_peppol.py` | Classe de test : règles Peppol |
 | `TestSauvegarde` | `tests/test_montee_pilotee.py` | Classe de test : sauvegarde Odoo |
@@ -735,6 +815,7 @@ Avant d'en créer une, vérifier (casse ignorée) qu'elle n'existe pas déjà.
 | `trouvees` | `core/tiers_siret.py` | Candidates trouvées |
 | `tva` | `core/tiers_siret.py`, `interface/siret.py` | Numéro de TVA intracommunautaire |
 | `tva_exigee` | `core/tiers_siret.py` | TVA absente = anomalie ? |
+| `type_contenu` | `core/azalplus_documents.py` | La valeur de Content-Type d'un dépôt multipart |
 | `type_document` | `core/tiers_peppol.py` | Type de document parcouru |
 | `types` | `core/tiers_peppol.py` | Types de documents d'une adresse |
 | `TYPES_DOCUMENTS` | `core/tiers_peppol.py` | Documents Peppol reconnus -> nom affiché |
@@ -1805,6 +1886,8 @@ Avant d'en créer une, vérifier (casse ignorée) qu'elle n'existe pas déjà.
 | `vide` | `tests/test_connecteurs.py` | Fichier vide, dans un test |
 | `ville` | `core/tiers_siret.py` | Ville du tiers |
 | `vraie` | `tests/test_connecteurs.py` | Connexion destination réelle, dans un test |
+| `vu_chemin` | `tests/test_azalplus_documents.py` | Doublure de test : le chemin d'un appel observé |
+| `vu_methode` | `tests/test_azalplus_documents.py` | Doublure de test : la méthode HTTP d'un appel observé |
 | `VUE_ACTION` | `interface/static/app.js` | Vue qui affiche le résultat d'une action (transfert, feu vert -> transferts) |
 | `vus` | `core/tiers_siret.py` | Identifiants déjà vus |
 | `XML_PIEGE` | `tests/test_xml_sur.py` | Document XML ordinaire / bombe d'entités |

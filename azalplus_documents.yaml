@@ -1,0 +1,56 @@
+# CONCORDE v1.0 — devis et rapport dans AzalPlus (ADR-0015)
+# (c) MASITH / Stéphane Moreau. Tous droits réservés.
+#
+# Rien ne part par surprise : trois verrous doivent être ouverts —
+# « actif », le déclencheur de la mission, et « essai_a_blanc » mis à
+# false. Tant qu'il vaut true, CONCORDE dit ce qui PARTIRAIT sans créer.
+
+# Interrupteur général. À false, aucune mission ne parle à AzalPlus.
+actif: false
+
+# true : CONCORDE lit AzalPlus, prépare le devis et le rapport, les
+# journalise, et ne crée RIEN. À laisser à true le temps de vérifier.
+essai_a_blanc: true
+
+# Adresse d'AzalPlus. HTTPS exigé : le client refuse une adresse en clair.
+adresse: "https://azalplus.com"
+
+# Société d'AzalPlus qui ÉMET le devis, par son identifiant.
+# Vide : AzalPlus rattache le devis à la société du porteur de la clé.
+# AzalPlus ignore volontairement le societe_id d'un corps de requête
+# (protection anti mass-assignment) : la société se choisit par
+# l'en-tête X-Societe-ID, que ce réglage renseigne.
+societe_emettrice: ""
+
+# Client introuvable par son SIREN dans AzalPlus :
+#   refus — la mission est signalée, rien n'est créé (défaut) ;
+#   creer — CONCORDE demande à AzalPlus de créer le client, avec le nom
+#           et le SIREN lus dans le logiciel comptable du client.
+client_absent: refus
+
+# Où va le rapport : ged (document rangé dans AzalPlus) ou aucun.
+rapport: ged
+
+# Type de document AzalPlus donné au rapport (liste de modules/ged.yml).
+type_rapport: RAPPORT
+
+# Statut du devis créé. AzalPlus accepte un devis depuis BROUILLON ;
+# ACCEPTE déclencherait sa conversion automatique en commande et en
+# intervention — ce n'est pas à CONCORDE de la décider.
+statut_devis: BROUILLON
+
+# Quelles missions parlent à AzalPlus. Seul « transfert » est branché à ce
+# jour, et aucun interrupteur ne figure ici tant qu'il ne fait rien : les
+# montées de version et les contrôles de dématérialisation viendront
+# ensuite (ADR-0015, « Ce qui reste à faire »).
+declencheurs:
+  transfert: false
+
+# Les lignes du devis, par genre de mission. « produit » est le CODE d'un
+# produit du catalogue AzalPlus (colonne « code », ex. PRD-00007) : son
+# prix et son taux de TVA sont lus chez AzalPlus, jamais fixés ici.
+# « quantite » vaut « forfait » (1) ou le nom d'une mesure de la mission
+# (lignes, ecritures) ; une mesure absente est un refus nommé, jamais un
+# 1 deviné.
+prestations:
+  transfert: []

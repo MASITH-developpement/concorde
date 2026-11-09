@@ -35,10 +35,15 @@ from typing import Any, TypedDict
 from ..analyser import Constat
 from ..fichier_json import ecrire_json_atomique
 from ..guardian import Guardian
-from ..journal import Journal, ou_muet
+from ..journal import Journal, nombre_texte, ou_muet
 from ..migration import controles, correspondance, export, filtres
 from ..migration.circuit import constats_expliques, statut_constats
 from ..migration.lot import CleTotaux, Lot, TotauxLot
+from ..azalplus_documents import (
+    MissionAzalPlus,
+    emettre_sans_bloquer,
+    emission_activee,
+)
 from ..telecharger import ErreurFec
 from .base import Connecteur, ErreurConnexion, PerimetreLecture
 from .connexions import Annuaire, ErreurAnnuaire
@@ -709,8 +714,89 @@ def donner_feu_vert(
     detail = _etat_etape(
         ecart.constats, {"ecriture": ecrit, "relecture": ecart.infos}
     )
-    return finir(
+    aboutie = finir(
         TRANSFEREE if detail["statut"] == "verte" else BLOQUEE,
         "transfert",
         detail,
     )
+    if aboutie["statut"] == TRANSFEREE:
+        _emettre_vers_azalplus(
+            annuaire_connexions, etat, ident_dest, aboutie, journal_actif
+        )
+    return aboutie
+
+
+def mission_azalplus(
+    annuaire_connexions: Annuaire,
+    etat: EtatTransfert,
+    ident_dest: str,
+    etat_dest: EtatDestination,
+    journal: Journal,
+) -> MissionAzalPlus:
+    """Décrit à AzalPlus le transfert qui vient d'aboutir (ADR-0015).
+
+    Rôle : un seul endroit qui traduit un transfert en mission.
+    Paramètres : annuaire_connexions ; etat — le transfert ; ident_dest —
+    la destination ; etat_dest — son état final ; journal.
+    Retour : la mission, prête à être émise.
+    Erreurs : celles de l'annuaire et des connecteurs — le SIREN du
+    client est LU chez lui, jamais deviné.
+    Usages : _emettre_vers_azalplus.
+    """
+    source = annuaire_connexions.tester(etat["demande"]["source"], journal)
+    nom_source = annuaire_connexions.obtenir(etat["demande"]["source"])
+    nom_dest = annuaire_connexions.obtenir(ident_dest)
+    totaux = etat_dest.get("totaux")
+    lignes = int(totaux["lignes"]) if totaux else 0
+    ecritures = int(totaux["ecritures"]) if totaux else 0
+    fichiers = [
+        chemin
+        for etape in etat_dest.get("etapes", {}).values()
+        for chemin in (etape.get("fichiers") or {}).values()
+    ]
+    photo = etat["photo_source"]
+    return MissionAzalPlus(
+        genre="transfert",
+        reference="CONCORDE/%s/%s" % (etat["id"], ident_dest),
+        siren=source["siren"],
+        societe=source["societe"],
+        intitule="Transfert comptable %s vers %s"
+        % (nom_source["libelle"], nom_dest["libelle"]),
+        resume="Transfert %s : %s lignes, %s écritures, de %s vers %s."
+        % (
+            etat["id"],
+            nombre_texte(lignes),
+            nombre_texte(ecritures),
+            nom_source["libelle"],
+            nom_dest["libelle"],
+        ),
+        mesures={"lignes": lignes, "ecritures": ecritures},
+        fichiers=([photo] if photo else []) + fichiers,
+    )
+
+
+def _emettre_vers_azalplus(
+    annuaire_connexions: Annuaire,
+    etat: EtatTransfert,
+    ident_dest: str,
+    etat_dest: EtatDestination,
+    journal: Journal,
+) -> None:
+    """Demande à AzalPlus le devis et le rapport du transfert abouti.
+
+    Le transfert a réussi et reste réussi : un refus d'AzalPlus est DIT
+    au journal, jamais avalé, et ne change pas son statut (ADR-0015).
+    """
+    if not emission_activee("transfert"):
+        return
+    try:
+        mission = mission_azalplus(
+            annuaire_connexions, etat, ident_dest, etat_dest, journal
+        )
+    except (ErreurAnnuaire,) + ERREURS_CONNEXION as exc:
+        journal.dire(
+            "AzalPlus : source non identifiée, aucun devis (%s)" % exc,
+            "erreur",
+        )
+        return
+    emettre_sans_bloquer(mission, journal)

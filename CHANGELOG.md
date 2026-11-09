@@ -3,7 +3,7 @@
 Format : [Keep a Changelog](https://keepachangelog.com/fr/1.1.0/), versions sémantiques.
 Le module Odoo porte la même version au format `17.0.X.Y.Z` (`deploy/addons/concorde/__manifest__.py`).
 
-## [Non publiée]
+## [1.10.1] — 2026-11-09
 ### Corrigé
 - « Facture électronique » et « Compléter SIRET et TVA » ne proposaient que
   les connexions de l'écran Transferts : une base déjà branchée dans le

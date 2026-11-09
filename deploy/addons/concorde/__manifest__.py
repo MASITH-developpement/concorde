@@ -1,7 +1,7 @@
 # CONCORDE v1.0 — (c) MASITH / Stéphane Moreau. Tous droits réservés.
 {
     "name": "CONCORDE",
-    "version": "17.0.1.10.0",
+    "version": "17.0.1.10.1",
     "category": "Accounting/Accounting",
     "summary": (
         "Passerelle de liaison comptable universelle — "

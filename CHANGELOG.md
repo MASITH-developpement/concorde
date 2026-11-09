@@ -3,6 +3,24 @@
 Format : [Keep a Changelog](https://keepachangelog.com/fr/1.1.0/), versions sémantiques.
 Le module Odoo porte la même version au format `17.0.X.Y.Z` (`deploy/addons/concorde/__manifest__.py`).
 
+## [Non publiée]
+### Ajouté
+- **Facture électronique des tiers** (ADR-0014, acceptée le 09/11/2026) :
+  nouvel écran. Tous les clients et fournisseurs d'une connexion Odoo sont
+  cherchés par SIREN dans le répertoire Peppol public (le SIREN seul part) :
+  « inscrit » (adresses, documents acceptés, date d'inscription), « non
+  trouvé » (à vérifier : jamais présenté comme « non inscrit »), « sans
+  SIREN ». Filtres et liste complète en CSV. Reprise de l'adresse choisie
+  dans les champs `peppol_eas` / `peppol_endpoint` du tiers (adresse sans
+  code de routage proposée d'office), même circuit que le SIRET : copie de
+  test, feu vert, trace, annulation. `core/tiers_peppol.py`,
+  `interface/peppol.py`, `interface/static/peppol.js`.
+### Modifié
+- Routines partagées : `core/tiers_odoo.py` (écriture tracée qui n'écrase
+  jamais une fiche renseignée, annulation) et `interface/tiers.py` (circuit
+  essai, feu vert, annulation des écrans de tiers), reprises par l'écran
+  SIRET et l'écran facture électronique ; routes communes `_post_tiers`.
+
 ## [1.9.1] — 2026-11-09
 ### Ajouté
 - La version de CONCORDE s'affiche sous son nom, dans le menu (« version

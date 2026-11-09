@@ -486,7 +486,7 @@ class TestEcranSiret(unittest.TestCase):
             ),
         )
         with self.assertRaises(ErreurEcran):
-            self.app.siret._connecteur(fec)
+            self.app.siret.connecteur(fec)
         rapport = self.app.taches.rapport(self.analyse)
         if rapport is None:
             self.fail("rapport de l'analyse absent")
@@ -499,7 +499,7 @@ class TestEcranSiret(unittest.TestCase):
             ),
         )
         self.assertIn(
-            "pas encore prêtes", self.refus("/api/siret/inconnue/ecrire", {})
+            "pas encore prêts", self.refus("/api/siret/inconnue/ecrire", {})
         )
         ident = "propositions-simulees"
         self.app.taches._taches[ident] = {

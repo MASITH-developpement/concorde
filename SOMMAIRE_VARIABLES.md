@@ -12,6 +12,7 @@ Avant d'en créer une, vérifier (casse ignorée) qu'elle n'existe pas déjà.
 | `__enter__` | `core/connecteurs/azalplus.py`, `tests/test_connecteurs.py` | Méthode : ouverture d'un bloc with (curseurs) |
 | `__exit__` | `core/connecteurs/azalplus.py`, `tests/test_connecteurs.py` | Méthode : fermeture d'un bloc with (curseurs) |
 | `_acces` | `core/montee_version/montee.py` | Méthode : mot de passe du PostgreSQL jetable (fichier 600) |
+| `_ADRESSE_FRANCAISE` | `core/tiers_peppol.py` | Adresse française (0225, 0002, 0009) |
 | `_afficher_etat` | `scripts/concorde_montee.py` | Routine : affiche l'état d'une montée |
 | `_analyser` | `interface/serveur.py` | Méthode de Taches : exécution d'une analyse |
 | `_arguments` | `tests/test_assistant_import.py` | Paramètres ignorés de `champ_bouchon` |
@@ -24,11 +25,11 @@ Avant d'en créer une, vérifier (casse ignorée) qu'elle n'existe pas déjà.
 | `_bloquer` | `core/connecteurs/transfert.py` | Routine : arrête une destination à une étape, motif au journal |
 | `_centimes_base` | `core/migration/injection.py` | Montant SQL en euros -> centimes (remplace la fonction locale `c`) |
 | `_centimes_ou_rien` | `core/migration/filtres.py` | Routine : montant en euros -> centimes, ou None |
+| `_champs_peppol` | `core/tiers_peppol.py` | Routine : champs Peppol de la base |
 | `_CHAMPS_TEXTE_LIGNE` | `core/odoo_source.py` | Champs texte d'une ligne SQL ramenés de NULL à '' |
 | `_chemin_executable` | `core/bases_locales.py` | Routine partagée : chemin absolu de pg_dump / pg_restore (FileNotFoundError si absent) |
 | `_chemin_fec` | `core/connecteurs/fec.py` | Méthode de ConnecteurFec : chemin du FEC d'une référence |
 | `_chemins_cible_feuille` | `core/mapping.py` | Routine : chemins candidats d'une cible de relation (absolue ou relative) |
-| `_choix_valides` | `interface/siret.py` | Méthode : choix acceptés s'ils viennent des propositions |
 | `_cible` | `core/connecteurs/odoo.py` | Méthode de ConnecteurOdoo : cible d'écriture |
 | `_codes_html` | `deploy/addons/concorde/wizard/concorde_import_wizard.py` | Routine : liste de codes de comptes échappée (au plus 30) |
 | `_colonne_entete_unique` | `core/mapping.py` | Routine : colonne unique d'un intitulé d'en-tête, ErreurMapping si ambiguë |
@@ -38,7 +39,6 @@ Avant d'en créer une, vérifier (casse ignorée) qu'elle n'existe pas déjà.
 | `_comptes_de_cle` | `core/odoo_source.py` | Routine : clé de répartition analytique -> codes/noms de comptes |
 | `_comptes_des_lignes` | `deploy/addons/concorde/wizard/concorde_import_wizard.py` | Routine : parcourt les lignes FEC portant un numéro de compte |
 | `_connecter` | `core/connecteurs/azalplus.py` | Méthode d'AzalPlus : connexion PostgreSQL en lecture seule |
-| `_connecteur` | `interface/siret.py` | Méthode : connexion Odoo ouverte |
 | `_connexion` | `injectors/socle_odoo.py`, `injectors/odoo_conversion.py` | Connexion Odoo ouverte (None tant que non connecté) |
 | `_connexion_active` | `injectors/socle_odoo.py` | Rend la connexion ouverte ou lève ErreurInjecteur |
 | `_connexion_ou_nouvelle` | `core/bases_locales.py` | Routine partagée : connexion fournie, ou nouvelle fermée en fin de bloc |
@@ -95,6 +95,7 @@ Avant d'en créer une, vérifier (casse ignorée) qu'elle n'existe pas déjà.
 | `_fichier_instantane` | `interface/serveur.py` | Routine : chemin de la photo de surveillance d'une base |
 | `_garde` | `tests/test_connecteurs.py` | Méthode de test : un élément passe-t-il un filtre Pennylane |
 | `_get_montees` | `interface/serveur.py` | Routes GET de l'écran Montée |
+| `_get_tiers` | `interface/serveur.py` | Lectures des écrans de tiers |
 | `_get_transferts` | `interface/serveur.py` | Routes GET de l'écran Transferts |
 | `_groupes_date` | `core/xlsx_vers_fec.py` | Routine : découpe une date texte en groupes selon ses séparateurs |
 | `_IDENT_DEMANDE` | `interface/montees.py` | Forme de l'identifiant d'une demande |
@@ -156,6 +157,7 @@ Avant d'en créer une, vérifier (casse ignorée) qu'elle n'existe pas déjà.
 | `_plan` | `deploy/addons/concorde/wizard/concorde_import_wizard.py` | Plan comptable rendu par `_executer_pipeline`, inutile à l'export |
 | `_post_montees` | `interface/serveur.py` | Routes POST de l'écran Montée |
 | `_post_siret` | `interface/serveur.py` | Routes POST de l'écran SIRET |
+| `_post_tiers` | `interface/serveur.py` | Routine : routes POST des écrans de tiers |
 | `_post_transferts` | `interface/serveur.py` | Routes POST (JSON) de l'écran Transferts |
 | `_preparer_destination` | `core/connecteurs/transfert.py` | Routine partagée : étapes 1 à 4 d'une destination (rapport et nouveau test) |
 | `_pret` | `interface/montees.py` | Méthode : refuse si le service n'est pas prêt |
@@ -185,7 +187,6 @@ Avant d'en créer une, vérifier (casse ignorée) qu'elle n'existe pas déjà.
 | `_statut` | `core/montee_version/montee.py` | Méthode : statut de la montée |
 | `_surveiller_disque` | `core/montee_version/montee.py` | Méthode : arrête un saut si le disque se remplit |
 | `_table` | `interface/transferts.py` | Méthode : table reçue, par son jeton |
-| `_tache_propositions` | `interface/siret.py` | Méthode : tâche de propositions terminée |
 | `_telecharger` | `interface/serveur.py` | Méthode de Taches : exécution d'un export |
 | `_televerser` | `interface/serveur.py` | Route d'un fichier envoyé brut (FEC déposé, table) |
 | `_tester` | `core/connecteurs/transfert.py` | Routine : écriture dans l'environnement de test, relecture, comparaison |
@@ -193,10 +194,10 @@ Avant d'en créer une, vérifier (casse ignorée) qu'elle n'existe pas déjà.
 | `_tmp` | `tests/test_connecteurs.py` | Dossier temporaire d'un test |
 | `_TransportDelai` | `core/odoo_source.py` | Transport XML-RPC HTTP avec délai |
 | `_TransportSurDelai` | `core/odoo_source.py` | Transport XML-RPC HTTPS avec délai |
-| `_travail_annuler` | `interface/siret.py` | Tâche « siret_annuler » |
-| `_travail_ecrire` | `interface/siret.py` | Tâche « siret_ecrire » |
+| `_travail_annuler` | `interface/tiers.py` | Tâche « siret_annuler » |
+| `_travail_ecrire` | `interface/tiers.py` | Tâche « siret_ecrire » |
 | `_travail_feu_vert` | `interface/transferts.py` | Tâche « feu vert » : étapes 6 et 7 |
-| `_travail_proposer` | `interface/siret.py` | Tâche « siret_proposer » |
+| `_travail_preparer` | `interface/tiers.py`, `interface/siret.py`, `interface/peppol.py` | Tâche de préparation d'un écran de tiers |
 | `_travail_transfert` | `interface/transferts.py` | Tâche « transfert » : étapes 1 à 4 |
 | `_TYPE_OFFICE` | `core/xlsx_ecrire.py` | Préfixe des types de contenu officedocument |
 | `_usage_fec` | `interface/transferts.py` | Méthode : FEC source (dépôt) ou destination (produit) |
@@ -209,15 +210,25 @@ Avant d'en créer une, vérifier (casse ignorée) qu'elle n'existe pas déjà.
 | `_vide` | `core/tiers_siret.py` | Routine : valeur Odoo vide |
 | `A_CHOISIR` | `core/tiers_siret.py` | Classe de proposition : à choisir |
 | `a_verifier` | `core/montee_version/inventaire.py` | Modules à vérifier d'un saut |
+| `acceptes` | `core/tiers_peppol.py` | Schémas acceptés par Odoo |
 | `acces` | `core/odoo_source.py`, `tests/test_montee_pilotee.py` | Accès à un PostgreSQL jetable (host, user, password) |
 | `AccesOdoo` | `core/tiers_siret.py` | Protocole : appels de modèle Odoo |
+| `action_preparer` | `interface/tiers.py`, `interface/siret.py`, `interface/peppol.py` | Nom de la tâche de préparation |
 | `ACTIONS_BASE` | `interface/serveur.py` | Actions de POST /api/taches (sur une base de l'écran Bases) |
 | `ACTIONS_MONTEE` | `core/montee_version/demandes.py` | Action d'une demande -> champs attendus |
 | `actuel` | `core/tiers_siret.py` | Fiche relue juste avant d'écrire |
+| `adresse_actuelle` | `core/tiers_peppol.py` | Adresse déjà dans Odoo |
+| `adresse_proposee` | `core/tiers_peppol.py` | Routine : adresse sans code de routage |
+| `AdressePeppol` | `core/tiers_peppol.py` | Type : adresse de facture électronique trouvée |
+| `adresses` | `core/tiers_peppol.py`, `interface/peppol.py` | Adresses trouvées pour un tiers |
+| `adresses_bmx` | `tests/test_tiers_peppol.py` | Adresses d'essai de BIOMERIEUX |
+| `adresses_isb` | `tests/test_tiers_peppol.py` | Adresses d'essai d'ISB |
+| `adresses_peppol` | `core/tiers_peppol.py` | Routine : adresses de ce SIREN dans une réponse |
 | `afficher_evenement` | `scripts/outils_cli.py` | Routine partagée : affiche un événement du journal |
 | `afficherConnexions` | `interface/static/transferts.js` | Tableau des connexions |
 | `afficherMontees` | `interface/static/montees.js` | Liste des montées |
 | `afficherPropositions` | `interface/static/siret.js` | Liste des propositions |
+| `afficherVerification` | `interface/static/peppol.js` | Résultat de la vérification |
 | `analyse` | `interface/siret.py`, `tests/test_tiers_siret.py` | Tâche d'analyse d'origine |
 | `ANNUAIRE_ENTREPRISES` | `core/tiers_siret.py` | Annuaire public des entreprises (État) |
 | `annuaire_simule` | `tests/test_tiers_siret.py` | Routine de test : annuaire simulé |
@@ -232,16 +243,17 @@ Avant d'en créer une, vérifier (casse ignorée) qu'elle n'existe pas déjà.
 | `attendreTache` | `interface/static/siret.js` | Attend la fin d'une tâche |
 | `attendue` | `tests/test_interface.py` | Version attendue |
 | `autres` | `tests/test_montee_pilotee.py` | Autres arguments du lanceur |
+| `AVOIR_UBL` | `tests/test_tiers_peppol.py` | Document d'essai : avoir UBL |
 | `base_client` | `core/montee_version/montee.py` | Nom de la base chez le client (à retaper au feu vert) |
 | `bavard` | `tests/test_montee_pilotee.py` | Lanceur simulé qui rend du texte |
 | `besoin` | `core/montee_version/montee.py` | Place nécessaire au départ |
-| `bilanSiret` | `interface/static/siret.js` | Bilan d'une écriture |
+| `bilanTiers` | `interface/static/siret.js` | Bilan d'une écriture de tiers |
 | `BIOMERIEUX` | `tests/test_tiers_siret.py` | Réponse d'annuaire d'essai (données réelles) |
 | `bloc` | `interface/transferts.py` | Bloc d'octets reçu |
 | `bloquant` | `core/montee_version/montee.py` | Module bloquant parcouru |
 | `bloquants` | `core/montee_version/inventaire.py`, `core/montee_version/montee.py` | Modules qui bloquent un saut |
 | `bloque` | `core/montee_version/inventaire.py` | Vrai si un module bloque un saut |
-| `boutonAnnulerSiret` | `interface/static/siret.js` | Annulation d'une écriture |
+| `boutonAnnulerTiers` | `interface/static/siret.js` | Annulation d'une écriture de tiers |
 | `brut_chemin` | `interface/transferts.py` | Fichier brut d'une table reçue (effacé après lecture) |
 | `cadre` | `scripts/concorde_montee_service.py` | Cadre reçu avec un signal |
 | `calcul` | `core/montee_version/sauvegarde.py` | Calcul SHA-256 en cours |
@@ -254,9 +266,12 @@ Avant d'en créer une, vérifier (casse ignorée) qu'elle n'existe pas déjà.
 | `causes` | `core/montee_version/montee.py` | Cause d'arrêt d'un saut par le guetteur |
 | `champ_siret` | `core/tiers_siret.py` | Routine : champ du SIRET dans la base (siret ou company_registry) |
 | `champLibre` | `interface/static/transferts.js` | Routine JS : nom de paramètre lisible |
+| `champs_base` | `core/tiers_peppol.py` | Champs présents dans la base |
 | `champs_demandes` | `tests/test_tiers_siret.py` | Champs demandés à l'Odoo simulé |
 | `CHAMPS_LUS` | `core/tiers_siret.py` | Champs du tiers relus dans Odoo |
+| `champs_proteges` | `core/tiers_odoo.py` | Champs qui doivent être vides pour écrire |
 | `chargerEcranMontees` | `interface/static/montees.js` | Charge l'écran Montée |
+| `chargerEcranPeppol` | `interface/static/peppol.js` | Charge l'écran facture électronique |
 | `chargerEcranTransferts` | `interface/static/transferts.js` | Charge l'écran Transferts |
 | `chargerListeTransferts` | `interface/static/transferts.js` | Tableau des transferts enregistrés |
 | `CHEMIN_CLE` | `core/montee_version/volume.py` | Clé du volume chiffré (root, 600) |
@@ -266,16 +281,20 @@ Avant d'en créer une, vérifier (casse ignorée) qu'elle n'existe pas déjà.
 | `CHEMIN_MONTAGE` | `core/montee_version/volume.py` | Dossier où le volume est monté |
 | `CHEMIN_MONTEES` | `core/montee_version/montee.py` | Dossier des montées (CONCORDE_MONTEES) |
 | `CHEMIN_OPENUPGRADE` | `core/montee_version/montee.py` | Dossier des copies d'OpenUpgrade (CONCORDE_OPENUPGRADE) |
+| `choix_valides` | `interface/tiers.py`, `interface/siret.py`, `interface/peppol.py` | Méthode : choix acceptés s'ils viennent des résultats |
 | `cible_patch` | `tests/test_montee_pilotee.py` | Remplacement actif pendant un test |
-| `CIBLES` | `interface/siret.py` | Cibles d'écriture : test, production |
+| `CIBLES` | `interface/tiers.py` | Cibles d'écriture : test, production |
 | `CibleTiers` | `core/tiers_siret.py` | Accès Odoo réduit à lire et compléter les tiers |
 | `circuit` | `core/montee_version/montee.py`, `scripts/concorde_montee.py` | Étapes 1 à 4 d'une montée |
 | `classer` | `core/tiers_siret.py` | Routine : sûre, à choisir ou introuvable |
 | `classer_module` | `core/montee_version/inventaire.py` | Routine : règle de l'inventaire (couvert, à vérifier, bloquant) |
 | `classes` | `core/montee_version/inventaire.py` | Modules rangés par classe |
+| `CLASSES_CSV` | `interface/peppol.py` | Libellés des classes dans le CSV |
+| `CLASSES_PEPPOL` | `interface/static/peppol.js` | Libellés des classes Peppol |
 | `CLASSES_SIRET` | `interface/static/siret.js` | Libellés des classes de proposition |
 | `cliche` | `core/montee_version/montee.py` | Photo comptable prise |
 | `ClientAnnuaire` | `core/tiers_siret.py` | Protocole : requêtes JSON vers l'annuaire |
+| `ClientRepertoire` | `core/tiers_peppol.py` | Protocole : requêtes vers le répertoire Peppol |
 | `code_ou` | `core/montee_version/montee.py` | Copie d'OpenUpgrade d'un saut |
 | `code_postal` | `core/tiers_siret.py` | Code postal du tiers ou de l'établissement |
 | `commandes` | `tests/test_montee_pilotee.py` | Commandes docker reçues |
@@ -283,9 +302,11 @@ Avant d'en créer une, vérifier (casse ignorée) qu'elle n'existe pas déjà.
 | `commit` | `core/montee_version/openupgrade.py` | Commit figé attendu |
 | `COMMITS_OPENUPGRADE` | `core/montee_version/openupgrade.py` | Commit figé d'OpenUpgrade par version visée |
 | `complet` | `core/montee_version/sauvegarde.py` | Chemin complet d'une pièce jointe |
+| `compter_classes` | `interface/tiers.py` | Routine partagée : résultats par classe |
 | `COMPTES_MONTEE` | `tests/test_montee_pilotee.py` | Comptes de la base simulée |
 | `conduite` | `scripts/concorde_montee.py`, `tests/test_montee_pilotee.py` | Montée conduite |
 | `connecte` | `interface/serveur.py` | Session ouverte |
+| `connexion_avec_test` | `interface/tiers.py` | Méthode : connexion Odoo avec connexion de test |
 | `connexion_fec` | `tests/test_ecran_transferts.py` | Méthode de test : ajoute une connexion FEC |
 | `CONSTAT_TIERS` | `interface/siret.py` | Code du constat des tiers sans SIREN ni TVA |
 | `conteneur` | `core/montee_version/montee.py` | Nom d'un conteneur Odoo de saut |
@@ -302,6 +323,7 @@ Avant d'en créer une, vérifier (casse ignorée) qu'elle n'existe pas déjà.
 | `couvertures` | `core/montee_version/inventaire.py`, `core/montee_version/montee.py`, `tests/test_montee_pilotee.py` | Tables de couverture par version visée |
 | `CouvertureSaut` | `core/montee_version/inventaire.py` | Type : table et fusions d'un saut |
 | `cx` | `tests/test_ecran_transferts.py` | Connexion parcourue dans un test |
+| `decoupe` | `core/tiers_peppol.py` | Adresse découpée (schéma, SIREN, suite) |
 | `defaut_mo` | `interface/transferts.py` | Plafond par défaut, en Mo |
 | `DELAI_BASE_S` | `tests/integration/base_odoo.py` | Délai d'un appel au service db d'Odoo |
 | `DemandeMontee` | `core/montee_version/demandes.py` | Type : demande vérifiée |
@@ -324,8 +346,12 @@ Avant d'en créer une, vérifier (casse ignorée) qu'elle n'existe pas déjà.
 | `detailsSauts` | `interface/static/montees.js` | Détail des sauts |
 | `dialogueDepot` | `interface/static/transferts.js` | Dépôt d'un FEC |
 | `dialogueSecret` | `interface/static/transferts.js` | Saisie masquée d'un secret |
+| `disposition` | `tests/test_tiers_peppol.py` | En-tête Content-Disposition |
 | `DISQUE_HOTE` | `core/montee_version/montee.py` | Disque réel du serveur (CONCORDE_DISQUE_HOTE) |
 | `docker` | `tests/test_montee_pilotee.py` | Docker simulé d'un test |
+| `document` | `tests/test_tiers_peppol.py` | Document d'essai |
+| `documents` | `core/tiers_peppol.py` | Documents acceptés |
+| `documents_acceptes` | `core/tiers_peppol.py` | Routine : documents qu'une adresse accepte |
 | `DONNEES_MONTEE` | `interface/montees.py` | Volume du service de montée, vu de l'interface |
 | `donnees_pg` | `tests/test_montee_pilotee.py` | Dossier pgdata simulé |
 | `dossier_analyse` | `tests/test_tiers_siret.py` | Dossier de l'analyse simulée |
@@ -343,14 +369,21 @@ Avant d'en créer une, vérifier (casse ignorée) qu'elle n'existe pas déjà.
 | `ECARTS_GARDES` | `core/montee_version/montee.py` | Écarts gardés dans l'état d'une montée |
 | `ecran` | `interface/serveur.py` | L'écran Transferts de l'application, dans une route |
 | `EcranMontees` | `interface/montees.py` | Classe : écran Montée de version |
+| `EcranPeppol` | `interface/peppol.py` | Classe : écran facture électronique des tiers |
 | `EcranSiret` | `interface/siret.py` | Classe : écran Compléter SIRET et TVA |
+| `EcranTiers` | `interface/tiers.py` | Classe partagée : circuit essai, feu vert, annulation |
 | `EcranTransferts` | `interface/transferts.py` | Classe : ce que fait l'écran Transferts (ADR-0011) |
+| `ecrire_adresses` | `core/tiers_peppol.py` | Routine : adresse choisie écrite dans Odoo |
+| `ecrire_champs` | `core/tiers_odoo.py` | Routine partagée : écriture tracée sur des tiers, sans écraser |
+| `ecrire_choix` | `interface/tiers.py`, `interface/siret.py`, `interface/peppol.py` | Méthode : écrit les choix dans une base |
 | `ecrire_sauvegarde` | `core/montee_version/sauvegarde.py` | Routine : sauvegarde Odoo de la base montée |
 | `ecrire_secret` | `interface/transferts.py` | Méthode : écrit un secret saisi, rend « renseigné ou non » |
+| `EcritureTiers` | `core/tiers_odoo.py` | Type : valeurs à écrire sur un tiers |
 | `effacees` | `core/montee_version/demandes.py` | Montées effacées |
 | `emballer` | `tests/integration/base_odoo.py` | Routine : sauvegarde .zip au format d'Odoo |
 | `empreinte_fichier` | `core/montee_version/sauvegarde.py` | Routine partagée : SHA-256 d'un fichier |
 | `EN_COURS` | `core/montee_version/montee.py` | Statut : étape ou montée en cours |
+| `enregistrer` | `interface/tiers.py` | Méthode : range les résultats |
 | `EntreeCouverture` | `core/montee_version/openupgrade.py` | Type : ligne d'un module dans la table |
 | `environnement` | `interface/transferts.py` | Variables d'environnement lues |
 | `envoyer` | `tests/test_ecran_transferts.py` | Méthode de test : requête JSON ou fichier brut |
@@ -360,10 +393,13 @@ Avant d'en créer une, vérifier (casse ignorée) qu'elle n'existe pas déjà.
 | `ErreurEcran` | `interface/transferts.py` | Demande refusée par l'écran Transferts |
 | `ErreurMontee` | `core/montee_version/montee.py` | Montée refusée ou arrêtée |
 | `ErreurOpenUpgrade` | `core/montee_version/openupgrade.py` | Saut impossible ou table illisible |
+| `ErreurPeppol` | `core/tiers_peppol.py` | Écriture d'adresse impossible |
 | `ERREURS_ECRAN` | `interface/transferts.py` | Refus rendus au navigateur avec leur cause (HTTP 400) |
 | `ERREURS_MONTEE` | `core/montee_version/demandes.py` | Erreurs d'une montée, rendues comme refus |
 | `ERREURS_MONTEE_ECRAN` | `interface/montees.py` | Refus de l'écran Montée (HTTP 400) |
+| `ERREURS_PEPPOL` | `interface/peppol.py` | Refus de l'écran facture électronique |
 | `ERREURS_SIRET` | `interface/siret.py` | Refus de l'écran SIRET (HTTP 400) |
+| `ERREURS_TIERS` | `interface/tiers.py` | Refus communs des écrans de tiers |
 | `ErreurSauvegarde` | `core/montee_version/sauvegarde.py` | Sauvegarde Odoo refusée |
 | `ErreurSiret` | `core/tiers_siret.py` | Demande de complément impossible |
 | `ErreurVolume` | `core/montee_version/volume.py` | Volume impossible à ouvrir, clé mal protégée |
@@ -383,13 +419,18 @@ Avant d'en créer une, vérifier (casse ignorée) qu'elle n'existe pas déjà.
 | `etatTransferts` | `interface/static/transferts.js` | État de l'écran : logiciels, plafond de dépôt, connexions |
 | `examiner_sauvegarde` | `core/montee_version/sauvegarde.py` | Routine : relit une sauvegarde sans l'extraire |
 | `exc` | `interface/transferts.py` | Erreur attrapée |
+| `export_csv` | `interface/peppol.py` | Méthode : résultat de la vérification en CSV |
 | `extraction` | `core/montee_version/montee.py` | Dossier d'extraction de la sauvegarde |
 | `extraire_sauvegarde` | `core/montee_version/sauvegarde.py` | Routine : extrait dump et pièces jointes |
+| `FACTURE_CII` | `tests/test_tiers_peppol.py` | Document d'essai : facture CII |
+| `FACTURE_UBL` | `tests/test_tiers_peppol.py` | Document d'essai : facture UBL |
 | `faire` | `tests/test_ecran_montees.py` | Méthode de test : demande traitée par le service |
 | `faire_inventaire` | `core/montee_version/montee.py` | Méthode : étape 1 de la montée |
 | `FauxAnnuaire` | `tests/test_tiers_siret.py` | Annuaire simulé |
 | `FauxDocker` | `tests/test_montee_pilotee.py` | Docker simulé |
 | `FauxOdoo` | `tests/test_tiers_siret.py` | Odoo simulé (res.partner) |
+| `FauxOdooFacturation` | `tests/test_tiers_peppol.py` | Odoo simulé avec champs Peppol |
+| `FauxRepertoire` | `tests/test_tiers_peppol.py` | Répertoire Peppol simulé |
 | `fec` | `tests/test_tiers_siret.py` | Connexion FEC d'un test |
 | `FEC_VENTES` | `tests/test_ecran_transferts.py` | FEC d'essai : à-nouveaux et une vente |
 | `fermer_volume` | `core/montee_version/volume.py` | Routine : démonte et referme le volume |
@@ -405,8 +446,9 @@ Avant d'en créer une, vérifier (casse ignorée) qu'elle n'existe pas déjà.
 | `FONDATION` | `tests/test_tiers_siret.py` | Homonyme d'essai sans TVA |
 | `formulaireFeuVert` | `interface/static/transferts.js` | Feu vert : libellé retapé et date de sauvegarde |
 | `formulaireFeuVertMontee` | `interface/static/montees.js` | Feu vert d'une montée |
-| `formulaireFeuVertSiret` | `interface/static/siret.js` | Feu vert de la production |
+| `formulaireFeuVertTiers` | `interface/static/siret.js` | Feu vert d'un écran de tiers |
 | `formulaireNouvelEssai` | `interface/static/montees.js` | Nouvel essai sur une copie fraîche |
+| `fournisseur` | `core/tiers_peppol.py` | Tiers fournisseur |
 | `fraiche` | `tests/test_montee_pilotee.py` | Sauvegarde fraîche |
 | `fusion` | `core/montee_version/inventaire.py` | Module qui en reprend un autre |
 | `fusion_notee` | `core/montee_version/openupgrade.py` | Routine : module repreneur d'après la note |
@@ -428,6 +470,8 @@ Avant d'en créer une, vérifier (casse ignorée) qu'elle n'existe pas déjà.
 | `IMAGE_POSTGRES` | `core/montee_version/montee.py` | Image du PostgreSQL jetable |
 | `inconnus` | `core/connecteurs/connexions.py` | Paramètres reçus inconnus du connecteur |
 | `InfoSauvegarde` | `core/montee_version/sauvegarde.py` | Type : ce que dit une sauvegarde |
+| `INSCRIT` | `core/tiers_peppol.py` | Classe : tiers inscrit |
+| `inscrit_le` | `core/tiers_peppol.py` | Date d'inscription sur Peppol |
 | `INTROUVABLE` | `core/tiers_siret.py` | Classe de proposition : introuvable |
 | `Inventaire` | `core/montee_version/inventaire.py` | Type : résultat de l'inventaire d'une base |
 | `inventorier` | `core/montee_version/inventaire.py` | Routine : classe chaque module, saut par saut |
@@ -437,10 +481,11 @@ Avant d'en créer une, vérifier (casse ignorée) qu'elle n'existe pas déjà.
 | `json_ok` | `tests/test_ecran_transferts.py` | Méthode de test : requête qui doit réussir |
 | `kwargs` | `core/tiers_siret.py`, `tests/test_tiers_siret.py` | Arguments nommés d'un appel Odoo (signature de CibleOdoo.appel) |
 | `lancements` | `tests/test_montee_pilotee.py` | Commandes docker run |
-| `lancer_annulation` | `interface/siret.py` | Méthode : lance l'annulation |
-| `lancer_ecriture` | `interface/siret.py` | Méthode : essai sur la copie de test ou production |
+| `lancer_annulation` | `interface/tiers.py` | Méthode : lance l'annulation |
+| `lancer_ecriture` | `interface/tiers.py` | Méthode : essai sur la copie de test ou production |
 | `lancer_propositions` | `interface/siret.py` | Méthode : lance les propositions |
 | `lancer_transfert` | `interface/transferts.py` | Méthode : valide puis lance les étapes 1 à 4 |
+| `lancer_verification` | `interface/peppol.py` | Méthode : lance la vérification |
 | `lanceur` | `core/montee_version/montee.py` | Paramètre : lanceur de programmes |
 | `LanceurProgramme` | `core/montee_version/montee.py` | Type : lance un programme (simulé dans les tests) |
 | `libelleConnexion` | `interface/static/transferts.js` | Libellé d'une connexion par son identifiant |
@@ -448,6 +493,7 @@ Avant d'en créer une, vérifier (casse ignorée) qu'elle n'existe pas déjà.
 | `libre` | `core/montee_version/montee.py`, `tests/test_montee_pilotee.py` | Place libre mesurée |
 | `LIBRE_MINIMUM` | `core/montee_version/montee.py` | Garde-fou : place libre minimale pendant un saut (2 Go) |
 | `libres` | `tests/test_montee_pilotee.py` | Places libres successives simulées |
+| `ligneAdresse` | `interface/static/peppol.js` | Ligne d'une adresse Peppol |
 | `ligneCandidate` | `interface/static/siret.js` | Ligne d'une candidate |
 | `ligneEtapeMontee` | `interface/static/montees.js` | Ligne d'une étape |
 | `LIGNES_ERREUR` | `core/montee_version/commandes.py` | Lignes de sortie gardées dans un message d'échec |
@@ -458,6 +504,7 @@ Avant d'en créer une, vérifier (casse ignorée) qu'elle n'existe pas déjà.
 | `lire_modules` | `core/montee_version/inventaire.py` | Routine : version et modules installés d'une base |
 | `lire_tiers` | `core/tiers_siret.py` | Routine : tiers relus, déjà complétés écartés |
 | `lire_version` | `interface/serveur.py` | Routine : version publiée (fichier VERSION) |
+| `lire_tiers_facturation` | `core/tiers_peppol.py` | Routine : tous les clients et fournisseurs, avec SIREN |
 | `liste_sauts` | `core/montee_version/inventaire.py` | Sauts de l'inventaire |
 | `listeModules` | `interface/static/montees.js` | Liste de modules d'un saut |
 | `lister_transferts` | `interface/transferts.py` | Méthode : transferts enregistrés, plus récent d'abord |
@@ -467,6 +514,7 @@ Avant d'en créer une, vérifier (casse ignorée) qu'elle n'existe pas déjà.
 | `livrer` | `core/montee_version/montee.py` | Méthode : étape 7, sauvegarde livrée |
 | `logicielBranche` | `interface/static/transferts.js` | Routine JS : description d'un logiciel branché |
 | `logiciels` | `interface/transferts.py` | Méthode : logiciels branchés et ce que chacun demande |
+| `LOT_TIERS` | `core/tiers_peppol.py` | Tiers lus par lot dans Odoo |
 | `maintenant` | `core/montee_version/demandes.py` | Date de référence de l'effacement |
 | `majDestinations` | `interface/static/transferts.js` | Destinations possibles (jamais la source) |
 | `majeure` | `core/montee_version/sauvegarde.py` | Version majeure lue |
@@ -499,11 +547,12 @@ Avant d'en créer une, vérifier (casse ignorée) qu'elle n'existe pas déjà.
 | `neuf` | `core/montee_version/volume.py` | Volume à créer |
 | `noeud` | `core/montee_version/openupgrade.py` | Nœud de l'arbre d'apriori.py |
 | `NOM_DUMP` | `core/montee_version/sauvegarde.py` | Nom du dump dans une sauvegarde |
-| `NOM_ESSAI` | `interface/siret.py` | Fichier de l'essai sur la copie de test |
+| `NOM_ESSAI` | `interface/tiers.py` | Fichier de l'essai sur la copie de test |
 | `NOM_MANIFESTE` | `core/montee_version/sauvegarde.py` | Nom du manifeste dans une sauvegarde |
-| `NOM_PROPOSITIONS` | `interface/siret.py` | Fichier des propositions |
+| `NOM_PROPOSITIONS` | `interface/tiers.py` | Fichier des propositions |
 | `NOM_VOLUME` | `core/montee_version/volume.py` | Nom du volume ouvert |
 | `NOMS_FICHIERS` | `interface/static/transferts.js` | Nom affiché des fichiers d'un transfert |
+| `NON_TROUVE` | `core/tiers_peppol.py` | Classe : non trouvé (à vérifier) |
 | `normaliser_nom` | `core/analyser.py`, `core/tiers_siret.py` | Routine partagée : nom en majuscules ASCII sans forme juridique ni ponctuation |
 | `note` | `core/montee_version/openupgrade.py`, `tests/test_montee_pilotee.py` | Note d'un module dans la table |
 | `NOTE_SANS_CHANGEMENT` | `core/montee_version/openupgrade.py` | Note « No DB layout changes » |
@@ -522,15 +571,19 @@ Avant d'en créer une, vérifier (casse ignorée) qu'elle n'existe pas déjà.
 | `ouvrirSiret` | `interface/static/siret.js` | Ouvre le complément SIRET et TVA |
 | `ouvrirTransfert` | `interface/static/transferts.js` | Détail d'un transfert |
 | `par_nom` | `tests/test_ecran_transferts.py` | Logiciels rangés par nom |
+| `par_siren` | `core/tiers_peppol.py` | Adresses déjà lues par SIREN |
 | `par_tiers` | `interface/siret.py` | Propositions rangées par tiers |
 | `parametres_facultatifs` | `core/connecteurs/base.py`, `core/connecteurs/fec.py`, `core/connecteurs/odoo.py`, `core/connecteurs/azalplus.py`, `core/connecteurs/pennylane.py`, `tests/test_connecteurs.py` | Paramètres acceptés en plus des requis ; l'annuaire refuse tout autre nom |
 | `parent` | `interface/transferts.py` | Dossier parcouru (os.walk) |
 | `parfaites` | `core/tiers_siret.py` | Candidates qui remplissent toutes les conditions |
 | `PART_PROCESSEUR` | `core/montee_version/montee.py` | Priorité processeur basse des conteneurs |
+| `participant` | `tests/test_tiers_peppol.py` | Routine de test : réponse du répertoire |
 | `pas_zip` | `tests/test_montee_pilotee.py` | Fichier qui n'est pas un zip |
 | `PAUSE_ANNUAIRE_S` | `core/tiers_siret.py` | Pause entre deux appels à l'annuaire |
 | `PAUSE_FILE_S` | `scripts/concorde_montee_service.py` | Pause entre deux passages de la file |
+| `PAUSE_PEPPOL_S` | `core/tiers_peppol.py` | Pause entre deux appels au répertoire |
 | `PAUSE_S` | `tests/integration/attendre_odoo.py` | Pause entre deux essais |
+| `peppol` | `interface/serveur.py` | Écran facture électronique de l'application |
 | `peripherique` | `core/montee_version/volume.py` | Périphérique du volume ouvert |
 | `PG_DEFAUT` | `core/montee_version/sauvegarde.py` | Version de PostgreSQL sans manifeste |
 | `PG_MAX` | `core/montee_version/sauvegarde.py` | Version de PostgreSQL la plus haute acceptée |
@@ -550,6 +603,7 @@ Avant d'en créer une, vérifier (casse ignorée) qu'elle n'existe pas déjà.
 | `PROCESSEURS_CONTENEUR` | `core/montee_version/montee.py` | Processeurs au plus par conteneur |
 | `prod` | `tests/test_tiers_siret.py` | Connexion de production d'un test |
 | `programme` | `core/montee_version/montee.py` | Outil PostgreSQL lancé |
+| `proposee` | `core/tiers_peppol.py` | Adresse proposée d'office |
 | `proposer` | `core/tiers_siret.py` | Routine : propositions de l'annuaire, contrôlées |
 | `Proposition` | `core/tiers_siret.py` | Type : proposition pour un tiers |
 | `proposition_tiers` | `interface/siret.py`, `tests/test_tiers_siret.py` | Proposition pour un tiers |
@@ -569,12 +623,15 @@ Avant d'en créer une, vérifier (casse ignorée) qu'elle n'existe pas déjà.
 | `recu` | `interface/transferts.py` | Fichier reçu avant sa relecture |
 | `recuperer` | `core/montee_version/openupgrade.py`, `tests/test_montee_pilotee.py` | Routine : copie d'OpenUpgrade au commit figé |
 | `recus` | `interface/transferts.py` | Paramètres reçus du navigateur |
+| `refus_choix_vide` | `tests/test_tiers_peppol.py` | Méthode de test : choix vide refusé |
 | `refuser` | `tests/test_tiers_siret.py` | Tiers dont l'Odoo simulé refuse l'écriture |
 | `reglages` | `tests/test_montee_pilotee.py` | Réglages du service de montée |
 | `relatif` | `interface/transferts.py` | Chemin d'un fichier relatif au dossier d'un transfert |
-| `rendreTacheSiret` | `interface/static/siret.js` | Résultat d'une tâche SIRET |
+| `rendreTacheTiers` | `interface/static/siret.js` | Résultat d'une tâche d'un écran de tiers |
 | `rendreTacheTransfert` | `interface/static/transferts.js` | Résultat d'une tâche de transfert ou de feu vert |
 | `repere` | `core/montee_version/demandes.py` | Date de référence d'une montée |
+| `repertoire` | `core/tiers_peppol.py`, `tests/test_tiers_peppol.py` | Client du répertoire Peppol |
+| `REPERTOIRE_PEPPOL` | `core/tiers_peppol.py` | Répertoire Peppol public |
 | `reponses_apres` | `tests/test_montee_pilotee.py` | Base simulée après la montée |
 | `reponses_avant` | `tests/test_montee_pilotee.py` | Base simulée avant la montée |
 | `republier` | `core/montee_version/demandes.py` | Fonction du fil de republication |
@@ -584,6 +641,8 @@ Avant d'en créer une, vérifier (casse ignorée) qu'elle n'existe pas déjà.
 | `restauree` | `core/montee_version/montee.py` | Marque de restauration faite |
 | `restaurer` | `tests/integration/base_odoo.py` | Routine : restaure une sauvegarde dans Odoo |
 | `resultat_demande` | `interface/montees.py` | Méthode : résultat d'une demande |
+| `resultat_tiers` | `interface/peppol.py` | Résultat d'un tiers |
+| `RESULTATS_PEPPOL` | `core/tiers_peppol.py` | Résultats demandés par recherche |
 | `resumes` | `interface/transferts.py` | Résumés des transferts |
 | `retenu` | `core/tiers_siret.py` | Établissement retenu pour le SIRET |
 | `retenue` | `tests/test_tiers_siret.py` | Candidate retenue |
@@ -592,6 +651,7 @@ Avant d'en créer une, vérifier (casse ignorée) qu'elle n'existe pas déjà.
 | `ROUTES_MONTEE` | `interface/serveur.py` | Route -> action de montée |
 | `SAISIE_PENNYLANE` | `tests/test_ecran_transferts.py` | Valeur de secret saisie dans un test (jamais renvoyée) |
 | `sans_changement` | `core/montee_version/openupgrade.py` | Routine : note « aucun changement de base » |
+| `SANS_SIREN` | `core/tiers_peppol.py` | Classe : tiers sans SIREN |
 | `saut` | `core/montee_version/inventaire.py`, `core/montee_version/montee.py`, `tests/test_montee_pilotee.py` | Saut de version parcouru |
 | `saut_en_echec` | `tests/test_montee_pilotee.py` | Saut simulé en échec |
 | `SautInventaire` | `core/montee_version/inventaire.py` | Type : un saut de l'inventaire |
@@ -601,6 +661,7 @@ Avant d'en créer une, vérifier (casse ignorée) qu'elle n'existe pas déjà.
 | `SAUVEGARDE_MAX_MO_DEFAUT` | `interface/montees.py` | Plafond d'une sauvegarde déposée (4 Go) |
 | `sauvegarde_zip` | `tests/test_montee_pilotee.py` | Routine de test : petite sauvegarde Odoo |
 | `sauver` | `core/montee_version/montee.py` | Routine : écrit montee.json |
+| `schema` | `core/tiers_peppol.py`, `interface/peppol.py` | Schéma d'adresse (0225, 0002, 0009) |
 | `SCRIPTS_MONTEE` | `core/montee_version/montee.py` | Dossier des scripts de montée dans OpenUpgrade |
 | `second` | `tests/test_montee_pilotee.py` | Second saut de l'inventaire |
 | `sertDe` | `interface/static/transferts.js` | Routine JS : rôle d'une connexion (source, destination) |
@@ -619,10 +680,12 @@ Avant d'en créer une, vérifier (casse ignorée) qu'elle n'existe pas déjà.
 | `SURVEILLANCE_S` | `core/montee_version/montee.py` | Intervalle de mesure du disque pendant un saut |
 | `table_couverture` | `tests/test_montee_pilotee.py` | Routine de test : table de couverture |
 | `TABLE_MAX_OCTETS` | `interface/transferts.py` | Plafond d'une table de correspondance (5 Mo) |
+| `tache_preparee` | `interface/tiers.py` | Méthode : tâche de préparation terminée |
 | `taches` | `interface/transferts.py` | Tâches de l'interface, dans l'écran Transferts |
 | `taille_depot_max` | `interface/transferts.py` | Routine : plafond d'un FEC déposé (CONCORDE_DEPOT_MAX_MO) |
 | `taille_max` | `interface/transferts.py` | Plafond de réception, en octets |
 | `TAILLE_VOLUME` | `core/montee_version/volume.py` | Taille maximale du volume (fichier creux) |
+| `telecharger` | `tests/test_tiers_peppol.py` | Méthode de test : GET d'un fichier |
 | `TestCasLimites` | `tests/test_montee_pilotee.py` | Classe de test : pannes nommées |
 | `TestCircuit` | `tests/test_montee_pilotee.py` | Classe de test : étapes 1 à 4 |
 | `TestCommandeMonteePilotee` | `tests/test_montee_pilotee.py` | Classe de test : sous-commandes |
@@ -630,6 +693,7 @@ Avant d'en créer une, vérifier (casse ignorée) qu'elle n'existe pas déjà.
 | `TestCreation` | `tests/test_montee_pilotee.py` | Classe de test : création d'une montée |
 | `TestDeploiementMontee` | `tests/test_montee_pilotee.py` | Classe de test : fichiers de mise en place du service de montée |
 | `TestEcranMontees` | `tests/test_ecran_montees.py` | Classe de test : écran Montée |
+| `TestEcranPeppol` | `tests/test_tiers_peppol.py` | Classe de test : parcours HTTP |
 | `TestEcranSiret` | `tests/test_tiers_siret.py` | Classe de test : parcours HTTP |
 | `TestEcranTransferts` | `tests/test_ecran_transferts.py` | Classe de test : écran Transferts par HTTP |
 | `testerConnexion` | `interface/static/transferts.js` | Teste une connexion et montre le résultat |
@@ -638,13 +702,16 @@ Avant d'en créer une, vérifier (casse ignorée) qu'elle n'existe pas déjà.
 | `TestOpenUpgradeEtInventaire` | `tests/test_montee_pilotee.py` | Classe de test : OpenUpgrade et inventaire |
 | `TestOutilsEcran` | `tests/test_ecran_transferts.py` | Classe de test : routines de l'écran |
 | `TestRegles` | `tests/test_tiers_siret.py` | Classe de test : contrôles et écriture |
+| `TestReglesPeppol` | `tests/test_tiers_peppol.py` | Classe de test : règles Peppol |
 | `TestSauvegarde` | `tests/test_montee_pilotee.py` | Classe de test : sauvegarde Odoo |
 | `TestVolume` | `tests/test_montee_pilotee.py` | Classe de test : volume chiffré |
 | `texte_corps` | `interface/transferts.py` | Routine partagée : champ texte du corps d'une requête |
 | `texte_date` | `interface/transferts.py` | Date de sauvegarde reçue, en texte |
 | `TEXTE_MAX` | `core/montee_version/demandes.py` | Longueur maximale d'un texte de demande |
 | `TiersACompleter` | `core/tiers_siret.py` | Type : tiers relu dans Odoo |
+| `TiersFacturation` | `core/tiers_peppol.py` | Type : client ou fournisseur relu |
 | `tiroir` | `interface/static/transferts.js` | Routine JS : ouvre le tiroir avec un titre et un contenu |
+| `titre` | `interface/tiers.py`, `interface/siret.py`, `interface/peppol.py` | Titre de l'écran dans les tâches |
 | `traiter` | `core/montee_version/demandes.py` | Méthode : exécute une demande |
 | `traiter_file` | `core/montee_version/demandes.py` | Méthode : traite les demandes en attente |
 | `Travail` | `interface/serveur.py` | Type : travail d'une tâche branchée par un autre module |
@@ -653,8 +720,12 @@ Avant d'en créer une, vérifier (casse ignorée) qu'elle n'existe pas déjà.
 | `trouvees` | `core/tiers_siret.py` | Candidates trouvées |
 | `tva` | `core/tiers_siret.py`, `interface/siret.py` | Numéro de TVA intracommunautaire |
 | `tva_exigee` | `core/tiers_siret.py` | TVA absente = anomalie ? |
+| `type_document` | `core/tiers_peppol.py` | Type de document parcouru |
+| `types` | `core/tiers_peppol.py` | Types de documents d'une adresse |
+| `TYPES_DOCUMENTS` | `core/tiers_peppol.py` | Documents Peppol reconnus -> nom affiché |
 | `un_choix` | `core/tiers_siret.py`, `interface/siret.py` | Choix parcouru |
 | `un_constat` | `interface/siret.py` | Constat parcouru |
+| `un_resultat` | `interface/tiers.py` | Résultat parcouru |
 | `un_tiers` | `core/tiers_siret.py`, `tests/test_tiers_siret.py` | Tiers parcouru |
 | `url_feu_vert` | `tests/test_ecran_transferts.py` | Route du feu vert d'un transfert |
 | `usage` | `interface/transferts.py`, `tests/test_ecran_transferts.py` | Rôle d'un FEC : source ou destination |
@@ -668,7 +739,7 @@ Avant d'en créer une, vérifier (casse ignorée) qu'elle n'existe pas déjà.
 | `absents` | `core/connecteurs/base.py`, `core/connecteurs/odoo.py`, `core/migration/injection.py`, `core/connecteurs/pennylane.py` | Paramètres ou secrets manquants d'un connecteur ; aussi : Paramètres ou secrets manquants ; éléments absents d'Odoo |
 | `action` | `tests/test_xlsx_vers_fec.py`, `tests/test_connecteurs.py` | Action simulée levant une erreur de lecture |
 | `ActionOdoo` | `deploy/addons/concorde/wizard/concorde_import_wizard.py` | Type d'une action Odoo rendue au client web |
-| `adresse` | `core/migration/injection.py`, `core/connecteurs/http_json.py` | Paramètre : URL du service XML-RPC |
+| `adresse` | `core/migration/injection.py`, `core/connecteurs/http_json.py`, `tests/test_tiers_peppol.py` | Paramètre : URL du service XML-RPC ; aussi : adresse Peppol parcourue (tests) |
 | `ADRESSE_PENNYLANE` | `core/connecteurs/pennylane.py` | Adresse de l'API v2 de Pennylane |
 | `ajouter` | `core/connecteurs/connexions.py`, `scripts/concorde_connexion.py`, `interface/transferts.py` | Méthode de l'annuaire : enregistre une connexion ; aussi : méthode de l'écran Transferts : ajoute une connexion (chemins FEC choisis par CONCORDE) |
 | `AlerteEnregistree` | `core/surveillance.py` | Type : alerte mémorisée dans le fichier JSON du centre |
@@ -1678,6 +1749,7 @@ Avant d'en créer une, vérifier (casse ignorée) qu'elle n'existe pas déjà.
 | `valeur_lue` | `tests/test_yaml_min.py` | Valeur lue par parse_yaml |
 | `valeur_parametre` | `core/connecteurs/connexions.py` | Valeur d'un paramètre de connexion |
 | `valeur_si_vide` | `core/yaml_min.py` | Paramètre : valeur d'une clé sans valeur ni bloc |
+| `valeur_vide` | `core/tiers_odoo.py` | Routine partagée : valeur Odoo vide |
 | `ValeurBinaire` | `deploy/addons/concorde/wizard/concorde_import_wizard.py` | Type d'une valeur lue dans un champ Binary (toutes versions d'Odoo) |
 | `ValeurCellule` | `core/mapping.py` | Type d'une valeur de cellule .xlsx (str, int, float, bool) |
 | `ValeurParDefaut` | `core/xml_sur.py` | Type de la valeur par défaut de `ElementXml.get` |
@@ -1695,6 +1767,8 @@ Avant d'en créer une, vérifier (casse ignorée) qu'elle n'existe pas déjà.
 | `variable` | `interface/transferts.py` | Nom de la variable du plafond |
 | `variable_docker` | `interface/serveur.py` | Nom de variable POSTGRES_* (docker) |
 | `variable_pg` | `interface/serveur.py` | Nom de variable PG* (libpq) |
+| `Verification` | `core/tiers_peppol.py` | Type : résultat pour un tiers |
+| `verifier` | `core/tiers_peppol.py` | Routine : inscription de chaque tiers |
 | `verifier_cle` | `core/montee_version/volume.py` | Routine : refuse une clé mal protégée |
 | `verifier_demande` | `core/montee_version/demandes.py` | Routine : vérifie une demande champ par champ |
 | `verifier_erreur` | `tests/test_yaml_min.py` | Routine : vérifie l'ErreurYaml et la ligne citée |

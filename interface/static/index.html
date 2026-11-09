@@ -9,6 +9,7 @@
 <script src="/transferts.js" defer></script>
 <script src="/montees.js" defer></script>
 <script src="/siret.js" defer></script>
+<script src="/peppol.js" defer></script>
 <script src="/app.js" defer></script>
 </head>
 <body>
@@ -38,6 +39,7 @@
       <a href="#telecharger" data-vue="telecharger">Télécharger</a>
       <a href="#transferts" data-vue="transferts">Transferts</a>
       <a href="#montees" data-vue="montees">Montée de version</a>
+      <a href="#peppol" data-vue="peppol">Facture électronique</a>
       <a href="#envoyer" data-vue="envoyer" class="bientot">Envoyer <span class="pastille">phase 2</span></a>
       <a href="#modifier" data-vue="modifier" class="bientot">Modifier <span class="pastille">phase 3</span></a>
       <hr>
@@ -322,6 +324,22 @@
 
       <h2>Montées</h2>
       <div id="liste-montees"></div>
+    </section>
+
+    <!-- FACTURE ÉLECTRONIQUE DES TIERS (ADR-0014) -->
+    <section class="vue" id="vue-peppol" hidden>
+      <h1>Facture électronique des tiers</h1>
+      <p class="aide">Pour chaque client et fournisseur de la base, CONCORDE cherche son inscription dans le répertoire public Peppol, où les plateformes agréées publient les adresses de facturation électronique (seul le SIREN est envoyé). « Inscrit » est une preuve ; « non trouvé » veut dire « à vérifier » : sa plateforme peut ne pas publier.</p>
+      <form id="form-peppol" class="carte formulaire" autocomplete="off">
+        <div class="ligne-champs">
+          <label>Base <select id="peppol-connexion"></select></label>
+        </div>
+        <p class="note" id="peppol-note"></p>
+        <p class="erreur" id="erreur-peppol" role="alert"></p>
+        <button class="bouton principal" type="submit">Vérifier tous les clients et fournisseurs</button>
+      </form>
+      <div id="suivi-peppol"></div>
+      <div id="resultat-peppol"></div>
     </section>
 
     <!-- BASES -->

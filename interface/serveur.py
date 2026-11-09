@@ -58,6 +58,10 @@ API (JSON ; toute requête qui modifie exige l'en-tête X-Concorde: 1) :
   POST /api/siret {analyse, connexion}   GET /api/siret/<tâche>
   POST /api/siret/<tâche>/ecrire {cible, choix, confirmation}
   POST /api/siret/<tâche>/annuler {cible}
+  Facture électronique des tiers (ADR-0014, interface/peppol.py) :
+  POST /api/peppol {connexion}   GET /api/peppol/<tâche>   GET …/csv
+  POST /api/peppol/<tâche>/ecrire {cible, choix, confirmation}
+  POST /api/peppol/<tâche>/annuler {cible}
   (suppression / réinitialisation d'une base LOCALE : POST /api/taches avec
    action = supprimer_base | reinitialiser_base et confirmation = nom
    retapé — ADR-0005)
@@ -111,7 +115,9 @@ from core.surveillance import (
 )
 from interface.auth import Sessions, verifier
 from interface.montees import ERREURS_MONTEE_ECRAN, EcranMontees
+from interface.peppol import ERREURS_PEPPOL, EcranPeppol
 from interface.siret import ERREURS_SIRET, EcranSiret
+from interface.tiers import EcranTiers
 from interface.transferts import ERREURS_ECRAN, EcranTransferts
 
 # Objet JSON (tâche, base, constat, corps de requête) : contenu dynamique,
@@ -705,6 +711,9 @@ class Taches:
         "siret_proposer": "propositions SIRET et TVA",
         "siret_ecrire": "écriture SIRET et TVA",
         "siret_annuler": "annulation SIRET et TVA",
+        "peppol_verifier": "vérification facture électronique",
+        "peppol_ecrire": "écriture adresse facture électronique",
+        "peppol_annuler": "annulation adresse facture électronique",
     }
     # Actions sur une base de l'écran Bases (POST /api/taches).
     ACTIONS_BASE = (
@@ -1525,6 +1534,9 @@ class Application:
         self.siret = EcranSiret(
             self.taches, self.transferts.annuaire, self.journal
         )
+        self.peppol = EcranPeppol(
+            self.taches, self.transferts.annuaire, self.journal
+        )
         self.journal.dire("Service CONCORDE démarré", "ok")
 
 
@@ -1680,15 +1692,10 @@ class Gestionnaire(BaseHTTPRequestHandler):
             if not self._connecte():
                 return self._erreur(401, "Connexion requise.")
             return self._get_montees(chemin)
-        if re.fullmatch(r"/api/siret/[\w-]+", chemin):
+        if re.fullmatch(r"/api/(siret|peppol)/[\w-]+(/csv)?", chemin):
             if not self._connecte():
                 return self._erreur(401, "Connexion requise.")
-            ident_siret = chemin.split("/")[3]
-            return self._ecran(
-                200,
-                lambda: self.app.siret.propositions(ident_siret),
-                ERREURS_SIRET,
-            )
+            return self._get_tiers(chemin)
         if not self._connecte():
             return self._erreur(401, "Connexion requise.")
         requete = self._requete()
@@ -1882,7 +1889,21 @@ class Gestionnaire(BaseHTTPRequestHandler):
         if chemin.startswith("/api/montees"):
             return self._post_montees(chemin, corps)
         if chemin.startswith("/api/siret"):
-            return self._post_siret(chemin, corps)
+            return self._post_tiers(
+                chemin,
+                corps,
+                self.app.siret,
+                self.app.siret.lancer_propositions,
+                ERREURS_SIRET,
+            )
+        if chemin.startswith("/api/peppol"):
+            return self._post_tiers(
+                chemin,
+                corps,
+                self.app.peppol,
+                self.app.peppol.lancer_verification,
+                ERREURS_PEPPOL,
+            )
         if chemin == "/api/cles/revoquer":
             return self._revoquer_cle(corps)
         if chemin == "/api/rapport":
@@ -2064,29 +2085,64 @@ class Gestionnaire(BaseHTTPRequestHandler):
             )
         return self._erreur(404, "Route inconnue.")
 
-    def _post_siret(self, chemin: str, corps: ObjetJson) -> None:
-        """Compléter SIRET et TVA : propositions, écriture, annulation."""
-        ecran = self.app.siret
-        parties = chemin.split("/")  # ["", "api", "siret", <tâche>, <action>]
-        if chemin == "/api/siret":
+    def _get_tiers(self, chemin: str) -> None:
+        """Lectures des écrans de tiers : résultats, et CSV (Peppol)."""
+        parties = chemin.split("/")  # ["", "api", <écran>, <tâche>, "csv"?]
+        if parties[2] == "siret":
+            if len(parties) == 5:
+                return self._erreur(404, "Route inconnue.")
             return self._ecran(
-                201,
-                lambda: {"id": ecran.lancer_propositions(corps)},
+                200,
+                lambda: self.app.siret.propositions(parties[3]),
                 ERREURS_SIRET,
             )
-        if re.fullmatch(r"/api/siret/[\w-]+/ecrire", chemin):
+        if len(parties) == 4:
+            return self._ecran(
+                200,
+                lambda: self.app.peppol.resultats(parties[3]),
+                ERREURS_PEPPOL,
+            )
+        try:
+            contenu = self.app.peppol.export_csv(parties[3])
+        except ERREURS_PEPPOL as exc:
+            return self._erreur(404, str(exc))
+        return self._envoyer(
+            200,
+            contenu,
+            "text/csv; charset=utf-8",
+            {
+                "Content-Disposition": _disposition_piece_jointe(
+                    "facture_electronique_%s.csv" % parties[3]
+                )
+            },
+        )
+
+    def _post_tiers(
+        self,
+        chemin: str,
+        corps: ObjetJson,
+        ecran: EcranTiers,
+        preparer: Callable[[ObjetJson], str],
+        refus: tuple[type[BaseException], ...],
+    ) -> None:
+        """Écrans de tiers (SIRET, facture électronique) : préparation,
+        écriture (essai ou feu vert), annulation."""
+        parties = chemin.split("/")  # ["", "api", <écran>, <tâche>, <action>]
+        if len(parties) == 3:
+            return self._ecran(201, lambda: {"id": preparer(corps)}, refus)
+        if len(parties) == 5 and parties[4] == "ecrire":
             return self._ecran(
                 201,
                 lambda: {
                     "id": ecran.lancer_ecriture(parties[3], corps, self._ip())
                 },
-                ERREURS_SIRET,
+                refus,
             )
-        if re.fullmatch(r"/api/siret/[\w-]+/annuler", chemin):
+        if len(parties) == 5 and parties[4] == "annuler":
             return self._ecran(
                 201,
                 lambda: {"id": ecran.lancer_annulation(parties[3], corps)},
-                ERREURS_SIRET,
+                refus,
             )
         return self._erreur(404, "Route inconnue.")
 

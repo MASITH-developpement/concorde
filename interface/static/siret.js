@@ -90,7 +90,7 @@ function afficherPropositions(donnees) {
         const { id } = await api(`/api/siret/${donnees.tache}/ecrire`, { method: "POST", corps: { cible: "test", choix } });
         const t = await attendreTache(id, zone);
         if (t.statut !== "terminee") throw new Error(t.erreur || "Échec de l'essai.");
-        zone.replaceChildren(bilanSiret(t.resultat), formulaireFeuVertSiret(donnees, choix, zone));
+        zone.replaceChildren(bilanTiers(t.resultat), formulaireFeuVertTiers("/api/siret", donnees, choix, zone));
       } catch (e) { erreur.textContent = e.message; }
       finally { essai.disabled = false; }
     } });
@@ -99,14 +99,14 @@ function afficherPropositions(donnees) {
     liste, erreur, el("div", { class: "actions" }, essai), zone);
 }
 
-function bilanSiret(r) {
+function bilanTiers(r) {
   return el("div", { class: "carte" },
     el("p", {}, el("strong", { texte: `${r.base} (${r.cible === "test" ? "copie de test" : "production"}) : ` }),
       `${r.ecrits.length} fiche(s) complétée(s), ${r.ignores.length} déjà complétée(s), ${r.refus.length} refus d'Odoo.`),
     r.refus.length ? el("ul", {}, r.refus.map((x) => el("li", { class: "erreur", texte: `Tiers ${x.id} : ${x.cause}` }))) : null);
 }
 
-function formulaireFeuVertSiret(donnees, choix, zone) {
+function formulaireFeuVertTiers(racine, donnees, choix, zone) {
   const saisie = el("input", { type: "text", autocomplete: "off", spellcheck: "false", "aria-label": "Nom de la connexion à retaper" });
   const bouton = el("button", { class: "bouton danger-bouton", type: "submit", disabled: true, texte: "Feu vert : écrire en production" });
   const erreur = el("p", { class: "erreur", role: "alert" });
@@ -117,23 +117,23 @@ function formulaireFeuVertSiret(donnees, choix, zone) {
   form.addEventListener("submit", async (ev) => {
     ev.preventDefault(); bouton.disabled = true; erreur.textContent = "";
     try {
-      const { id } = await api(`/api/siret/${donnees.tache}/ecrire`, { method: "POST",
+      const { id } = await api(`${racine}/${donnees.tache}/ecrire`, { method: "POST",
         corps: { cible: "production", choix, confirmation: saisie.value } });
       const t = await attendreTache(id, null);
       if (t.statut !== "terminee") throw new Error(t.erreur || "Échec de l'écriture.");
-      zone.replaceChildren(bilanSiret(t.resultat), boutonAnnulerSiret(donnees.tache, "production"));
+      zone.replaceChildren(bilanTiers(t.resultat), boutonAnnulerTiers(racine, donnees.tache, "production"));
     } catch (e) { erreur.textContent = e.message; bouton.disabled = false; }
   });
-  return el("div", {}, boutonAnnulerSiret(donnees.tache, "test"), form);
+  return el("div", {}, boutonAnnulerTiers(racine, donnees.tache, "test"), form);
 }
 
-function boutonAnnulerSiret(tache, cible) {
+function boutonAnnulerTiers(racine, tache, cible) {
   return el("button", { class: "bouton petit", type: "button", texte: `Annuler l'écriture (${cible === "test" ? "copie de test" : "production"})`,
     onclick: async (ev) => {
       if (!confirm("Remettre les anciennes valeurs (vides) sur les fiches complétées ?")) return;
       ev.target.disabled = true;
       try {
-        const { id } = await api(`/api/siret/${tache}/annuler`, { method: "POST", corps: { cible } });
+        const { id } = await api(`${racine}/${tache}/annuler`, { method: "POST", corps: { cible } });
         const t = await attendreTache(id, null);
         alert(t.statut === "terminee" ? `${t.resultat.remis.length} fiche(s) remise(s), ${t.resultat.ignores.length} modifiée(s) depuis (laissées).` : t.erreur);
       } catch (e) { alert(e.message); }
@@ -141,12 +141,14 @@ function boutonAnnulerSiret(tache, cible) {
     } });
 }
 
-function rendreTacheSiret(t) {
+// Résultat d'une tâche d'un écran de tiers (SIRET, facture électronique).
+function rendreTacheTiers(t) {
   const r = t.resultat || {};
+  const libelles = Object.assign({}, CLASSES_SIRET, CLASSES_PEPPOL);
   return el("div", { class: "carte" },
     el("div", { class: "entete-resultat" }, el("h2", { texte: (ACTIONS[t.action] || t.action) + " — " + t.base }), statutPastille(t.statut)),
     t.statut !== "terminee" ? el("p", { class: "erreur", texte: t.erreur || "" })
-      : t.action === "siret_proposer" ? el("p", { texte: `${r.tiers} tiers : ` + Object.entries(r.classes || {}).map(([k, n]) => `${n} ${CLASSES_SIRET[k] || k}`).join(", ") })
-        : t.action === "siret_ecrire" ? bilanSiret(r)
+      : r.classes ? el("p", { texte: `${r.tiers} tiers : ` + Object.entries(r.classes).map(([k, n]) => `${n} ${libelles[k] || k}`).join(", ") })
+        : r.ecrits ? bilanTiers(r)
           : el("p", { texte: `${(r.remis || []).length} fiche(s) remise(s).` }));
 }

@@ -372,3 +372,9 @@ input[type=checkbox] { width: 16px; height: 16px; accent-color: var(--accent); }
 .siret-tiers { border: 1px solid var(--bord); border-radius: 9px; padding: .5rem .7rem; display: grid; gap: .35rem; overflow-wrap: anywhere; }
 .siret-tiers label.case { align-items: start; font-size: .88rem; }
 .siret-tiers label.case input:disabled + span { color: var(--texte-2); }
+
+/* --- facture électronique des tiers (ADR-0014) --- */
+.statut.inscrit { background: var(--ok-fond); color: var(--ok); }
+.statut.non_trouve { background: var(--alerte-fond); color: var(--alerte); }
+.statut.sans_siren { background: var(--surface-2); color: var(--texte-2); }
+#vue-peppol .siret-liste { max-height: 65vh; }

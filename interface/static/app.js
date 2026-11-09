@@ -10,9 +10,13 @@ const ACTIONS = { analyser: "Analyse", telecharger: "Téléchargement", comparer
                   supprimer_base: "Suppression de base", reinitialiser_base: "Réinitialisation",
                   transfert: "Transfert", feu_vert: "Feu vert",
                   siret_proposer: "SIRET et TVA — propositions", siret_ecrire: "SIRET et TVA — écriture",
-                  siret_annuler: "SIRET et TVA — annulation" };
+                  siret_annuler: "SIRET et TVA — annulation",
+                  peppol_verifier: "Facture électronique — vérification",
+                  peppol_ecrire: "Facture électronique — écriture",
+                  peppol_annuler: "Facture électronique — annulation" };
 // Vue qui affiche le résultat d'une action, quand elle ne porte pas son nom.
-const VUE_ACTION = { transfert: "transferts", feu_vert: "transferts" };
+const VUE_ACTION = { transfert: "transferts", feu_vert: "transferts", peppol_verifier: "peppol",
+                     peppol_ecrire: "peppol", peppol_annuler: "peppol" };
 const STATUTS = {
   en_attente: "En attente", en_cours: "En cours", terminee: "Terminée",
   echec: "Échec", interrompue: "Interrompue",
@@ -145,6 +149,7 @@ function router() {
   if (existe === "bases") { afficherBases(); chargerCles(); chargerSauvegardes(); }
   if (existe === "transferts") chargerEcranTransferts();
   if (existe === "montees") chargerEcranMontees();
+  if (existe === "peppol") chargerEcranPeppol();
 }
 window.addEventListener("hashchange", router);
 
@@ -417,7 +422,7 @@ function rendreTache(t) {
   }
   if (t.action === "comparer") return rendreComparaison(t);
   if (t.action === "transfert" || t.action === "feu_vert") return rendreTacheTransfert(t);
-  if (t.action.startsWith("siret_")) return rendreTacheSiret(t);
+  if (t.action.startsWith("siret_") || t.action.startsWith("peppol_")) return rendreTacheTiers(t);
   if (t.action === "supprimer_base" || t.action === "reinitialiser_base") {
     return el("div", { class: "carte" },
       el("div", { class: "entete-resultat" }, el("h2", { texte: (t.action === "supprimer_base"

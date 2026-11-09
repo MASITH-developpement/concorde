@@ -3,6 +3,17 @@
 Format : [Keep a Changelog](https://keepachangelog.com/fr/1.1.0/), versions sémantiques.
 Le module Odoo porte la même version au format `17.0.X.Y.Z` (`deploy/addons/concorde/__manifest__.py`).
 
+## [1.9.1] — 2026-11-09
+### Corrigé
+- Service de montée : le volume chiffré était monté dans l'espace privé du
+  service (option systemd `PrivateTmp`), invisible du serveur et donc de
+  l'interface. Le service n'isole plus ses montages ; un test l'interdit.
+- Volume chiffré : système de fichiers créé sans écrire à l'avance son
+  journal ni ses tables (environ 1,3 Go écrits pour rien sur 60 Go creux).
+- `installer_montee.sh` : attend que le volume soit monté (5 minutes au
+  plus) avant de continuer ; installation des paquets sans questions.
+- Test du volume indépendant de l'état du serveur.
+
 ## [1.9.0] — 2026-11-09
 ### Ajouté
 - **Compléter SIRET et TVA des tiers** (ADR-0013, acceptée le 09/11/2026) :

@@ -86,7 +86,19 @@ def ouvrir_volume(
     if not os.path.exists(peripherique):
         lanceur(["cryptsetup", "open", "--key-file", cle, image, NOM_VOLUME])
     if neuf:
-        lanceur(["mkfs.ext4", "-q", "-L", NOM_VOLUME, peripherique])
+        # Journal et tables d'inodes non écrits à l'avance : le fichier
+        # creux ne prend sur le disque que ce qui y est vraiment écrit.
+        lanceur(
+            [
+                "mkfs.ext4",
+                "-q",
+                "-E",
+                "lazy_itable_init=1,lazy_journal_init=1",
+                "-L",
+                NOM_VOLUME,
+                peripherique,
+            ]
+        )
     os.makedirs(montage, mode=0o700, exist_ok=True)
     if not os.path.ismount(montage):
         lanceur(["mount", peripherique, montage])

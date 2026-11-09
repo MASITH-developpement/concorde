@@ -19,8 +19,9 @@ RestartSec=30
 Nice=10
 IOSchedulingClass=idle
 NoNewPrivileges=yes
-PrivateTmp=yes
-ProtectHome=yes
+# Pas d'isolation de montage (PrivateTmp, ProtectHome, ProtectSystem…) : le
+# volume chiffré monté par ce service doit être visible du serveur, sinon
+# l'interface ne voit pas ses dossiers (mesuré le 09/11/2026).
 UMask=0077
 
 [Install]

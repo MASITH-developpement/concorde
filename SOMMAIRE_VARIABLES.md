@@ -276,6 +276,7 @@ Avant d'en créer une, vérifier (casse ignorée) qu'elle n'existe pas déjà.
 | `cliche` | `core/montee_version/montee.py` | Photo comptable prise |
 | `ClientAnnuaire` | `core/tiers_siret.py` | Protocole : requêtes JSON vers l'annuaire |
 | `code_ou` | `core/montee_version/montee.py` | Copie d'OpenUpgrade d'un saut |
+| `code_postal` | `core/tiers_siret.py` | Code postal du tiers ou de l'établissement |
 | `commandes` | `tests/test_montee_pilotee.py` | Commandes docker reçues |
 | `commandes_texte` | `tests/test_montee_pilotee.py` | Commandes docker en texte |
 | `commit` | `core/montee_version/openupgrade.py` | Commit figé attendu |
@@ -429,6 +430,7 @@ Avant d'en créer une, vérifier (casse ignorée) qu'elle n'existe pas déjà.
 | `Inventaire` | `core/montee_version/inventaire.py` | Type : résultat de l'inventaire d'une base |
 | `inventorier` | `core/montee_version/inventaire.py` | Routine : classe chaque module, saut par saut |
 | `ip` | `interface/transferts.py` | Adresse IP de la session qui donne le feu vert |
+| `isolation` | `tests/test_montee_pilotee.py` | Réglage systemd d'isolation interdit |
 | `JOURS_CONSERVATION` | `core/montee_version/demandes.py` | Jours avant l'effacement d'une montée (30) |
 | `json_ok` | `tests/test_ecran_transferts.py` | Méthode de test : requête qui doit réussir |
 | `kwargs` | `core/tiers_siret.py`, `tests/test_tiers_siret.py` | Arguments nommés d'un appel Odoo (signature de CibleOdoo.appel) |
@@ -565,6 +567,7 @@ Avant d'en créer une, vérifier (casse ignorée) qu'elle n'existe pas déjà.
 | `recuperer` | `core/montee_version/openupgrade.py`, `tests/test_montee_pilotee.py` | Routine : copie d'OpenUpgrade au commit figé |
 | `recus` | `interface/transferts.py` | Paramètres reçus du navigateur |
 | `refuser` | `tests/test_tiers_siret.py` | Tiers dont l'Odoo simulé refuse l'écriture |
+| `reglages` | `tests/test_montee_pilotee.py` | Réglages du service de montée |
 | `relatif` | `interface/transferts.py` | Chemin d'un fichier relatif au dossier d'un transfert |
 | `rendreTacheSiret` | `interface/static/siret.js` | Résultat d'une tâche SIRET |
 | `rendreTacheTransfert` | `interface/static/transferts.js` | Résultat d'une tâche de transfert ou de feu vert |
@@ -622,6 +625,7 @@ Avant d'en créer une, vérifier (casse ignorée) qu'elle n'existe pas déjà.
 | `TestCommandeMonteePilotee` | `tests/test_montee_pilotee.py` | Classe de test : sous-commandes |
 | `TestCommandes` | `tests/test_montee_pilotee.py` | Classe de test : lancement des programmes |
 | `TestCreation` | `tests/test_montee_pilotee.py` | Classe de test : création d'une montée |
+| `TestDeploiementMontee` | `tests/test_montee_pilotee.py` | Classe de test : fichiers de mise en place du service de montée |
 | `TestEcranMontees` | `tests/test_ecran_montees.py` | Classe de test : écran Montée |
 | `TestEcranSiret` | `tests/test_tiers_siret.py` | Classe de test : parcours HTTP |
 | `TestEcranTransferts` | `tests/test_ecran_transferts.py` | Classe de test : écran Transferts par HTTP |

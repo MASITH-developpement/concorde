@@ -1010,7 +1010,7 @@ class TestVolume(unittest.TestCase):
 
         with tempfile.TemporaryDirectory() as dossier, mock.patch.object(
             volume, "verifier_cle", lambda cle: None
-        ):
+        ), mock.patch.object(volume, "NOM_VOLUME", "concorde-essai-absent"):
             image = os.path.join(dossier, "v", "volume.luks")
             montage = os.path.join(dossier, "donnees")
             volume.ouvrir_volume(image, montage, "cle", "1G", noter)
@@ -1026,9 +1026,36 @@ class TestVolume(unittest.TestCase):
                 [appel[:2] for appel in appels],
                 [
                     ["cryptsetup", "open"],
-                    ["mount", "/dev/mapper/concorde-montee"],
+                    ["mount", "/dev/mapper/concorde-essai-absent"],
                 ],
             )
             appels.clear()
             volume.fermer_volume(montage, noter)
             self.assertEqual(appels, [])
+
+
+class TestDeploiementMontee(unittest.TestCase):
+    """Fichiers de mise en place du service de montée."""
+
+    def test_volume_visible_du_serveur(self) -> None:
+        """Vérifie que le service n'isole pas ses montages (volume visible)."""
+        racine = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+        with open(
+            os.path.join(racine, "deploy", "concorde-montee.service"),
+            encoding="utf-8",
+        ) as fichier:
+            reglages = [
+                ligne.split("=", 1)[0]
+                for ligne in fichier
+                if "=" in ligne and not ligne.startswith("#")
+            ]
+        for isolation in (
+            "PrivateTmp",
+            "ProtectHome",
+            "ProtectSystem",
+            "PrivateMounts",
+            "PrivateDevices",
+            "ReadOnlyPaths",
+            "TemporaryFileSystem",
+        ):
+            self.assertNotIn(isolation, reglages)

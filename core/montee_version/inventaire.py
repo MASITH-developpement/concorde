@@ -3,22 +3,28 @@
 
 Pour chaque saut, chaque module installé est cherché dans la table de
 couverture d'OpenUpgrade du commit figé qui fera ce saut :
-- couvert : « Done » ou « Nothing to do » ;
+- couvert : « Done », « Nothing to do », « No DB layout changes », ou
+  module repris par un autre à ce saut (apriori.py, « Merged into ») ;
 - à vérifier (ne bloque pas seul, figure au rapport) : traitement partiel,
-  ou module de localisation `l10n_*` (données du plan comptable, dont
-  l'effet est contrôlé par la photo comptable au centime) ;
-- bloquant : pas encore traité, ou absent de la liste (module sur mesure,
-  module OCA, module Enterprise).
+  module retiré par Odoo, module standard listé mais non annoté, ou
+  localisation `l10n_*` (effet contrôlé par la photo comptable au centime) ;
+- bloquant : absent de la liste (module sur mesure, OCA ou Enterprise).
+Les modules suivent les fusions et retraits d'un saut à l'autre.
 """
 
 from typing import TypedDict
 
 from ..odoo_source import ConnexionSql
 from .openupgrade import (
+    EntreeCouverture,
     ErreurOpenUpgrade,
     etat_couvert,
+    fichier_apriori,
     fichier_couverture,
+    fusion_notee,
+    lire_apriori,
     lire_couverture,
+    sans_changement,
     sauts,
     version_majeure,
 )
@@ -76,47 +82,72 @@ def lire_modules(connexion: ConnexionSql, base: str) -> tuple[str, list[str]]:
     return version, modules
 
 
-def couverture_saut(dossier_openupgrade: str, cible: int) -> dict[str, str]:
-    """Table de couverture du saut vers `cible`, lue sur le disque.
+class CouvertureSaut(TypedDict):
+    """Ce qu'OpenUpgrade dit d'un saut : table des modules et fusions."""
+
+    modules: dict[str, EntreeCouverture]
+    fusions: dict[str, str]
+
+
+def couverture_saut(dossier_openupgrade: str, cible: int) -> CouvertureSaut:
+    """Table de couverture et fusions du saut vers `cible`, lues sur disque.
 
     Paramètres : dossier_openupgrade — copie au commit figé de `cible`.
-    Retour : {module: état}.
+    Retour : CouvertureSaut.
     Erreurs : OSError (fichier absent) ; ErreurOpenUpgrade.
-    Usages : scripts/concorde_montee (inventaire), montee.
+    Usages : montee.Montee.faire_inventaire.
     """
     with open(
         fichier_couverture(dossier_openupgrade, cible), encoding="utf-8"
     ) as fichier:
-        return lire_couverture(fichier.read())
+        modules = lire_couverture(fichier.read())
+    with open(
+        fichier_apriori(dossier_openupgrade), encoding="utf-8"
+    ) as fichier:
+        fusions = lire_apriori(fichier.read())
+    return {"modules": modules, "fusions": fusions}
 
 
-def classer_module(module: str, etat: str | None) -> tuple[str, str]:
+def classer_module(
+    module: str, entree: EntreeCouverture | None, fusion: str | None
+) -> tuple[str, str]:
     """Classe un module pour un saut : couvert, à vérifier ou bloquant.
 
     Rôle : la règle de l'inventaire, en un seul endroit.
-    Paramètres : module — nom ; etat — état dans la table du saut, None
-    si le module n'y figure pas.
+    Paramètres : module — nom ; entree — sa ligne dans la table du saut
+    (None s'il n'y figure pas) ; fusion — module qui le reprend à ce
+    saut (apriori.py ou note « Merged into »), sinon None.
     Retour : (« couvert » | « a_verifier » | « bloquant », cause).
     Erreurs : aucune.
     Usages : inventorier, tests.
     """
-    if etat is not None and etat_couvert(etat):
-        return "couvert", ""
-    if etat:
-        return "a_verifier", "traitement incomplet (%s)" % etat
-    if module.startswith(PREFIXE_LOCALISATION):
-        return (
-            "a_verifier",
-            "localisation (plan comptable) %s : contrôlée par la photo "
-            "comptable" % ("non listée" if etat is None else "non marquée"),
-        )
-    if etat is None:
+    if fusion is not None:
+        return "couvert", "repris par %s" % fusion
+    if entree is None:
+        if module.startswith(PREFIXE_LOCALISATION):
+            return (
+                "a_verifier",
+                "localisation (plan comptable) non listée : contrôlée par la "
+                "photo comptable",
+            )
         return (
             "bloquant",
             "absent de la liste du saut (module sur mesure, OCA ou "
             "Enterprise)",
         )
-    return "bloquant", "pas encore traité pour ce saut"
+    if etat_couvert(entree["etat"]) or sans_changement(entree["note"]):
+        return "couvert", ""
+    if entree["retire"]:
+        return "a_verifier", "retiré par Odoo dans cette version"
+    if entree["etat"]:
+        return "a_verifier", "traitement incomplet (%s)" % entree["etat"]
+    if module.startswith(PREFIXE_LOCALISATION):
+        return (
+            "a_verifier",
+            "localisation (plan comptable) non marquée : contrôlée par la "
+            "photo comptable",
+        )
+    return "a_verifier", "module standard non annoté par OpenUpgrade"
 
 
 def inventorier(
@@ -124,22 +155,25 @@ def inventorier(
     version: str,
     modules: list[str],
     arrivee: int,
-    couvertures: dict[int, dict[str, str]],
+    couvertures: dict[int, CouvertureSaut],
 ) -> Inventaire:
     """Classe chaque module installé, saut par saut.
 
-    Rôle : dire avant toute montée ce qui la bloquerait (ADR-0010).
+    Rôle : dire avant toute montée ce qui la bloquerait (ADR-0010). Les
+    modules suivent les fusions et retraits d'un saut à l'autre, comme
+    pendant la vraie montée.
     Paramètres : base ; version — version de la base ; modules —
     installés ; arrivee — version voulue ; couvertures — {version visée:
-    table de couverture de ce saut}.
+    CouvertureSaut de ce saut}.
     Retour : Inventaire ; `bloque` vrai si un seul module bloque un saut.
     Erreurs : ErreurOpenUpgrade (saut impossible, table manquante).
-    Usages : scripts/concorde_montee (inventaire), tests.
+    Usages : montee.Montee.faire_inventaire, tests.
     """
     liste_sauts: list[SautInventaire] = []
+    presents = sorted(set(modules))
     for cible in sauts(version_majeure(version), arrivee):
-        table = couvertures.get(cible)
-        if table is None:
+        couverture = couvertures.get(cible)
+        if couverture is None:
             raise ErreurOpenUpgrade(
                 "Table de couverture manquante pour le saut vers Odoo %d."
                 % cible
@@ -149,9 +183,18 @@ def inventorier(
             "a_verifier": [],
             "bloquant": [],
         }
-        for module in modules:
-            classe, cause = classer_module(module, table.get(module))
+        suivants: set[str] = set()
+        for module in presents:
+            entree = couverture["modules"].get(module)
+            fusion = couverture["fusions"].get(module) or (
+                fusion_notee(entree["note"]) if entree else None
+            )
+            classe, cause = classer_module(module, entree, fusion)
             classes[classe].append({"module": module, "cause": cause})
+            if fusion is not None:
+                suivants.add(fusion)
+            elif not (entree and entree["retire"]):
+                suivants.add(module)
         liste_sauts.append(
             {
                 "vers": cible,
@@ -160,6 +203,7 @@ def inventorier(
                 "bloquants": classes["bloquant"],
             }
         )
+        presents = sorted(suivants)
     return {
         "base": base,
         "version": version,

@@ -8,8 +8,10 @@ de la table de couverture que publie OpenUpgrade pour chaque saut
 (`docsource/modulesXX0-YY0.rst`).
 """
 
+import ast
 import os
 import re
+from typing import TypedDict
 
 from .commandes import executer
 
@@ -30,9 +32,22 @@ ETATS_COUVERTS = ("done", "nothing to do")
 # Ligne d'un module : « | |new| nom   | État  | Remarque |» (marque
 # |new| ou |del| facultative ; la colonne État peut finir par « + »).
 _LIGNE_MODULE = re.compile(
-    r"^\|\s*(?:\|(?:new|del)\|\s*)?(?P<module>[A-Za-z0-9_.]+)\s*"
-    r"\|(?P<etat>[^|+]*)[|+]"
+    r"^\|\s*(?:\|(?P<marque>new|del)\|\s*)?(?P<module>[A-Za-z0-9_.]+)\s*"
+    r"\|(?P<etat>[^|+]*)[|+](?P<note>[^|]*)"
 )
+# Note de la table : module fusionné ou renommé (« Merged into payment. »).
+_NOTE_FUSION = re.compile(r"(?:Merged into|Renamed to)\s+([A-Za-z0-9_]+)")
+NOTE_SANS_CHANGEMENT = "no db layout changes"
+# Dictionnaires de apriori.py qui disent où passe un module.
+FUSIONS_APRIORI = ("renamed_modules", "merged_modules")
+
+
+class EntreeCouverture(TypedDict):
+    """Ligne d'un module dans la table de couverture d'un saut."""
+
+    etat: str
+    note: str
+    retire: bool
 
 
 class ErreurOpenUpgrade(ValueError):
@@ -87,21 +102,25 @@ def fichier_couverture(dossier: str, cible: int) -> str:
     )
 
 
-def lire_couverture(texte: str) -> dict[str, str]:
-    """Table de couverture d'OpenUpgrade -> {module: état}.
+def lire_couverture(texte: str) -> dict[str, EntreeCouverture]:
+    """Table de couverture d'OpenUpgrade -> {module: état, note, retiré}.
 
-    Rôle : savoir, pour un saut, si chaque module est traité.
+    Rôle : savoir, pour un saut, ce qu'OpenUpgrade dit de chaque module.
     Paramètres : texte — contenu du fichier modulesXX0-YY0.rst.
-    Retour : {module: état tel qu'écrit, sans espaces ; « » si vide}.
+    Retour : {module: {etat (« » si vide), note, retire (marque |del|)}}.
     Erreurs : ErreurOpenUpgrade si aucune ligne de module n'est trouvée
     (fichier qui n'est pas une table de couverture).
     Usages : inventaire.couverture_saut, tests.
     """
-    etats: dict[str, str] = {}
+    etats: dict[str, EntreeCouverture] = {}
     for ligne in texte.splitlines():
         trouve = _LIGNE_MODULE.match(ligne)
         if trouve and trouve.group("module") != "Module":
-            etats[trouve.group("module")] = trouve.group("etat").strip()
+            etats[trouve.group("module")] = {
+                "etat": trouve.group("etat").strip(),
+                "note": trouve.group("note").strip(),
+                "retire": trouve.group("marque") == "del",
+            }
     if not etats:
         raise ErreurOpenUpgrade(
             "Table de couverture d'OpenUpgrade illisible : aucun module."
@@ -112,6 +131,52 @@ def lire_couverture(texte: str) -> dict[str, str]:
 def etat_couvert(etat: str) -> bool:
     """Vrai si l'état de la table veut dire « module traité » en entier."""
     return etat.strip().lower() in ETATS_COUVERTS
+
+
+def sans_changement(note: str) -> bool:
+    """Vrai si la note dit que le module ne change rien à la base."""
+    return NOTE_SANS_CHANGEMENT in note.lower()
+
+
+def fusion_notee(note: str) -> str | None:
+    """Module où passe celui-ci d'après la note (« Merged into x »)."""
+    trouve = _NOTE_FUSION.search(note)
+    return trouve.group(1) if trouve else None
+
+
+def lire_apriori(texte: str) -> dict[str, str]:
+    """Modules renommés ou fusionnés d'un saut, lus dans apriori.py.
+
+    Rôle : suivre un module qui change de nom ou disparaît dans un
+    autre, sans jamais exécuter le code d'OpenUpgrade (lecture des
+    seuls dictionnaires littéraux).
+    Paramètres : texte — contenu d'openupgrade_scripts/apriori.py.
+    Retour : {ancien module: module qui le reprend}.
+    Erreurs : ErreurOpenUpgrade si un dictionnaire attendu n'est pas un
+    littéral lisible.
+    Usages : inventaire.couverture_saut, tests.
+    """
+    fusions: dict[str, str] = {}
+    for noeud in ast.parse(texte).body:
+        if (
+            isinstance(noeud, ast.Assign)
+            and len(noeud.targets) == 1
+            and isinstance(noeud.targets[0], ast.Name)
+            and noeud.targets[0].id in FUSIONS_APRIORI
+        ):
+            try:
+                valeur = ast.literal_eval(noeud.value)
+            except ValueError as exc:
+                raise ErreurOpenUpgrade(
+                    "apriori.py illisible (%s)." % noeud.targets[0].id
+                ) from exc
+            fusions.update({str(k): str(v) for k, v in dict(valeur).items()})
+    return fusions
+
+
+def fichier_apriori(dossier: str) -> str:
+    """Chemin d'apriori.py dans une copie d'OpenUpgrade."""
+    return os.path.join(dossier, "openupgrade_scripts", "apriori.py")
 
 
 def recuperer(racine: str, cible: int) -> str:

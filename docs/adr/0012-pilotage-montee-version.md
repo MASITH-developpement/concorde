@@ -86,15 +86,21 @@ Mesures du 08/11/2026 :
 - Lecture de la version et des modules installés de la copie.
 - Pour chaque saut, l'état de chaque module est lu dans la table d'OpenUpgrade **du même
   commit figé** que celui qui fera la montée.
-- **Couvert** : « Done » ou « Nothing to do ».
-- **À vérifier** (ne bloque pas seul, figure au rapport) : « Done (partial) », et les
-  modules de localisation `l10n_*` non marqués ou retirés de la liste (données du plan
-  comptable, dont l'effet est contrôlé par la photo comptable au centime). Mesure du
-  08/11/2026 : le module `base` lui-même est « Done (partial) » pour 15 → 16, et la
-  montée 14 → 17 de la CI donne pourtant zéro écart.
-- **Bloquant** : état vide, ou module absent de la liste (sur mesure, OCA ou
-  Enterprise), avec la liste nommée par saut. Le client choisit : migrer par son
-  développeur, ou désinstaller avant (arbitrage 5 de l'ADR-0010).
+- **Couvert** : « Done », « Nothing to do », note « No DB layout changes », ou module
+  repris par un autre à ce saut (`apriori.py` d'OpenUpgrade, note « Merged into »).
+- **À vérifier** (ne bloque pas seul, figure au rapport) : « Done (partial) », module
+  retiré par Odoo, module standard listé mais non annoté, localisation `l10n_*` (effet
+  contrôlé par la photo comptable au centime).
+- **Bloquant** : module absent de la liste (sur mesure, OCA ou Enterprise), avec la
+  liste nommée par saut. Le client choisit : migrer par son développeur, ou désinstaller
+  avant (arbitrage 5 de l'ADR-0010).
+- Les modules suivent les fusions et retraits d'un saut à l'autre, comme pendant la
+  vraie montée.
+- Mesures du 09/11/2026 sur une vraie base Odoo 14 avec la comptabilité : la première
+  règle (« état vide = bloquant ») bloquait des modules standard installés d'office
+  (`payment_fix_register_token`, fusionné dans `payment` en 15 ; `snailmail_account`,
+  sans changement de base en 16), alors que la montée de cette base donne zéro écart.
+  Un état vide veut dire « non annoté », pas « non migré » : d'où la règle ci-dessus.
 
 ### 5. Le circuit de l'ADR-0010, piloté par la commande puis par l'écran
 `concorde_montee` gagne les étapes manquantes, chacune refaisable et enregistrée dans

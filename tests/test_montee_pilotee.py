@@ -188,7 +188,17 @@ class Atelier(unittest.TestCase):
             encoding="utf-8",
         ) as fichier:
             fichier.write(table_couverture(*self.couvertures[cible]))
-        return os.path.dirname(dossier)
+        racine_copie = os.path.dirname(dossier)
+        os.makedirs(
+            os.path.join(racine_copie, "openupgrade_scripts"), exist_ok=True
+        )
+        with open(
+            os.path.join(racine_copie, "openupgrade_scripts", "apriori.py"),
+            "w",
+            encoding="utf-8",
+        ) as fichier:
+            fichier.write("renamed_modules = {}\nmerged_modules = {}\n")
+        return racine_copie
 
     def connexion(self, base: str, acces: dict[str, str]) -> BasePhoto:
         """Base restaurée simulée : avant puis après la montée."""
@@ -270,13 +280,15 @@ class TestCircuit(Atelier):
 
     def test_inventaire_bloquant(self) -> None:
         """Vérifie qu'un module non couvert arrête avant toute montée."""
-        self.couvertures[16] = [("account", "Done")]
+        self.couvertures[16] = [("account", "Done"), ("autre", "Done")]
+        MODULES_CLIENT.append("perso")
+        self.addCleanup(MODULES_CLIENT.remove, "perso")
         conduite = self.nouvelle()
         self.assertEqual(conduite.circuit(), montee.BLOQUEE)
         etape = montee.charger(self.racine, conduite.etat["id"])["etapes"][
             "inventaire"
         ]
-        self.assertIn("Odoo 16 : base", etape["erreur"])
+        self.assertIn("Odoo 15 : perso", etape["erreur"])
         self.assertFalse(
             any(
                 "--rm" in argv and "--name" in argv
@@ -562,27 +574,42 @@ class TestOpenUpgradeEtInventaire(unittest.TestCase):
     """Références d'OpenUpgrade et règle de l'inventaire."""
 
     def test_lire_couverture(self) -> None:
-        """Vérifie la lecture des marques |new| et |del| et des « + »."""
+        """Vérifie la lecture des marques |new| et |del|, des notes, des « + »."""
         texte = "\n".join(
             [
                 "| Module | Status               + Extra |",
                 "| account | Done | |",
                 "| |new| account_lock |                      | |",
-                "| |del| association | Done |Merged.|",
+                "| |del| association | |Merged into membership.|",
                 "| sale | Nothing To Do + |",
             ]
         )
+        table = lire_couverture(texte)
         self.assertEqual(
-            lire_couverture(texte),
-            {
-                "account": "Done",
-                "account_lock": "",
-                "association": "Done",
-                "sale": "Nothing To Do",
-            },
+            table["account"], {"etat": "Done", "note": "", "retire": False}
         )
+        self.assertEqual(table["account_lock"]["etat"], "")
+        self.assertTrue(table["association"]["retire"])
+        self.assertEqual(
+            openupgrade.fusion_notee(table["association"]["note"]),
+            "membership",
+        )
+        self.assertEqual(table["sale"]["etat"], "Nothing To Do")
         with self.assertRaises(ErreurOpenUpgrade):
             lire_couverture("pas une table")
+
+    def test_lire_apriori(self) -> None:
+        """Vérifie la lecture des fusions, sans rien exécuter."""
+        self.assertEqual(
+            openupgrade.lire_apriori(
+                "import os\nrenamed_modules = {'note': 'project_todo'}\n"
+                "merged_modules = {'l10n_generic_coa': 'account'}\n"
+                "autre = {'x': 'y'}\n"
+            ),
+            {"note": "project_todo", "l10n_generic_coa": "account"},
+        )
+        with self.assertRaises(ErreurOpenUpgrade):
+            openupgrade.lire_apriori("merged_modules = dict(os.environ)\n")
 
     def test_sauts_et_versions(self) -> None:
         """Vérifie les sauts possibles et la lecture des versions."""
@@ -596,36 +623,90 @@ class TestOpenUpgradeEtInventaire(unittest.TestCase):
 
     def test_classer_module(self) -> None:
         """Vérifie les trois classes et leurs causes."""
-        self.assertEqual(classer_module("account", "Done"), ("couvert", ""))
-        self.assertEqual(classer_module("x", "nothing to do")[0], "couvert")
+
+        def entree(
+            etat: str = "", note: str = "", retire: bool = False
+        ) -> Any:
+            """Ligne de table de couverture."""
+            return {"etat": etat, "note": note, "retire": retire}
+
         self.assertEqual(
-            classer_module("base", "Done (partial)")[0], "a_verifier"
+            classer_module("account", entree("Done"), None), ("couvert", "")
         )
-        self.assertEqual(classer_module("l10n_fr", "")[0], "a_verifier")
-        self.assertIn("non listée", classer_module("l10n_fr", None)[1])
+        self.assertEqual(
+            classer_module("x", entree("nothing to do"), None)[0], "couvert"
+        )
+        self.assertEqual(
+            classer_module(
+                "snailmail_account", entree(note="No DB layout changes."), None
+            )[0],
+            "couvert",
+        )
+        self.assertIn("payment", classer_module("p", None, "payment")[1])
+        self.assertEqual(
+            classer_module("base", entree("Done (partial)"), None)[0],
+            "a_verifier",
+        )
         self.assertIn(
-            "Enterprise", classer_module("account_accountant", None)[1]
+            "retiré", classer_module("x", entree(retire=True), None)[1]
         )
-        self.assertIn("pas encore", classer_module("sale_x", "")[1])
+        self.assertEqual(
+            classer_module("l10n_fr", entree(), None)[0], "a_verifier"
+        )
+        self.assertIn("non listée", classer_module("l10n_fr", None, None)[1])
+        self.assertIn(
+            "Enterprise", classer_module("account_accountant", None, None)[1]
+        )
+        self.assertIn(
+            "non annoté", classer_module("sale_x", entree(), None)[1]
+        )
 
     def test_inventorier(self) -> None:
-        """Vérifie l'inventaire par saut et la table manquante."""
+        """Vérifie le suivi des fusions et retraits, et la table manquante."""
+
+        def ligne(
+            etat: str = "Done", note: str = "", retire: bool = False
+        ) -> Any:
+            """Ligne de table de couverture."""
+            return {"etat": etat, "note": note, "retire": retire}
+
         resultat = inventorier(
             "b",
             "15.0.1",
-            ["account", "perso"],
+            ["account", "perso", "patch", "vieux"],
             17,
             {
-                16: {"account": "Done"},
-                17: {"account": "Done", "perso": "Done"},
+                16: {
+                    "modules": {
+                        "account": ligne(),
+                        "patch": ligne("", "Merged into payment.", True),
+                        "vieux": ligne("", "", True),
+                    },
+                    "fusions": {},
+                },
+                17: {
+                    "modules": {"account": ligne(), "payment": ligne()},
+                    "fusions": {"perso": "account"},
+                },
             },
         )
         self.assertTrue(resultat["bloque"])
+        premier, second = resultat["sauts"]
         self.assertEqual(
-            [len(saut["bloquants"]) for saut in resultat["sauts"]], [1, 0]
+            [m["module"] for m in premier["bloquants"]], ["perso"]
         )
+        self.assertEqual(
+            [m["module"] for m in premier["a_verifier"]], ["vieux"]
+        )
+        self.assertEqual((second["couverts"], second["bloquants"]), (3, []))
         with self.assertRaises(ErreurOpenUpgrade):
-            inventorier("b", "15.0", ["account"], 17, {16: {}})
+            inventorier(
+                "b",
+                "15.0",
+                ["account"],
+                17,
+                {16: {"modules": {}, "fusions": {}}},
+            )
 
     def test_recuperer(self) -> None:
         """Vérifie la reprise d'une copie et le refus d'un autre commit."""

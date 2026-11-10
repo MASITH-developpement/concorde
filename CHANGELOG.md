@@ -3,6 +3,25 @@
 Format : [Keep a Changelog](https://keepachangelog.com/fr/1.1.0/), versions sémantiques.
 Le module Odoo porte la même version au format `17.0.X.Y.Z` (`deploy/addons/concorde/__manifest__.py`).
 
+## [1.15.0] — 2026-11-10
+### Ajouté
+- **Synchronisation du serveur jamais muette** : le script du cron est
+  versionné (`deploy/concorde-sync.sh`). Chaque passage écrit
+  `/var/lib/concorde-sync/etat.json` (statut, étape, message, commit) ; un
+  échec (récupération sur GitHub, remise à niveau, redémarrage d'Odoo,
+  écriture de l'état) part aussi dans `/var/log/concorde-sync.log` et le
+  journal système (`journalctl -t concorde-sync`), avec un code retour 1.
+  Avant, une récupération impossible sortait sans rien dire (`|| exit 0`).
+- Alertes de la surveillance (toutes les 15 min) : `SYNCHRO_ECHEC` (dernier
+  passage en échec) et `SYNCHRO_ARRETEE` (aucun état depuis 10 minutes :
+  cron arrêté, script non exécutable, pause volontaire comprise).
+- Lecture commune des résultats datés des scripts root
+  (`_lire_resultat_date`), partagée avec la surveillance de sécurité.
+### Mise en place (root, avec le passage du dépôt en privé)
+- `sudo install -o root -g root -m 755 deploy/concorde-sync.sh
+  /usr/local/bin/concorde-sync.sh`, après la clé de déploiement en lecture
+  seule du serveur.
+
 ## [1.14.0] — 2026-11-10
 ### Modifié
 - **Aucune donnée client dans le dépôt** (le dépôt a été public) :

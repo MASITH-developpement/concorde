@@ -116,6 +116,7 @@ from core.surveillance import (
     CentreAlertes,
     comparer_instantanes,
     constats_securite,
+    constats_synchro,
     controles_techniques,
     depuis_24h,
 )
@@ -1514,6 +1515,10 @@ class Surveillance:
             securite, infos_securite = constats_securite()
             nouvelles, resolues = self.app.centre.synchroniser(
                 "securite", "serveur", securite
+            )
+            _raconter_centre(journal, nouvelles, resolues)
+            nouvelles, resolues = self.app.centre.synchroniser(
+                "synchro", "serveur", constats_synchro()
             )
             _raconter_centre(journal, nouvelles, resolues)
             for nom, infos in infos_securite.items():

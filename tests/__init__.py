@@ -21,6 +21,7 @@ for variable_chemin, chemin_relatif in (
     ("CONCORDE_MONTEE_ETATS", "montee/etats"),
     ("CONCORDE_MONTEE_IMAGE", "montee/volume.luks"),
     ("CONCORDE_MONTEE_CLE", "montee/cle"),
+    ("CONCORDE_SYNCHRO_ETAT", "synchro/etat.json"),
 ):
     os.environ[variable_chemin] = os.path.join(
         DOSSIER_TESTS_TEMPORAIRE, chemin_relatif

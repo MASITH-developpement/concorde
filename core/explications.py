@@ -694,6 +694,22 @@ CATALOGUE: dict[str, tuple[str, str, str]] = {
         "concorde-securite -u "
         "concorde-antivirus.",
     ),
+    "SYNCHRO_ECHEC": (
+        "Synchronisation du serveur en échec",
+        "Le serveur n'a pas pu se remettre à jour sur la version publiée "
+        "(récupération sur GitHub, remise à niveau ou redémarrage d'Odoo en "
+        "erreur) : la dernière fusion n'est peut-être pas en service.",
+        "Lire /var/log/concorde-sync.log et journalctl -t concorde-sync ; "
+        "vérifier l'accès à GitHub (clé de déploiement du serveur).",
+    ),
+    "SYNCHRO_ARRETEE": (
+        "Synchronisation du serveur arrêtée",
+        "Le cron de synchronisation (chaque minute) n'a pas laissé d'état "
+        "depuis plus de 10 minutes : cron arrêté, script non exécutable "
+        "(pause volontaire comprise) ou état absent.",
+        "ls -l /usr/local/bin/concorde-sync.sh ; sudo crontab -l ; "
+        "cat /var/lib/concorde-sync/etat.json.",
+    ),
     # --- Changements dans Odoo -----------------------------------------------
     "INSTANTANE_INITIAL": (
         "Surveillance des changements démarrée",

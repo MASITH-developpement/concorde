@@ -402,7 +402,7 @@ Avant d'en créer une, vérifier (casse ignorée) qu'elle n'existe pas déjà.
 | `deposer_demande` | `core/montee_version/demandes.py` | Routine : dépose une demande vérifiée |
 | `deposer_zip` | `tests/test_montee_pilotee.py` | Méthode de test : sauvegarde déposée |
 | `deposerSauvegarde` | `interface/static/montees.js` | Envoie une sauvegarde .zip |
-| `depot` | `interface/transferts.py`, `tests/test_ecran_transferts.py` | Fiche d'un FEC déposé (nom, taille, lignes, totaux) |
+| `depot` | `interface/transferts.py`, `tests/test_ecran_transferts.py`, `tests/test_synchro.py` | Fiche d'un FEC déposé (nom, taille, lignes, totaux) |
 | `depot_max` | `interface/transferts.py` | Plafond d'un FEC déposé, en octets |
 | `DEPOT_MAX_MO_DEFAUT` | `interface/transferts.py` | Plafond par défaut d'un FEC déposé (200 Mo) |
 | `DEPOT_OPENUPGRADE` | `core/montee_version/openupgrade.py` | Dépôt OCA d'OpenUpgrade |
@@ -467,7 +467,7 @@ Avant d'en créer une, vérifier (casse ignorée) qu'elle n'existe pas déjà.
 | `enregistrer` | `interface/tiers.py` | Méthode : range les résultats |
 | `entete_fichier` | `core/azalplus_documents.py` | En-tête multipart de la pièce déposée |
 | `EntreeCouverture` | `core/montee_version/openupgrade.py` | Type : ligne d'un module dans la table |
-| `environnement` | `interface/transferts.py` | Variables d'environnement lues |
+| `environnement` | `interface/transferts.py`, `tests/test_synchro.py` | Variables d'environnement lues |
 | `envoyer` | `tests/test_ecran_transferts.py` | Méthode de test : requête JSON ou fichier brut |
 | `envoyerFichier` | `interface/static/transferts.js` | Routine JS : envoie un fichier brut (FEC, table) |
 | `ErreurAzalPlusDocuments` | `core/azalplus_documents.py`, `tests/test_azalplus_documents.py`, `scripts/concorde_azalplus.py` | Émission refusée : réglage, client, prestation ou mesure en défaut |
@@ -739,7 +739,7 @@ Avant d'en créer une, vérifier (casse ignorée) qu'elle n'existe pas déjà.
 | `protegees` | `tests/test_arreter.py` | Écritures protégées (inaltérabilité) |
 | `public` | `core/montee_version/demandes.py`, `tests/test_montee_pilotee.py` | Fichier publié d'une montée |
 | `PUBLICATION_S` | `core/montee_version/demandes.py` | Intervalle de republication pendant une demande |
-| `publier` | `core/montee_version/demandes.py` | Méthode : résumé d'une montée pour l'écran |
+| `publier` | `core/montee_version/demandes.py`, `tests/test_synchro.py` | Méthode : résumé d'une montée pour l'écran |
 | `PURGE_S` | `scripts/concorde_montee_service.py` | Intervalle entre deux effacements |
 | `purger` | `core/montee_version/demandes.py` | Méthode : efface les montées de plus de 30 jours |
 | `quantite` | `core/azalplus_documents.py` | La quantité calculée d'une ligne de devis |
@@ -991,7 +991,7 @@ Avant d'en créer une, vérifier (casse ignorée) qu'elle n'existe pas déjà.
 | `champs_ligne` | `core/migration/filtres.py` | Vue {champ: valeur} d'une ligne pour une condition libre |
 | `charger` | `core/connecteurs/transfert.py` | Routine : état d'un transfert enregistré |
 | `charger_assistant_import` | `tests/test_assistant_import.py` | Charge l'assistant d'import hors d'Odoo |
-| `chemin` | `tests/classeurs_xlsx.py`, `tests/test_plan_comptable.py`, `core/connecteurs/connexions.py`, `core/connecteurs/fec.py`, `core/connecteurs/secrets.py`, `core/connecteurs/transfert.py`, `core/fichier_json.py`, `tests/test_connecteurs.py`, `core/connecteurs/http_json.py`, `core/roles_comptes.py`, `tests/test_analyse_cumul.py`, `tests/test_assistant_import.py` | Chemin d'un fichier ou d'une partie de classeur ; aussi : fichier FEC, annuaire ou secrets (connecteurs) |
+| `chemin` | `tests/classeurs_xlsx.py`, `tests/test_plan_comptable.py`, `core/connecteurs/connexions.py`, `core/connecteurs/fec.py`, `core/connecteurs/secrets.py`, `core/connecteurs/transfert.py`, `core/fichier_json.py`, `tests/test_connecteurs.py`, `core/connecteurs/http_json.py`, `core/roles_comptes.py`, `tests/test_analyse_cumul.py`, `tests/test_assistant_import.py`, `tests/test_synchro.py` | Chemin d'un fichier ou d'une partie de classeur ; aussi : fichier FEC, annuaire ou secrets (connecteurs) |
 | `chemin_absent` | `tests/test_mapping.py` | Chemin d'un fichier de mapping inexistant |
 | `chemin_assistant` | `tests/test_assistant_import.py` | Chemin du fichier de l'assistant |
 | `chemin_classeur` | `tests/test_mapping.py` | Chemin du classeur de mapping temporaire |
@@ -1041,12 +1041,12 @@ Avant d'en créer une, vérifier (casse ignorée) qu'elle n'existe pas déjà.
 | `client` | `tests/test_connecteurs.py`, `core/connecteurs/pennylane.py`, `core/roles_comptes.py` | Ligne client lue, dans un test |
 | `ClientJson` | `core/connecteurs/http_json.py` | Classe : client REST JSON commun aux connecteurs par API |
 | `close` | `core/connecteurs/azalplus.py`, `tests/test_connecteurs.py`, `core/connecteurs/http_json.py` | Méthode : fermeture de la connexion (DB-API) |
-| `code` | `tests/test_plan_comptable.py`, `tests/test_connecteurs.py`, `core/connecteurs/azalplus.py`, `core/connecteurs/pennylane.py`, `core/odoo_source.py`, `core/passerelle.py`, `core/roles_comptes.py`, `core/soldes_cumules.py`, `tests/test_analyse_cumul.py` | Code de compte lu ; aussi : code de sortie de la commande (test_connecteurs) |
+| `code` | `tests/test_plan_comptable.py`, `tests/test_connecteurs.py`, `core/connecteurs/azalplus.py`, `core/connecteurs/pennylane.py`, `core/odoo_source.py`, `core/passerelle.py`, `core/roles_comptes.py`, `core/soldes_cumules.py`, `tests/test_analyse_cumul.py`, `core/surveillance.py` | Code de compte lu ; aussi : code de sortie de la commande (test_connecteurs) |
 | `code_journal` | `core/connecteurs/azalplus.py` | Code du journal d'une ligne AzalPlus |
 | `code_sans_zeros` | `core/plan_comptable.py` | Code de compte sans zéros de tête (remplace `c`) |
 | `code_tiers` | `core/connecteurs/azalplus.py` | Code du tiers trouvé par son nom |
 | `code_trace` | `injectors/socle_odoo.py` | Étape inscrite dans le journal Guardian (ex. « odoo17 ») |
-| `codes` | `deploy/addons/concorde/wizard/concorde_import_wizard.py`, `tests/test_connecteurs.py`, `core/connecteurs/odoo.py`, `core/connecteurs/azalplus.py`, `core/odoo_source.py`, `core/comptes.py`, `core/passerelle.py`, `core/soldes_cumules.py`, `tests/test_analyse_cumul.py` | Paramètre de _codes_html : codes de comptes à citer ; aussi : codes TRF_ du paquet connecteurs (test_connecteurs) |
+| `codes` | `deploy/addons/concorde/wizard/concorde_import_wizard.py`, `tests/test_connecteurs.py`, `core/connecteurs/odoo.py`, `core/connecteurs/azalplus.py`, `core/odoo_source.py`, `core/comptes.py`, `core/passerelle.py`, `core/soldes_cumules.py`, `tests/test_analyse_cumul.py`, `tests/test_synchro.py` | Paramètre de _codes_html : codes de comptes à citer ; aussi : codes TRF_ du paquet connecteurs (test_connecteurs) |
 | `codes_affiches` | `deploy/addons/concorde/wizard/concorde_import_wizard.py` | Texte HTML des codes cités par _codes_html |
 | `codes_journaux` | `core/connecteurs/pennylane.py` | {code de journal: id Pennylane} |
 | `colonne` | `core/yaml_min.py` | Colonne du contenu après le tiret |
@@ -1106,11 +1106,11 @@ Avant d'en créer une, vérifier (casse ignorée) qu'elle n'existe pas déjà.
 | `connexions_conteneurs` | `securite/concorde_securite.py` | (pid, adresse distante) des connexions des espaces réseau des conteneurs |
 | `ConnexionSql` | `core/odoo_source.py` | Protocol : connexion PostgreSQL (psycopg2) de la source SQL |
 | `Constat` | `core/analyser.py`, `core/migration/lot.py`, `interface/serveur.py` | Alias `dict[str, Any]` : constat d'un Rapport (JSON) |
-| `constat_lu` | `tests/test_connecteurs.py`, `tests/test_analyse_cumul.py` | Constat parcouru dans un test |
+| `constat_lu` | `tests/test_connecteurs.py`, `tests/test_analyse_cumul.py`, `tests/test_synchro.py` | Constat parcouru dans un test |
 | `ConstatLu` | `core/surveillance.py` | Type : constat produit par Rapport ou relu d'un JSON de sécurité |
-| `constats` | `core/connecteurs/transfert.py`, `tests/test_connecteurs.py` | Constats d'une étape |
+| `constats` | `core/connecteurs/transfert.py`, `tests/test_connecteurs.py`, `tests/test_synchro.py` | Constats d'une étape |
 | `constats_expliques` | `core/migration/circuit.py` | Routine partagée : constats d'un rapport expliqués par Marceau |
-| `contenu` | `core/marceau.py`, `core/xml_sur.py`, `core/roles_comptes.py` | Texte de la réponse Mistral, vérifié avant retour |
+| `contenu` | `core/marceau.py`, `core/xml_sur.py`, `core/roles_comptes.py`, `core/surveillance.py`, `tests/test_synchro.py` | Texte de la réponse Mistral, vérifié avant retour |
 | `contenu_element` | `core/yaml_min.py` | Texte d'un élément de liste après le tiret |
 | `contenu_feuille` | `tests/test_xlsx_vers_fec.py` | Paramètre : XML de la feuille du classeur de test |
 | `contenu_journal` | `securite/concorde_securite.py` | Texte du journal clamscan.log |
@@ -1203,13 +1203,13 @@ Avant d'en créer une, vérifier (casse ignorée) qu'elle n'existe pas déjà.
 | `DetailsComparaison` | `core/comparaison.py` | Détails de comparaison par catégorie (classeur xlsx) |
 | `devise` | `core/connecteurs/base.py`, `tests/test_connecteurs.py`, `core/connecteurs/azalplus.py` | Devise de la société lue |
 | `dimensions` | `core/comparaison.py` | (code, nom, clé) des agrégations de soldes comparées |
-| `distant` | `interface/serveur.py` | Fiche d'un Odoo distant |
+| `distant` | `interface/serveur.py`, `tests/test_synchro.py` | Fiche d'un Odoo distant |
 | `Domaine` | `core/odoo_source.py` | Liste de critères d'un domaine Odoo (XML-RPC) |
 | `DomaineOdoo` | `core/demat.py`, `tests/test_demat.py` | Type : domaine Odoo (même sens que dans `tests/test_demat.py`) |
 | `donnees` | `tests/test_mapping.py`, `core/fichier_json.py`, `core/connecteurs/http_json.py` | Données JSON du mapping de test ; aussi : valeur écrite en JSON (fichier_json) |
 | `DonneesJson` | `core/rapport_jour.py` | Type : données JSON (alertes, tâches, sécurité, rapports, saisie) |
 | `donner_feu_vert` | `core/connecteurs/transfert.py` | Routine : feu vert, nouveau test, puis transfert (étapes 5 à 7) |
-| `dossier` | `securite/concorde_securite.py`, `core/connecteurs/connexions.py`, `core/connecteurs/fec.py`, `core/connecteurs/secrets.py`, `core/connecteurs/transfert.py`, `tests/test_connecteurs.py`, `tests/test_analyse_cumul.py`, `tests/test_assistant_import.py` | Dossier temporaire courant (construction de PREFIXES_TEMP) ; aussi : dossier d'une connexion, d'un transfert ou d'un test (connecteurs) |
+| `dossier` | `securite/concorde_securite.py`, `core/connecteurs/connexions.py`, `core/connecteurs/fec.py`, `core/connecteurs/secrets.py`, `core/connecteurs/transfert.py`, `tests/test_connecteurs.py`, `tests/test_analyse_cumul.py`, `tests/test_assistant_import.py`, `tests/test_synchro.py` | Dossier temporaire courant (construction de PREFIXES_TEMP) ; aussi : dossier d'une connexion, d'un transfert ou d'un test (connecteurs) |
 | `dossier_dest` | `core/connecteurs/transfert.py` | Dossier des fichiers d'une destination |
 | `DOSSIER_ESSAIS` | `core/connecteurs/fec.py` | Sous-dossier d'essais d'une destination FEC (environnement de test) |
 | `dossier_journal` | `tests/test_moteur.py` | Dossier temporaire du journal Guardian |
@@ -1223,7 +1223,7 @@ Avant d'en créer une, vérifier (casse ignorée) qu'elle n'existe pas déjà.
 | `echapper_xml` | `core/xlsx_ecrire.py` | Routine : échappe un texte pour l'écrire en XML |
 | `echec_pipeline` | `deploy/addons/concorde/wizard/concorde_import_wizard.py` | EchecPipeline intercepté par les actions de l'assistant |
 | `EchecPipeline` | `deploy/addons/concorde/wizard/concorde_import_wizard.py` | Exception : échec du pipeline avec le libellé du mapping connu |
-| `ecrire` | `core/connecteurs/base.py`, `core/connecteurs/fec.py`, `tests/test_connecteurs.py`, `core/connecteurs/odoo.py`, `core/connecteurs/pennylane.py` | Méthode d'un connecteur : écrit un lot (essai à blanc par défaut) |
+| `ecrire` | `core/connecteurs/base.py`, `core/connecteurs/fec.py`, `tests/test_connecteurs.py`, `core/connecteurs/odoo.py`, `core/connecteurs/pennylane.py`, `tests/test_synchro.py` | Méthode d'un connecteur : écrit un lot (essai à blanc par défaut) |
 | `ecrire_fec_lot` | `core/migration/export.py` | Routine partagée : écrit un lot en FEC DGFiP |
 | `ecrire_json_atomique` | `core/fichier_json.py` | Routine partagée : écriture JSON via fichier .tmp puis renommage (ex-`_ecrire_json_atomique`) |
 | `ecrire_rapport_json` | `scripts/outils_cli.py` | Écrit un rapport JSON lisible (option --json) |
@@ -1306,7 +1306,7 @@ Avant d'en créer une, vérifier (casse ignorée) qu'elle n'existe pas déjà.
 | `etape` | `tests/test_yaml_min.py`, `core/connecteurs/transfert.py` | Étape du pipeline lue dans concorde.yaml ; aussi : étape d'un transfert (connecteurs/transfert) |
 | `EtapeConversion` | `injectors/odoo_conversion.py` | Type du compte rendu d'un saut de version |
 | `etapes` | `injectors/odoo_conversion.py`, `core/connecteurs/transfert.py` | Comptes rendus des sauts de version ; aussi : états des étapes d'une destination (connecteurs/transfert) |
-| `etat` | `core/connecteurs/transfert.py`, `tests/test_connecteurs.py`, `tests/test_analyse_cumul.py` | État d'un transfert ou d'une destination |
+| `etat` | `core/connecteurs/transfert.py`, `tests/test_connecteurs.py`, `tests/test_analyse_cumul.py`, `core/surveillance.py`, `tests/test_synchro.py` | État d'un transfert ou d'une destination |
 | `etat_dest` | `core/connecteurs/transfert.py` | État d'une destination |
 | `etat_secrets` | `core/connecteurs/secrets.py` | Routine : pour chaque secret attendu, renseigné ou non (jamais la valeur) |
 | `EtatDestination` | `core/connecteurs/transfert.py` | TypedDict : statut, étapes, empreinte et feu vert d'une destination |
@@ -1350,7 +1350,7 @@ Avant d'en créer une, vérifier (casse ignorée) qu'elle n'existe pas déjà.
 | `fiche` | `interface/serveur.py`, `core/connecteurs/connexions.py`, `core/connecteurs/transfert.py`, `scripts/concorde_connexion.py`, `tests/test_connecteurs.py` | Fiche d'une base de l'annuaire ; aussi : fiche d'une connexion (connecteurs) |
 | `fiche_lue` | `core/connecteurs/connexions.py` | Fiche de connexion parcourue |
 | `FicheConnexion` | `core/connecteurs/connexions.py` | TypedDict : une connexion de l'annuaire |
-| `fichier` | `tests/test_moteur.py`, `core/connecteurs/connexions.py`, `core/connecteurs/fec.py`, `core/connecteurs/secrets.py`, `core/connecteurs/transfert.py`, `core/fichier_json.py`, `tests/test_connecteurs.py`, `tests/test_analyse_cumul.py`, `tests/test_assistant_import.py` | Fichier JSON ouvert en écriture ; aussi : fichier ouvert (fichier_json, connecteurs) |
+| `fichier` | `tests/test_moteur.py`, `core/connecteurs/connexions.py`, `core/connecteurs/fec.py`, `core/connecteurs/secrets.py`, `core/connecteurs/transfert.py`, `core/fichier_json.py`, `tests/test_connecteurs.py`, `tests/test_analyse_cumul.py`, `tests/test_assistant_import.py`, `core/surveillance.py`, `tests/test_synchro.py` | Fichier JSON ouvert en écriture ; aussi : fichier ouvert (fichier_json, connecteurs) |
 | `fichier_journal` | `securite/concorde_securite.py` | Fichier clamscan.log ouvert en lecture |
 | `fichier_mapping` | `scripts/export_odoo_online.py` | Fichier de mapping xlsx ouvert en lecture |
 | `fichier_secrets` | `core/connecteurs/connexions.py` | Fichier des secrets lu par l'annuaire |
@@ -1436,7 +1436,7 @@ Avant d'en créer une, vérifier (casse ignorée) qu'elle n'existe pas déjà.
 | `journal_vente` | `tests/test_mapping.py` | Routine : canonique 411/706/445 de test |
 | `journaux` | `core/migration/filtres.py`, `core/connecteurs/pennylane.py`, `tests/test_connecteurs.py`, `core/roles_comptes.py`, `tests/test_analyse_cumul.py` | Critères du filtre en cours de normalisation |
 | `journaux_lot` | `core/migration/injection.py` | Journaux demandés par le lot, avec leur libellé |
-| `lancer` | `tests/test_connecteurs.py`, `interface/serveur.py` | Méthode de test : lance concorde_connexion ; aussi : méthode Taches : crée et lance une tâche (routine partagée) |
+| `lancer` | `tests/test_connecteurs.py`, `interface/serveur.py`, `tests/test_synchro.py` | Méthode de test : lance concorde_connexion ; aussi : méthode Taches : crée et lance une tâche (routine partagée) |
 | `lecteur` | `tests/test_xml_sur.py` | Racine lue ; lecteur de réponses XML-RPC |
 | `lecteur_reponse_xmlrpc` | `core/xml_sur.py` | Fabrique du lecteur de réponses XML-RPC (protégé) |
 | `lecteur_valeur` | `tests/test_mapping.py` | Lecteur de valeur de cellule testé |
@@ -1523,7 +1523,7 @@ Avant d'en créer une, vérifier (casse ignorée) qu'elle n'existe pas déjà.
 | `mapping_simule` | `tests/test_assistant_import.py` | Configuration de mapping simulée (intitulés) |
 | `MAPPING_VENTE` | `tests/test_mapping.py` | Mapping complet du journal de vente de test |
 | `marquer_coupure` | `deploy/addons/concorde/wizard/concorde_import_wizard.py` | Paramètre de _codes_html : ajoute « … » si la liste est coupée |
-| `message` | `tests/test_mapping.py`, `tests/test_plan_comptable.py`, `core/connecteurs/http_json.py` | Message d'erreur obtenu |
+| `message` | `tests/test_mapping.py`, `tests/test_plan_comptable.py`, `core/connecteurs/http_json.py`, `core/surveillance.py`, `tests/test_synchro.py` | Message d'erreur obtenu |
 | `message_attendu` | `tests/test_xlsx_vers_fec.py` | Message d'erreur attendu |
 | `message_erreur` | `tests/test_xlsx_vers_fec.py` | Routine : lance une conversion qui doit échouer, rend son message |
 | `message_obtenu` | `tests/test_xlsx_vers_fec.py` | Message d'erreur obtenu |
@@ -1786,7 +1786,7 @@ Avant d'en créer une, vérifier (casse ignorée) qu'elle n'existe pas déjà.
 | `spec_module` | `tests/test_xlsx_vers_fec.py` | Spécification d'import de core.xlsx_vers_fec |
 | `StatsLettrage` | `core/lettrage.py` | TypedDict des statistiques du lettrage |
 | `status` | `core/connecteurs/http_json.py`, `tests/test_connecteurs.py` | Statut HTTP de la réponse |
-| `statut` | `core/connecteurs/transfert.py`, `core/connecteurs/http_json.py`, `core/connecteurs/pennylane.py`, `tests/test_connecteurs.py` | Statut d'une destination ou d'une étape |
+| `statut` | `core/connecteurs/transfert.py`, `core/connecteurs/http_json.py`, `core/connecteurs/pennylane.py`, `tests/test_connecteurs.py`, `tests/test_synchro.py` | Statut d'une destination ou d'une étape |
 | `statut_constats` | `core/migration/circuit.py` | Routine partagée : « bloquee » si un constat est BLOQUANT (ex-`_statut`) |
 | `StatutPorte` | `core/migration/circuit.py` | Partie toujours présente de l'état d'une porte |
 | `statuts` | `core/connecteurs/pennylane.py` | Statuts d'écritures Pennylane lus |
@@ -2055,6 +2055,7 @@ Avant d'en créer une, vérifier (casse ignorée) qu'elle n'existe pas déjà.
 | `TestCommandeMontee` | `tests/test_montee_version.py` | Tests de charger_photo et de la commande concorde_montee |
 | `zip_client` | `tests/test_montee_pilotee.py` | Sauvegarde du client simulée |
 | `__init__` | `core/comptes.py`, `tests/test_analyse_cumul.py` | Méthode : constructeur (_Balance, Ecritures, SourceSimulee, FauxObjetCumul) |
+| `_alerte` | `core/surveillance.py` | Routine : constat ALERTE d'un seul élément |
 | `_alertes_suspens` | `core/comptes.py` | Routine : constat PAIEMENT_EN_SUSPENS_NON_SOLDE (lignes non lettrées) |
 | `_alertes_tiers` | `core/comptes.py` | Routine : clients créditeurs et fournisseurs débiteurs, par tiers |
 | `_alertes_tva_groupe` | `core/comptes.py` | Routine : contrôles du groupe de TVA collectée (débitrice, répartie, sens contraire) |
@@ -2065,6 +2066,7 @@ Avant d'en créer une, vérifier (casse ignorée) qu'elle n'existe pas déjà.
 | `_lignes` | `core/soldes_cumules.py`, `tests/test_analyse_cumul.py` | Routine : nombre de lignes de soldes portant sur des comptes donnés |
 | `_lignes_en_suspens` | `core/passerelle.py` | Routine : lignes non lettrées des comptes de paiements en suspens |
 | `_lire_racine` | `core/roles_comptes.py` | Routine : table racine d'un fichier YAML ({} s'il est absent) |
+| `_lire_resultat_date` | `core/surveillance.py` | Routine : relit un résultat JSON daté (contenu, date) |
 | `_marquer` | `core/comptes.py` | Routine : ajoute un code d'alerte aux comptes touchés, sans doublon |
 | `_ouvertures_doubles` | `core/soldes_cumules.py` | Routine : éléments du constat OUVERTURE_DOUBLE_POSSIBLE |
 | `_par_cle` | `core/soldes_cumules.py` | Routine : indexe des soldes par (compte, tiers) |
@@ -2078,7 +2080,8 @@ Avant d'en créer une, vérifier (casse ignorée) qu'elle n'existe pas déjà.
 | `_table_client` | `core/roles_comptes.py` | Routine : table de rôles d'une entrée « clients » de concorde.yaml |
 | `_table_codes` | `core/roles_comptes.py` | Routine : table {code ou préfixe: rôle} d'un client, rôles vérifiés |
 | `_texte_liste` | `core/roles_comptes.py` | Routine : liste de textes d'une section de concorde.yaml |
-| `absent` | `tests/test_analyse_cumul.py` | Configuration lue sans fichier concorde.yaml (test) |
+| `absent` | `tests/test_analyse_cumul.py`, `tests/test_synchro.py` | Configuration lue sans fichier concorde.yaml (test) |
+| `AGE_MAX_SYNCHRO_S` | `core/surveillance.py` | Âge maximal de l'état de synchronisation (600 s) |
 | `alerte` | `core/comptes.py` | Paramètre de _marquer : code d'alerte à ajouter |
 | `an_comptabilise` | `tests/test_analyse_cumul.py` | Paramètre de jeu_preproduction : à-nouveaux comptabilisé ou brouillon |
 | `balance` | `tests/test_analyse_cumul.py` | Méthode de SourceSimulee : balance de la période |
@@ -2105,12 +2108,15 @@ Avant d'en créer une, vérifier (casse ignorée) qu'elle n'existe pas déjà.
 | `config_client_a` | `tests/test_analyse_cumul.py` | Routine de test : réglages du dépôt et table fictive du Client A |
 | `ConfigAnalyse` | `core/roles_comptes.py` | Type : réglages de l'analyse (journaux d'à-nouveaux, tables de rôles) |
 | `constater` | `core/comptes.py` | Routine interne d'alertes_balance : constat + comptes marqués + journal |
+| `constats_synchro` | `core/surveillance.py` | Routine : alertes SYNCHRO_ECHEC / SYNCHRO_ARRETEE |
 | `ContexteSoldes` | `core/comptes.py` | Type : soldes cumulés, tiers, table et lignes en suspens de l'analyse |
 | `contraires` | `core/comptes.py`, `tests/test_analyse_cumul.py` | Comptes du groupe TVA de sens contraire au groupe |
+| `copie_travail` | `tests/test_synchro.py` | Copie de travail du dépôt jetable (test) |
 | `cumul_bilan` | `core/soldes_cumules.py` | Soldes cumulés des comptes de bilan |
 | `cumul_comptes` | `core/comptes.py`, `core/soldes_cumules.py` | Solde cumulé par code de compte |
 | `cumul_gestion` | `core/soldes_cumules.py` | Soldes cumulés des comptes de gestion (depuis le début d'exercice) |
 | `DATE_DEBUT_PERIODE` | `tests/test_analyse_cumul.py` | Début de période des jeux de test (01/01/2026) |
+| `date_etat` | `core/surveillance.py` | Date du dernier état de synchronisation |
 | `DATE_FIN_PERIODE` | `tests/test_analyse_cumul.py` | Fin de période des jeux de test (20/10/2026) |
 | `db` | `tests/test_analyse_cumul.py` | Paramètre d'execute_kw : base Odoo simulée |
 | `debut_exercice` | `core/soldes_cumules.py` | Routine : premier jour de l'exercice qui contient une date |
@@ -2134,7 +2140,9 @@ Avant d'en créer une, vérifier (casse ignorée) qu'elle n'existe pas déjà.
 | `ErreurRoles` | `core/roles_comptes.py` | Erreur : table de rôles invalide dans concorde.yaml |
 | `est_compte_gestion` | `core/soldes_cumules.py` | Routine : compte de charges ou de produits |
 | `etat_an` | `tests/test_analyse_cumul.py` | État de l'à-nouveaux du jeu de test |
+| `ETAT_SYNCHRO` | `core/surveillance.py` | Chemin de l'état de synchronisation (/var/lib/concorde-sync/etat.json) |
 | `execute_kw` | `tests/test_analyse_cumul.py` | Méthode de FauxObjetCumul : appel Odoo simulé |
+| `exemple` | `core/surveillance.py` | Paramètre de _alerte : élément unique du constat |
 | `extourne_de` | `tests/test_analyse_cumul.py` | Paramètre de test : écriture extournée |
 | `extourne_de_id` | `core/analyser.py` | Champ de ligne : reversed_entry_id de l'écriture |
 | `extournes` | `core/analyser.py` | Écritures extournées dans un groupe de doublons |
@@ -2148,6 +2156,8 @@ Avant d'en créer une, vérifier (casse ignorée) qu'elle n'existe pas déjà.
 | `HISTORIQUE` | `tests/test_analyse_cumul.py` | Date de l'historique 2025 des jeux de test |
 | `id_caba` | `core/odoo_source.py` | Identifiant du journal de TVA sur encaissements |
 | `id_tiers` | `core/odoo_source.py` | Identifiant du tiers d'une ligne lue par soldes |
+| `IDENTITE_GIT` | `tests/test_synchro.py` | Identité git des commits de test |
+| `il_y_a` | `tests/test_synchro.py` | Paramètre de test : ancienneté de l'état |
 | `jeu` | `tests/test_analyse_cumul.py` | Écritures d'un jeu de test (Ecritures) |
 | `jeu_client_a` | `tests/test_analyse_cumul.py` | Routine de test : écritures du Client A fictif |
 | `jour_fin` | `core/soldes_cumules.py` | Dernier jour de l'exercice (fiscalyear_last_day) |
@@ -2183,9 +2193,10 @@ Avant d'en créer une, vérifier (casse ignorée) qu'elle n'existe pas déjà.
 | `ROLES_CONNUS` | `core/roles_comptes.py` | Rôles reconnus dans une table client et ce qu'ils déclenchent |
 | `roles_du_plan` | `core/roles_comptes.py` | Routine : rôle de chaque compte du plan |
 | `SANS_ROLE` | `core/comptes.py` | Rôle d'un compte absent du plan |
+| `SCRIPT_SYNCHRO` | `tests/test_synchro.py` | Chemin de deploy/concorde-sync.sh |
 | `sens_libre` | `core/roles_comptes.py` | Routine : compte de gestion au sens libre (6x9, 7x9, 603, 713) |
 | `sens_texte` | `core/comptes.py` | Routine : solde lisible avec son sens (D / C) |
-| `setUp` | `tests/test_analyse_cumul.py` | Méthode de test : préparation |
+| `setUp` | `tests/test_analyse_cumul.py`, `tests/test_synchro.py` | Méthode de test : préparation |
 | `setUpClass` | `tests/test_analyse_cumul.py` | Méthode de test : préparation commune à la classe |
 | `seuil` | `core/comptes.py`, `core/roles_comptes.py` | Seuil TVA_COLLECTEE_REPARTIE (centimes) ou valeur YAML |
 | `seuil_defaut` | `core/roles_comptes.py` | Seuil par défaut de TVA_COLLECTEE_REPARTIE (centimes) |
@@ -2209,12 +2220,15 @@ Avant d'en créer une, vérifier (casse ignorée) qu'elle n'existe pas déjà.
 | `TableRoles` | `core/roles_comptes.py` | Type : table de rôles d'un client |
 | `TestCaba` | `tests/test_analyse_cumul.py` | Classe de test : doublons et lignes nulles CABA |
 | `TestClientA` | `tests/test_analyse_cumul.py` | Classe de test : Client A fictif au 20/10/2026 |
+| `TestConstatsSynchro` | `tests/test_synchro.py` | Classe de test : lecture de l'état de synchronisation |
 | `TestExercice` | `tests/test_analyse_cumul.py` | Classe de test : début d'exercice |
 | `TestOuvertureComptabilisee` | `tests/test_analyse_cumul.py` | Classe de test : à-nouveaux comptabilisé |
 | `TestRoles` | `tests/test_analyse_cumul.py` | Classe de test : rôles de comptes |
 | `TestSansTableClient` | `tests/test_analyse_cumul.py` | Classe de test : préfixes seuls |
+| `TestScriptSynchro` | `tests/test_synchro.py` | Classe de test : script de synchronisation sur un dépôt jetable |
 | `TestSourceXmlRpcCumul` | `tests/test_analyse_cumul.py` | Classe de test : nouvelles lectures XML-RPC |
 | `TestTableEmbarquee` | `tests/test_assistant_import.py` | Classe de test : table de correspondance embarquée ou absente |
+| `tete` | `tests/test_synchro.py` | Méthode de test : commit courant d'un dépôt |
 | `TIERS_1` | `tests/test_analyse_cumul.py` | Tiers fictif 1 des jeux de test (id, nom, référence) |
 | `TIERS_2` | `tests/test_analyse_cumul.py` | Tiers fictif 2 des jeux de test |
 | `tiers_id` | `core/soldes_cumules.py` | Identifiant du tiers d'un solde |

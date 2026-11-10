@@ -285,6 +285,7 @@ CATEGORIES = {
     "technique": "technique",
     "changement": "changement",
     "securite": "technique",
+    "synchro": "technique",
 }
 
 # Résultats de securite/concorde_securite.py (lancé en root par systemd,
@@ -293,6 +294,42 @@ DOSSIER_SECURITE = os.environ.get(
     "CONCORDE_SECURITE_DOSSIER", "/var/lib/concorde-securite"
 )
 AGE_MAX_S = {"controle": 3600, "antivirus": 36 * 3600}
+
+# État de la synchronisation du serveur sur main (deploy/concorde-sync.sh,
+# lancé par cron chaque minute en root) : un échec n'est jamais muet.
+ETAT_SYNCHRO = os.environ.get(
+    "CONCORDE_SYNCHRO_ETAT", "/var/lib/concorde-sync/etat.json"
+)
+AGE_MAX_SYNCHRO_S = 600
+
+
+def _lire_resultat_date(chemin: str) -> tuple[dict[str, Any], datetime]:
+    """Relit un résultat JSON daté et rend (contenu, date).
+
+    Rôle : lecture commune des résultats écrits par les scripts root.
+    Paramètres : chemin du fichier JSON (clé « date » au format ISO).
+    Retour : (contenu, date du résultat).
+    Erreurs : OSError (absent), ValueError (JSON ou date illisible),
+    KeyError (pas de date), TypeError (date qui n'est pas un texte).
+    Usages : constats_securite, constats_synchro.
+    """
+    with open(chemin, encoding="utf-8") as fichier:
+        contenu: dict[str, Any] = json.load(fichier)
+    return contenu, datetime.fromisoformat(contenu["date"])
+
+
+def _alerte(code: str, message: str, exemple: str) -> dict[str, Any]:
+    """Constat ALERTE d'un seul élément (format des constats du centre).
+
+    Usages : constats_securite, constats_synchro.
+    """
+    return {
+        "niveau": "ALERTE",
+        "code": code,
+        "message": message,
+        "nombre": 1,
+        "exemples": [exemple],
+    }
 
 
 def constats_securite(
@@ -316,19 +353,14 @@ def constats_securite(
     for nom, age_max in AGE_MAX_S.items():
         chemin = os.path.join(dossier, nom + ".json")
         try:
-            with open(chemin, encoding="utf-8") as f:
-                d = json.load(f)
-            date_r = datetime.fromisoformat(d["date"])
-        except (OSError, ValueError, KeyError):
+            d, date_r = _lire_resultat_date(chemin)
+        except (OSError, ValueError, KeyError, TypeError):
             constats.append(
-                {
-                    "niveau": "ALERTE",
-                    "code": "SEC_SURVEILLANCE_ARRETEE",
-                    "message": "Surveillance de sécurité sans résultat (%s)"
-                    % nom,
-                    "nombre": 1,
-                    "exemples": ["%s absent ou illisible" % chemin],
-                }
+                _alerte(
+                    "SEC_SURVEILLANCE_ARRETEE",
+                    "Surveillance de sécurité sans résultat (%s)" % nom,
+                    "%s absent ou illisible" % chemin,
+                )
             )
             continue
         infos[nom] = {
@@ -339,19 +371,65 @@ def constats_securite(
         age = (maintenant - date_r).total_seconds()
         if age > age_max:
             constats.append(
-                {
-                    "niveau": "ALERTE",
-                    "code": "SEC_SURVEILLANCE_ARRETEE",
-                    "message": "Surveillance de sécurité arrêtée (%s)" % nom,
-                    "nombre": 1,
-                    "exemples": [
-                        "dernier passage : %s (il y a %d h)"
-                        % (d["date"], age // 3600)
-                    ],
-                }
+                _alerte(
+                    "SEC_SURVEILLANCE_ARRETEE",
+                    "Surveillance de sécurité arrêtée (%s)" % nom,
+                    "dernier passage : %s (il y a %d h)"
+                    % (d["date"], age // 3600),
+                )
             )
         constats.extend(c for c in d.get("constats", []))
     return constats, infos
+
+
+def constats_synchro(
+    chemin: str | None = None, maintenant: datetime | None = None
+) -> list[dict[str, Any]]:
+    """Relit l'état de la synchronisation du serveur sur main.
+
+    Rôle : rendre visible tout échec du cron de synchronisation
+    (deploy/concorde-sync.sh) : récupération ou remise à niveau en erreur
+    (SYNCHRO_ECHEC), ou plus aucun passage depuis AGE_MAX_SYNCHRO_S
+    (SYNCHRO_ARRETEE : cron arrêté, script non exécutable, état absent).
+    Paramètres : chemin de l'état JSON (ETAT_SYNCHRO par défaut) ;
+    maintenant, heure de référence (heure locale par défaut).
+    Retour : liste de constats (vide si la dernière synchro est récente et
+    réussie).
+    Erreurs : aucune (fichier absent ou illisible -> SYNCHRO_ARRETEE).
+    Usages : interface/serveur (surveillance), tests.
+    """
+    chemin = chemin or ETAT_SYNCHRO
+    maintenant = maintenant or datetime.now()
+    try:
+        etat, date_etat = _lire_resultat_date(chemin)
+    except (OSError, ValueError, KeyError, TypeError):
+        return [
+            _alerte(
+                "SYNCHRO_ARRETEE",
+                "Synchronisation du serveur sans état",
+                "%s absent ou illisible" % chemin,
+            )
+        ]
+    constats = []
+    age = (maintenant - date_etat).total_seconds()
+    if age > AGE_MAX_SYNCHRO_S:
+        constats.append(
+            _alerte(
+                "SYNCHRO_ARRETEE",
+                "Synchronisation du serveur arrêtée",
+                "dernier passage : %s (il y a %d min)"
+                % (etat["date"], age // 60),
+            )
+        )
+    if etat.get("statut") != "ok":
+        constats.append(
+            _alerte(
+                "SYNCHRO_ECHEC",
+                "Synchronisation du serveur sur main en échec",
+                "%s : %s" % (etat.get("etape", "?"), etat.get("message", "")),
+            )
+        )
+    return constats
 
 
 class CentreAlertes:

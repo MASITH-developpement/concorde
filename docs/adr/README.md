@@ -21,3 +21,4 @@ Modèle : `0000-modele.md`. Une ADR acceptée ne se modifie pas : on en écrit u
 | [0015](0015-devis-et-rapport-dans-azalplus.md) | Devis et rapport dans AzalPlus : CONCORDE demande par l'API v1, AzalPlus décide | Proposée (09/11/2026) |
 | [0016](0016-bouton-arreter.md) | Bouton « Arrêter » sur une tâche en cours, et arrêt d'urgence | Acceptée (09/11/2026) |
 | [0017](0017-soldes-cumules-et-roles-de-comptes.md) | Analyse : soldes cumulés à la date de fin et rôles de comptes par client | Acceptée (10/11/2026) |
+| [0018](0018-roles-deduits-du-logiciel.md) | Rôles des comptes déduits du logiciel (configuration, comportement, libellé), pour tous les clients | Acceptée (10/11/2026) |

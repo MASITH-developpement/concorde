@@ -16,7 +16,9 @@ sa source, citée dans les constats.
 """
 
 import os
-from collections.abc import Mapping, Sequence
+import re
+from collections import defaultdict
+from collections.abc import Iterable, Iterator, Mapping, Sequence
 from typing import Any, NamedTuple
 
 from .yaml_min import ValeurYaml, charger_yaml
@@ -26,8 +28,11 @@ CHEMIN_CONCORDE_YAML = os.path.join(
     "concorde.yaml",
 )
 # Tables de rôles des clients : sur le serveur, hors git (jamais écrasées
-# par la synchronisation de main, jamais publiées).
-CHEMIN_ROLES_CLIENTS = "/etc/concorde/roles_clients.yaml"
+# par la synchronisation de main, jamais publiées). CONCORDE_ROLES_CLIENTS
+# désigne un autre fichier (tests ; analyse sans table : chemin absent).
+CHEMIN_ROLES_CLIENTS = os.environ.get(
+    "CONCORDE_ROLES_CLIENTS", "/etc/concorde/roles_clients.yaml"
+)
 
 # Rôles reconnus dans une table client, et ce qu'ils déclenchent.
 ROLES_CONNUS = {
@@ -52,8 +57,35 @@ ROLES_CONNUS = {
 }
 
 SOURCE_TABLE = "table client"
+SOURCE_CONFIGURATION = "configuration du logiciel"
+SOURCE_COMPORTEMENT = "comportement des écritures"
+SOURCE_LIBELLE = "libellé du compte"
 SOURCE_TYPE = "account_type"
 SOURCE_PREFIXE = "préfixe"
+
+# Libellés de comptes (français, anglais) -> rôle, dans l'ordre d'essai.
+_ROLES_LIBELLE = (
+    (
+        r"paiements?\b.*\b(en )?suspens|outstanding (receipts|payments)",
+        "paiement_en_suspens",
+    ),
+    (r"\b(attente|suspense|suspens|à classer|a classer)\b", "attente"),
+)
+# Libellés propres à une famille de comptes : (préfixes, motif, rôle).
+_ROLES_LIBELLE_FAMILLE = (
+    (
+        ("445",),
+        r"intra[- ]?com|import|autoliquid|reverse charge",
+        "tva_collectee_a_part",
+    ),
+    (("6",), r"provision", "charge_provision"),
+)
+# Autoliquidation : part minimale d'écritures compensées et nombre minimal.
+PART_AUTOLIQUIDATION = 0.9
+ECRITURES_AUTOLIQUIDATION = 3
+# Compte de transit : part minimale de lignes lettrées et nombre minimal.
+PART_LETTREE_TRANSIT = 0.5
+LIGNES_TRANSIT = 10
 
 JOURNAUX_A_NOUVEAUX_DEFAUT = ("AN", "RAN")
 SEUIL_TVA_REPARTIE_EUROS_DEFAUT = 1000
@@ -90,6 +122,17 @@ class ConfigAnalyse(NamedTuple):
 
     journaux_a_nouveaux: tuple[str, ...]
     tables: tuple[TableRoles, ...]
+
+
+class IndicesRoles(NamedTuple):
+    """Rôles déduits automatiquement ({code: rôle}), par source.
+
+    configuration : lue dans le logiciel par son connecteur ;
+    comportement : observé dans les écritures (ObservateurRoles).
+    """
+
+    configuration: Mapping[str, str]
+    comportement: Mapping[str, str]
 
 
 class RoleCompte(NamedTuple):
@@ -149,15 +192,64 @@ def _role_type(code: str, type_compte: str) -> str:
     return role
 
 
+def _role_libelle(code: str, libelle: str) -> str:
+    """Rôle d'après le libellé du compte ('' : libellé non concluant)."""
+    texte = libelle.casefold()
+    for prefixes, motif, role in _ROLES_LIBELLE_FAMILLE:
+        if code.startswith(prefixes) and re.search(motif, texte):
+            return role
+    if code[:1] in ("6", "7"):
+        return ""  # « attente » n'a pas de sens pour une charge ou un produit
+    for motif, role in _ROLES_LIBELLE:
+        if re.search(motif, texte):
+            return role
+    return ""
+
+
+def _role_prefixe_automatique(code: str) -> str:
+    """Préfixe du plan comptable général, règles de l'ADR-0018.
+
+    Par rapport à `_role_prefixe` : la TVA collectée 4457x forme un groupe,
+    les acomptes 419 / 409 n'ont pas de règle de sens, les comptes 6412 /
+    6413 (congés payés, primes, souvent repris en cours d'exercice) sont
+    des provisions.
+    """
+    if code.startswith("4457"):
+        return "tva_collectee"
+    if code.startswith("419"):
+        return "client_acompte"
+    if code.startswith("409"):
+        return "fournisseur_acompte"
+    if code.startswith(("6412", "6413")):
+        return "charge_provision"
+    return _role_prefixe(code)
+
+
+def _role_type_automatique(code: str, type_compte: str) -> str:
+    """account_type d'Odoo, acomptes 419 / 409 reconnus par leur préfixe."""
+    role = _role_type(code, type_compte)
+    if role in ("client", "fournisseur") and code.startswith(("419", "409")):
+        return role + "_acompte"
+    return role
+
+
 def role_compte(
-    code: str, type_compte: str, table: TableRoles | None
+    code: str,
+    type_compte: str,
+    table: TableRoles | None,
+    libelle: str = "",
+    indices: IndicesRoles | None = None,
 ) -> RoleCompte:
     """Rôle d'un compte pour les règles de solde, avec sa source.
 
-    Rôle : appliquer l'ordre table client, account_type, préfixe ; sans
-    table, préfixe seul (account_type pour les comptes de tiers).
+    Rôle : avec `indices` (analyse, ADR-0018), essayer dans l'ordre la
+    table client, la configuration du logiciel, le comportement des
+    écritures, le libellé, l'account_type, puis le préfixe ; sans
+    `indices` (écran Comptes, surveillance), règles de l'ADR-0017 : table
+    client, account_type, préfixe, ou préfixe seul sans table.
     Paramètres : code du compte ; type_compte, account_type Odoo ('' si
-    inconnu) ; table du client ou None.
+    inconnu) ; table du client ou None ; libelle du compte ; indices
+    déduits automatiquement ou None.
     Retour : RoleCompte(role, source) ; role '' si aucune règle ne s'applique.
     Erreurs : aucune.
     Usages : `roles_du_plan`, tests.
@@ -172,6 +264,22 @@ def role_compte(
             return RoleCompte(
                 table.prefixes[max(prefixes, key=len)], SOURCE_TABLE
             )
+    if indices is not None:
+        for source, roles in (
+            (SOURCE_CONFIGURATION, indices.configuration),
+            (SOURCE_COMPORTEMENT, indices.comportement),
+        ):
+            if code in roles:
+                return RoleCompte(roles[code], source)
+        for source, role in (
+            (SOURCE_LIBELLE, _role_libelle(code, libelle)),
+            (SOURCE_TYPE, _role_type_automatique(code, type_compte)),
+            (SOURCE_PREFIXE, _role_prefixe_automatique(code)),
+        ):
+            if role:
+                return RoleCompte(role, source)
+        return RoleCompte("", SOURCE_PREFIXE)
+    if table is not None:
         role = _role_type(code, type_compte)
         if role:
             return RoleCompte(role, SOURCE_TYPE)
@@ -181,20 +289,113 @@ def role_compte(
 
 
 def roles_du_plan(
-    comptes: Sequence[Mapping[str, Any]], table: TableRoles | None
+    comptes: Sequence[Mapping[str, Any]],
+    table: TableRoles | None,
+    indices: IndicesRoles | None = None,
 ) -> dict[str, RoleCompte]:
     """Rôle de chaque compte du plan ({code: RoleCompte}).
 
-    Paramètres : comptes — enregistrements portant 'code' et 'type' ;
-    table du client ou None.
+    Paramètres : comptes — enregistrements portant 'code', 'type' et
+    'libelle' ; table du client ou None ; indices déduits automatiquement
+    (analyse) ou None.
     Usages : comptes.alertes_balance, passerelle.analyser_source.
     """
     return {
         compte["code"]: role_compte(
-            compte["code"], compte.get("type") or "", table
+            compte["code"],
+            compte.get("type") or "",
+            table,
+            compte.get("libelle") or "",
+            indices,
         )
         for compte in comptes
     }
+
+
+class ObservateurRoles:
+    """Déduit des rôles du comportement des écritures (tout logiciel).
+
+    Rôle : pendant la lecture des lignes, repérer
+      - l'autoliquidation : compte de TVA collectée (445x hors 4456x) dont
+        le crédit est compensé, dans la même écriture, par un débit de TVA
+        déductible (4456x) du même montant, dans au moins
+        PART_AUTOLIQUIDATION des écritures -> tva_collectee_a_part ;
+      - le compte de transit : compte 512x / 58x dont au moins
+        PART_LETTREE_TRANSIT des lignes sont lettrées (une vraie banque ne
+        se lettre pas) -> paiement_en_suspens.
+    Seules les lignes comptabilisées comptent.
+    Usages : passerelle.analyser_source, tests.
+    """
+
+    def __init__(self) -> None:
+        """Prépare des compteurs vides."""
+        self._ecriture: Any = None
+        self._credits_tva: list[tuple[str, int]] = []
+        self._debits_deductibles: list[int] = []
+        self._ecritures_tva: defaultdict[str, int] = defaultdict(int)
+        self._compensees: defaultdict[str, int] = defaultdict(int)
+        self._lignes_tresorerie: defaultdict[str, int] = defaultdict(int)
+        self._lettrees: defaultdict[str, int] = defaultdict(int)
+
+    def _clore_ecriture(self) -> None:
+        """Compte l'écriture en cours pour chaque compte de TVA collectée."""
+        for compte in {compte for compte, _ in self._credits_tva}:
+            self._ecritures_tva[compte] += 1
+            montants = [
+                montant
+                for compte_lu, montant in self._credits_tva
+                if compte_lu == compte
+            ]
+            if all(
+                montant in self._debits_deductibles for montant in montants
+            ):
+                self._compensees[compte] += 1
+        self._credits_tva = []
+        self._debits_deductibles = []
+
+    def voir(self, ligne: Mapping[str, Any]) -> None:
+        """Observe une ligne (lignes d'une même écriture consécutives)."""
+        if ligne.get("etat", "posted") != "posted":
+            return
+        if ligne["ecriture_id"] != self._ecriture:
+            self._clore_ecriture()
+            self._ecriture = ligne["ecriture_id"]
+        compte = ligne["compte"]
+        if compte.startswith("4456") and ligne["debit"]:
+            self._debits_deductibles.append(ligne["debit"])
+        elif compte.startswith("445") and ligne["credit"]:
+            self._credits_tva.append((compte, ligne["credit"]))
+        if compte.startswith(("512", "58")):
+            self._lignes_tresorerie[compte] += 1
+            if ligne["lettrage"]:
+                self._lettrees[compte] += 1
+
+    def roles(self) -> dict[str, str]:
+        """Rôles déduits ({code: rôle}) des lignes vues jusqu'ici."""
+        self._clore_ecriture()
+        res = {
+            compte: "tva_collectee_a_part"
+            for compte, nombre in self._ecritures_tva.items()
+            if nombre >= ECRITURES_AUTOLIQUIDATION
+            and self._compensees[compte] >= PART_AUTOLIQUIDATION * nombre
+        }
+        res.update(
+            {
+                compte: "paiement_en_suspens"
+                for compte, nombre in self._lignes_tresorerie.items()
+                if nombre >= LIGNES_TRANSIT
+                and self._lettrees[compte] >= PART_LETTREE_TRANSIT * nombre
+            }
+        )
+        return res
+
+    def suivre(
+        self, lignes: Iterable[Mapping[str, Any]]
+    ) -> Iterator[Mapping[str, Any]]:
+        """Rend les lignes telles quelles en les observant au passage."""
+        for ligne in lignes:
+            self.voir(ligne)
+            yield ligne
 
 
 def _texte_liste(valeur: ValeurYaml, cle: str, origine: str) -> list[str]:

@@ -269,6 +269,10 @@ class FauxObjet:
                     "fiscalyear_last_day": 31,
                     "account_opening_move_id": False,
                     "tax_cash_basis_journal_id": False,
+                    "account_journal_payment_debit_account_id": False,
+                    "account_journal_payment_credit_account_id": False,
+                    "account_journal_suspense_account_id": False,
+                    "transfer_account_id": False,
                 }
             ],
             "account.account": [
@@ -296,8 +300,13 @@ class FauxObjet:
                     "name": "Ventes",
                     "type": "sale",
                     "active": True,
+                    "default_account_id": [1, "706000"],
+                    "suspense_account_id": False,
                 }
             ],
+            "account.payment.method.line": [],
+            "account.tax": [],
+            "account.tax.repartition.line": [],
             "account.move": [
                 {
                     "id": 5,

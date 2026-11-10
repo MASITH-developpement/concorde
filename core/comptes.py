@@ -33,6 +33,7 @@ from .roles_comptes import (
     SEUIL_TVA_REPARTIE_EUROS_DEFAUT,
     RoleCompte,
     TableRoles,
+    IndicesRoles,
     roles_du_plan,
 )
 from .soldes_cumules import SoldeTiers
@@ -55,12 +56,14 @@ class ContexteSoldes(TypedDict):
 
     cumul_comptes : solde cumulé par code de compte ; tiers : soldes par
     (compte, tiers), période et cumul ; table : rôles du client (ou None) ;
+    indices : rôles déduits du logiciel et des écritures (ADR-0018) ;
     suspens : lignes non lettrées par compte de paiements en suspens.
     """
 
     cumul_comptes: Mapping[str, int]
     tiers: Sequence[SoldeTiers]
     table: TableRoles | None
+    indices: IndicesRoles
     suspens: Mapping[str, Sequence[Enregistrement]]
 
 
@@ -165,8 +168,10 @@ class _Balance:
         """Indexe la balance et les rôles du plan."""
         self.comptes = {compte_lu["code"]: compte_lu for compte_lu in balance}
         self.contexte = contexte
-        self.roles = roles_du_plan(
-            balance, contexte["table"] if contexte else None
+        self.roles = (
+            roles_du_plan(balance, contexte["table"], contexte["indices"])
+            if contexte
+            else roles_du_plan(balance, None)
         )
 
     def periode(self, code: str) -> int:

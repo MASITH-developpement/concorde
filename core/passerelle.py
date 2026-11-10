@@ -21,6 +21,8 @@ from .odoo_source import Enregistrement, SourceOdoo
 from .roles_comptes import (
     ConfigAnalyse,
     lire_configuration,
+    IndicesRoles,
+    ObservateurRoles,
     roles_du_plan,
     table_du_client,
 )
@@ -308,13 +310,9 @@ def analyser_source(
         )
     )
     j.dire(
-        (
-            "Rôles des comptes : table du client %s, puis account_type, puis "
-            "préfixe" % table.client
-            if table
-            else "Rôles des comptes : préfixes du plan comptable général "
-            "(aucune table client)"
-        ),
+        "Rôles des comptes : %sconfiguration du logiciel, comportement des "
+        "écritures, libellé, type de compte, puis préfixe (ADR-0018)"
+        % ("table du client %s, puis " % table.client if table else ""),
         "detail",
     )
     with j.etape("Lecture du plan comptable, des journaux et des tiers") as e:
@@ -331,9 +329,10 @@ def analyser_source(
                 nombre_texte(len(tiers)),
             )
         )
+    observateur = ObservateurRoles()
     with j.etape("Contrôle des écritures et des tiers") as e:
         rapport = analyser(
-            source.lignes(du, au, etats),
+            observateur.suivre(source.lignes(du, au, etats)),
             comptes,
             journaux,
             tiers,
@@ -357,15 +356,21 @@ def analyser_source(
             aujourd_hui,
             parametres,
         )
+        indices = IndicesRoles(
+            source.configuration_comptable(), observateur.roles()
+        )
         contexte: ContexteSoldes = {
             "cumul_comptes": calcul["cumul_comptes"],
             "tiers": calcul["tiers"],
             "table": table,
+            "indices": indices,
             "suspens": _lignes_en_suspens(
                 source,
                 [
                     code
-                    for code, role in roles_du_plan(comptes, table).items()
+                    for code, role in roles_du_plan(
+                        comptes, table, indices
+                    ).items()
                     if role.role == "paiement_en_suspens"
                     and calcul["cumul_comptes"].get(code)
                 ],
@@ -396,6 +401,13 @@ def analyser_source(
     )
     rapport.info("calcul_soldes", calcul["infos"])
     rapport.info("table_roles", table.client if table else None)
+    rapport.info(
+        "roles_deduits",
+        {
+            "configuration_du_logiciel": len(indices.configuration),
+            "comportement_des_ecritures": len(indices.comportement),
+        },
+    )
     rapport.info("roles_comptes", bal.infos["roles_comptes"])
     rapport.info("comptes_en_alerte", alertes_comptes)
     d = rapport.en_dict()

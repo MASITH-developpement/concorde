@@ -25,7 +25,7 @@ from collections.abc import Iterable, Iterator, Mapping, Sequence
 from datetime import date, datetime
 from decimal import Decimal
 from http.client import HTTPConnection, HTTPSConnection
-from typing import TYPE_CHECKING, Any, Protocol, TypeVar
+from typing import TYPE_CHECKING, Any, Protocol, TypedDict, TypeVar
 
 from .canonical import ErreurMontant
 from .journal import Journal, duree_texte, nombre_texte, ou_muet
@@ -123,6 +123,9 @@ class SourceOdoo(Protocol):
 
     def nombre_lignes_avant(self, jour: date) -> int:
         """Nombre de lignes comptabilisées datées avant `jour`."""
+
+    def configuration_comptable(self) -> dict[str, str]:
+        """Rôle des comptes d'après la configuration d'Odoo (ADR-0018)."""
 
     def comptes(self) -> list[Enregistrement]:
         """Plan comptable de la société."""
@@ -310,6 +313,84 @@ def balance_tiers_depuis_lignes(
         g["credit"] += ligne["credit"]
         g["lignes"] += 1
     return list(groupes.values())
+
+
+class ConfigurationComptable(TypedDict):
+    """Configuration d'Odoo utile aux rôles des comptes (codes de comptes).
+
+    journaux : [(type, compte par défaut, compte d'attente)] ;
+    comptes_paiement : comptes des moyens de paiement des journaux ;
+    societe : {nom du champ : compte} (paiements en suspens, attente,
+    virements internes) ; repartitions : [(usage de la taxe, facteur en %,
+    compte)] des lignes « tax » ; transitions : [(usage, compte de
+    transition de la TVA sur encaissements)].
+    """
+
+    journaux: list[tuple[str, str, str]]
+    comptes_paiement: list[str]
+    societe: dict[str, str]
+    repartitions: list[tuple[str, float, str]]
+    transitions: list[tuple[str, str]]
+
+
+# Champs de la société Odoo 17 et rôle de leur compte.
+CHAMPS_SOCIETE_ROLES = {
+    "account_journal_payment_debit_account_id": "paiement_en_suspens",
+    "account_journal_payment_credit_account_id": "paiement_en_suspens",
+    "account_journal_suspense_account_id": "attente",
+    "transfer_account_id": "attente",
+}
+
+
+def roles_configuration(config: ConfigurationComptable) -> dict[str, str]:
+    """Traduit la configuration d'Odoo en rôles de comptes ({code: rôle}).
+
+    Rôle : base commune des sources SQL et XML-RPC (ADR-0018). Du moins
+    au plus prioritaire (le dernier l'emporte) : TVA déductible (taxes
+    d'achat), TVA autoliquidée (lignes négatives des taxes d'achat, à
+    suivre à part), TVA collectée (taxes de vente et leurs comptes de
+    transition), comptes d'attente, paiements en suspens, banques et
+    caisses (compte par défaut des journaux).
+    Paramètres : config — configuration lue, en codes de comptes.
+    Retour : {code: rôle} ; comptes vides ignorés.
+    Erreurs : aucune.
+    Usages : SourceSqlOdoo17 et SourceXmlRpcOdoo17.configuration_comptable.
+    """
+    res: dict[str, str] = {}
+
+    def poser(code: str, role: str) -> None:
+        """Pose le rôle d'un compte renseigné."""
+        if code:
+            res[code] = role
+
+    for usage, facteur, code in config["repartitions"]:
+        if usage == "purchase":
+            poser(
+                code,
+                "tva_collectee_a_part" if facteur < 0 else "tva_deductible",
+            )
+    for usage, code in config["transitions"]:
+        if usage == "purchase":
+            poser(code, "tva_deductible")
+    for usage, facteur, code in config["repartitions"]:
+        if usage == "sale" and facteur > 0:
+            poser(code, "tva_collectee")
+    for usage, code in config["transitions"]:
+        if usage == "sale":
+            poser(code, "tva_collectee")
+    for _, _, compte_attente in config["journaux"]:
+        poser(compte_attente, "attente")
+    for champ, role in sorted(
+        CHAMPS_SOCIETE_ROLES.items(),
+        key=lambda champ_role: champ_role[1] != "attente",
+    ):
+        poser(config["societe"].get(champ, ""), role)
+    for code in config["comptes_paiement"]:
+        poser(code, "paiement_en_suspens")
+    for type_journal, defaut, _ in config["journaux"]:
+        if type_journal in ("bank", "cash"):
+            poser(defaut, "banque" if type_journal == "bank" else "caisse")
+    return res
 
 
 def _comptes_de_cle(cle: object, noms: Mapping[int, str]) -> Iterator[str]:
@@ -1060,6 +1141,83 @@ class SourceSqlOdoo17:
         )[0][0]
         return nombre
 
+    def configuration_comptable(self) -> dict[str, str]:
+        """Rôle des comptes d'après la configuration d'Odoo (ADR-0018).
+
+        Rôle : lire journaux, moyens de paiement, comptes de la société et
+        comptes des taxes (lecture seule), puis `roles_configuration`.
+        Retour : {code de compte: rôle}.
+        Erreurs : erreurs psycopg2.
+        Usages : passerelle.analyser_source.
+        """
+        parametres_sql = {"s": self.societe}
+        champs = list(CHAMPS_SOCIETE_ROLES)
+        # Même ordre que CHAMPS_SOCIETE_ROLES.
+        societe = self._requete(
+            "SELECT d.code, c2.code, a.code, v.code FROM res_company c "
+            "LEFT JOIN account_account d "
+            "ON d.id = c.account_journal_payment_debit_account_id "
+            "LEFT JOIN account_account c2 "
+            "ON c2.id = c.account_journal_payment_credit_account_id "
+            "LEFT JOIN account_account a "
+            "ON a.id = c.account_journal_suspense_account_id "
+            "LEFT JOIN account_account v ON v.id = c.transfer_account_id "
+            "WHERE c.id = %(s)s",
+            parametres_sql,
+        )[0]
+        return roles_configuration(
+            {
+                "journaux": [
+                    (rangee[0], rangee[1] or "", rangee[2] or "")
+                    for rangee in self._requete(
+                        "SELECT j.type, d.code, a.code FROM account_journal j "
+                        "LEFT JOIN account_account d "
+                        "ON d.id = j.default_account_id "
+                        "LEFT JOIN account_account a "
+                        "ON a.id = j.suspense_account_id "
+                        "WHERE j.company_id = %(s)s",
+                        parametres_sql,
+                    )
+                ],
+                "comptes_paiement": [
+                    rangee[0]
+                    for rangee in self._requete(
+                        "SELECT a.code FROM account_payment_method_line l "
+                        "JOIN account_journal j ON j.id = l.journal_id "
+                        "JOIN account_account a "
+                        "ON a.id = l.payment_account_id "
+                        "WHERE j.company_id = %(s)s",
+                        parametres_sql,
+                    )
+                ],
+                "societe": {
+                    champ: code or "" for champ, code in zip(champs, societe)
+                },
+                "repartitions": [
+                    (rangee[0], float(rangee[1]), rangee[2])
+                    for rangee in self._requete(
+                        "SELECT t.type_tax_use, r.factor_percent, a.code "
+                        "FROM account_tax_repartition_line r "
+                        "JOIN account_tax t ON t.id = r.tax_id "
+                        "JOIN account_account a ON a.id = r.account_id "
+                        "WHERE t.company_id = %(s)s "
+                        "AND r.repartition_type = 'tax'",
+                        parametres_sql,
+                    )
+                ],
+                "transitions": [
+                    (rangee[0], rangee[1])
+                    for rangee in self._requete(
+                        "SELECT t.type_tax_use, a.code FROM account_tax t "
+                        "JOIN account_account a "
+                        "ON a.id = t.cash_basis_transition_account_id "
+                        "WHERE t.company_id = %(s)s",
+                        parametres_sql,
+                    )
+                ],
+            }
+        )
+
     def ecriture(self, ident: int | str) -> list[Enregistrement]:
         """Une écriture et ses lignes (toutes états confondus)."""
         return list(self.lignes(etats=ETATS, ecriture=int(ident)))
@@ -1772,6 +1930,91 @@ class SourceXmlRpcOdoo17:
             ],
         )
         return nombre
+
+    def configuration_comptable(self) -> dict[str, str]:
+        """Rôle des comptes d'après la configuration d'Odoo (ADR-0018).
+
+        Rôle et retour : comme `SourceSqlOdoo17.configuration_comptable`,
+        par search_read / read (lecture seule).
+        Erreurs : erreurs de `_appel`.
+        """
+        codes = {c["id"]: c["code"] for c in self.comptes()}
+
+        def code(valeur: object) -> str:
+            """Code du compte d'un many2one ('' si vide ou inconnu)."""
+            return str(codes.get(_m2o(valeur)[0], ""))
+
+        societe = self._lire_societe(list(CHAMPS_SOCIETE_ROLES))
+        journaux = self._tout_lire(
+            "account.journal",
+            [("company_id", "=", self.societe)],
+            ["type", "default_account_id", "suspense_account_id"],
+        )
+        ids_journaux = [journal_lu["id"] for journal_lu in journaux]
+        taxes = {
+            taxe["id"]: taxe
+            for taxe in self._tout_lire(
+                "account.tax",
+                [("company_id", "=", self.societe)],
+                ["type_tax_use", "cash_basis_transition_account_id"],
+            )
+        }
+        return roles_configuration(
+            {
+                "journaux": [
+                    (
+                        journal_lu["type"],
+                        code(journal_lu["default_account_id"]),
+                        code(journal_lu["suspense_account_id"]),
+                    )
+                    for journal_lu in journaux
+                ],
+                "comptes_paiement": [
+                    code(moyen["payment_account_id"])
+                    for moyen in self._tout_lire(
+                        "account.payment.method.line",
+                        [("journal_id", "in", ids_journaux)],
+                        ["payment_account_id", "journal_id"],
+                    )
+                    # Filtre redondant : on ne fait pas aveuglément
+                    # confiance au domaine.
+                    if _m2o(moyen["journal_id"])[0] in ids_journaux
+                ],
+                "societe": {
+                    champ: code(societe[champ])
+                    for champ in CHAMPS_SOCIETE_ROLES
+                },
+                "repartitions": [
+                    (
+                        taxes[_m2o(rangee["tax_id"])[0]]["type_tax_use"],
+                        float(rangee["factor_percent"]),
+                        code(rangee["account_id"]),
+                    )
+                    for rangee in self._tout_lire(
+                        "account.tax.repartition.line",
+                        [
+                            ("tax_id", "in", list(taxes)),
+                            ("repartition_type", "=", "tax"),
+                        ],
+                        [
+                            "tax_id",
+                            "account_id",
+                            "repartition_type",
+                            "factor_percent",
+                        ],
+                    )
+                    if _m2o(rangee["tax_id"])[0] in taxes
+                    and rangee["repartition_type"] == "tax"
+                ],
+                "transitions": [
+                    (
+                        taxe["type_tax_use"],
+                        code(taxe["cash_basis_transition_account_id"]),
+                    )
+                    for taxe in taxes.values()
+                ],
+            }
+        )
 
     def ecriture(self, ident: int | str) -> list[Enregistrement]:
         """Une écriture et ses lignes (toutes états confondus)."""

@@ -159,8 +159,10 @@ python3 -m scripts.concorde_odoo --source sql --base base_test analyser --json a
 - **Analyse, règles de solde** (ADR-0017) : portent sur le **solde cumulé à la date de fin**
   (écritures comptabilisées ; bilan depuis l'origine ou le dernier à-nouveaux comptabilisé,
   gestion depuis le début d'exercice) ; le rapport montre période et cumul. Le **rôle** de chaque
-  compte vient de la table du client, puis de l'`account_type` d'Odoo, puis du préfixe ; sans
-  table, préfixes seuls. Chaque constat cite rôle et source. Les tables des clients restent sur
+  compte est déduit automatiquement (ADR-0018) : table du client (facultative), configuration du
+  logiciel (Odoo : journaux de banque et de caisse, paiements en suspens, comptes d'attente,
+  taxes), comportement des écritures, libellé du compte, type de compte, puis préfixe. Chaque
+  constat cite rôle et source. Les tables des clients restent sur
   le serveur, **hors git** : `/etc/concorde/roles_clients.yaml` (modèle fictif
   `roles_clients.exemple.yaml`) ; aucune donnée client n'entre dans ce dépôt public.
 

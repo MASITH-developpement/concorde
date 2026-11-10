@@ -3,6 +3,27 @@
 Format : [Keep a Changelog](https://keepachangelog.com/fr/1.1.0/), versions sémantiques.
 Le module Odoo porte la même version au format `17.0.X.Y.Z` (`deploy/addons/concorde/__manifest__.py`).
 
+## [1.16.0] — 2026-11-10
+### Ajouté
+- **Rôles des comptes déduits automatiquement, pour tous les clients**
+  (ADR-0018) : plus besoin d'une table écrite à la main. Sources, dans
+  l'ordre, citées dans chaque constat : table client (facultative),
+  **configuration du logiciel** (Odoo : comptes des journaux de banque et
+  de caisse, paiements en suspens de la société et des moyens de paiement,
+  comptes d'attente et de virements internes, comptes des taxes de vente,
+  d'achat, de transition et d'autoliquidation), **comportement des
+  écritures** (TVA autoliquidée compensée dans la même écriture, compte
+  512 / 58 lettré = transit), **libellé du compte** (attente, suspense,
+  paiements en suspens, outstanding, intracommunautaire, import,
+  provision), type de compte, puis préfixe (TVA collectée 4457x en groupe,
+  acomptes 419 / 409, congés payés et primes 6412 / 6413 en INFO).
+- `infos.roles_deduits` : nombre de rôles tirés de la configuration et du
+  comportement.
+- `CONCORDE_ROLES_CLIENTS` : autre chemin pour la table client (tests ;
+  chemin absent = analyse sans table).
+### Inchangé
+- Écran Comptes et surveillance (hors périmètre, comme l'ADR-0017).
+
 ## [1.15.0] — 2026-11-10
 ### Ajouté
 - **Synchronisation du serveur jamais muette** : le script du cron est

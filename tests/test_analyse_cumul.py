@@ -16,16 +16,23 @@ from typing import Any
 from core.analyser import analyser
 from core.odoo_source import (
     TYPES_AFFICHAGE,
+    ConfigurationComptable,
     Enregistrement,
     SourceXmlRpcOdoo17,
     balance_depuis_lignes,
     balance_tiers_depuis_lignes,
+    roles_configuration,
 )
 from core.passerelle import analyser_source
 from core.roles_comptes import (
+    SOURCE_COMPORTEMENT,
+    SOURCE_CONFIGURATION,
+    SOURCE_LIBELLE,
     SOURCE_PREFIXE,
     SOURCE_TABLE,
     SOURCE_TYPE,
+    IndicesRoles,
+    ObservateurRoles,
     ConfigAnalyse,
     ErreurRoles,
     RoleCompte,
@@ -58,7 +65,7 @@ PLAN = (
     ("445710", "TVA collectée (compte Odoo)", "liability_current"),
     ("445720", "TVA collectée (ancien logiciel)", "liability_current"),
     ("445740", "TVA collectée sur encaissements", "liability_current"),
-    ("445790", "TVA collectée suivie à part", "liability_current"),
+    ("445790", "TVA intracommunautaire due", "liability_current"),
     ("499000", "Compte d'attente", "asset_current"),
     ("641200", "Provision congés payés", "expense"),
     ("706000", "Prestations", "income"),
@@ -133,6 +140,24 @@ class FabriqueEcritures:
         return eid
 
 
+# Configuration Odoo du Client A fictif (ce que lirait le connecteur Odoo).
+CONFIGURATION_CLIENT_A: ConfigurationComptable = {
+    "journaux": [
+        ("bank", "512100", ""),
+        ("bank", "512200", ""),
+        ("cash", "531000", ""),
+        ("sale", "706000", ""),
+    ],
+    "comptes_paiement": ["512300", "512400"],
+    "societe": {"account_journal_suspense_account_id": "499000"},
+    "repartitions": [
+        ("sale", 100.0, "445710"),
+        ("purchase", -100.0, "445790"),
+    ],
+    "transitions": [("sale", "445740")],
+}
+
+
 class SourceSimulee:
     """Source Odoo 17 simulée, calculée sur une liste de lignes.
 
@@ -148,11 +173,17 @@ class SourceSimulee:
         lignes: Sequence[Enregistrement],
         base: str = "client_a_preproduction",
         nom_societe: str = "Société A",
+        configuration: ConfigurationComptable | None = CONFIGURATION_CLIENT_A,
     ) -> None:
-        """Garde les lignes, la base et le nom de la société."""
+        """Garde les lignes, la base, la société et la configuration Odoo.
+
+        configuration None : logiciel dont on ne lit pas la configuration
+        (FEC déposé, par exemple).
+        """
         self._lignes = list(lignes)
         self.base = base
         self.nom_societe = nom_societe
+        self.configuration = configuration
         self.comptes_plan = [
             {
                 "id": rang,
@@ -280,6 +311,12 @@ class SourceSimulee:
             vues.values(),
             key=lambda ouverture: (ouverture["date"], ouverture["id"]),
         )
+
+    def configuration_comptable(self) -> dict[str, str]:
+        """Rôles tirés de la configuration simulée ({} sans configuration)."""
+        if self.configuration is None:
+            return {}
+        return roles_configuration(self.configuration)
 
     def nombre_lignes_avant(self, jour: date) -> int:
         """Nombre de lignes comptabilisées avant `jour`."""
@@ -656,30 +693,65 @@ class TestOuvertureComptabilisee(unittest.TestCase):
         )
 
 
-class TestSansTableClient(unittest.TestCase):
-    """Sans table client : préfixes seuls, comme avant l'ADR-0017."""
+def resume(rapport: dict[str, Any]) -> dict[str, list[str]]:
+    """Constats de solde réduits à leurs comptes (sans le texte du rôle)."""
+    return {
+        constat_lu["code"]: [
+            element.split(" [", 1)[0] for element in constat_lu["elements"]
+        ]
+        for constat_lu in rapport["constats"]
+        if constat_lu.get("origine") == "balance"
+    }
 
-    def test_prefixes(self) -> None:
-        """512x tous banques, 4457x contrôlés compte par compte."""
+
+class TestSansTableClient(unittest.TestCase):
+    """Sans table client : rôles déduits automatiquement (ADR-0018)."""
+
+    def test_configuration_odoo_comme_la_table(self) -> None:
+        """Test de référence : sans table, mêmes constats qu'avec la table."""
+        avec_table = analyse(SourceSimulee(jeu_client_a().lignes))
+        sans_table = analyse(
+            SourceSimulee(jeu_client_a().lignes, "autre_base", "Autre")
+        )
+        self.assertIsNone(sans_table["infos"]["table_roles"])
+        self.assertEqual(resume(sans_table), resume(avec_table))
+        self.assertEqual(
+            elements_du_constat(sans_table, "BANQUE_CREDITRICE"),
+            [
+                "512100 Banque 1 [banque, configuration du logiciel] : "
+                "période 80000,00 C / cumul 80000,00 C"
+            ],
+        )
+        self.assertIn(
+            "[attente, configuration du logiciel]",
+            elements_du_constat(sans_table, "COMPTE_ATTENTE_NON_SOLDE")[0],
+        )
+        self.assertEqual(
+            sans_table["infos"]["roles_deduits"],
+            {"configuration_du_logiciel": 9, "comportement_des_ecritures": 0},
+        )
+
+    def test_sans_configuration_du_logiciel(self) -> None:
+        """Logiciel sans configuration lisible : libellés et préfixes."""
         rapport = analyse(
-            SourceSimulee(jeu_client_a().lignes, "autre_base", "Autre société")
+            SourceSimulee(
+                jeu_client_a().lignes,
+                "autre_base",
+                "Autre",
+                configuration=None,
+            )
         )
-        self.assertIsNone(rapport["infos"]["table_roles"])
-        banques = elements_du_constat(rapport, "BANQUE_CREDITRICE")
-        self.assertEqual(codes_en_tete(banques), ["512100", "512400"])
-        self.assertIn("[banque, préfixe]", banques[0])
-        self.assertEqual(
-            codes_en_tete(
-                elements_du_constat(rapport, "TVA_COLLECTEE_DEBITRICE")
-            ),
-            ["445720", "445740"],
+        attendu = resume(analyse(SourceSimulee(jeu_client_a().lignes)))
+        self.assertEqual(resume(rapport), attendu)
+        suspens = elements_du_constat(rapport, "PAIEMENT_EN_SUSPENS_NON_SOLDE")
+        self.assertIn("[paiement_en_suspens, libellé du compte]", suspens[0])
+        self.assertIn(
+            "[tva_collectee, préfixe]",
+            elements_du_constat(rapport, "TVA_COLLECTEE_REPARTIE")[1],
         )
-        self.assertEqual(
-            elements_du_constat(rapport, "TVA_COLLECTEE_REPARTIE"), []
-        )
-        self.assertEqual(
-            codes_en_tete(elements_du_constat(rapport, "CHARGE_CREDITRICE")),
-            ["641200"],
+        self.assertIn(
+            "[charge_provision, libellé du compte]",
+            elements_du_constat(rapport, "CHARGE_PROVISION_CREDITRICE")[0],
         )
 
     def test_fichier_des_roles_absent(self) -> None:
@@ -796,6 +868,161 @@ class TestRoles(unittest.TestCase):
             with self.subTest(analyse=analyse, clients=clients):
                 with self.assertRaises(ErreurRoles):
                     self.lire(analyse, clients)
+
+
+class TestRolesAutomatiques(unittest.TestCase):
+    """Rôles déduits du logiciel, des écritures et des libellés."""
+
+    def test_priorites_de_la_configuration(self) -> None:
+        """Banque avant suspens avant attente avant TVA ; autoliquidation."""
+        roles = roles_configuration(
+            {
+                "journaux": [("bank", "512100", "471000"), ("cash", "", "")],
+                "comptes_paiement": ["512300", "471000"],
+                "societe": {
+                    "transfer_account_id": "580000",
+                    "account_journal_payment_debit_account_id": "512300",
+                },
+                "repartitions": [
+                    ("sale", 100.0, "445710"),
+                    ("purchase", 100.0, "445660"),
+                    ("purchase", -100.0, "445200"),
+                    ("purchase", -100.0, "445710"),
+                ],
+                "transitions": [("sale", "445740"), ("purchase", "445640")],
+            }
+        )
+        self.assertEqual(
+            roles,
+            {
+                "512100": "banque",
+                "512300": "paiement_en_suspens",
+                "471000": "paiement_en_suspens",
+                "580000": "attente",
+                "445710": "tva_collectee",
+                "445740": "tva_collectee",
+                "445660": "tva_deductible",
+                "445640": "tva_deductible",
+                "445200": "tva_collectee_a_part",
+            },
+        )
+
+    def test_ordre_des_sources(self) -> None:
+        """Configuration, comportement, libellé, type, préfixe."""
+        indices = IndicesRoles({"512300": "banque"}, {"445200": "x"})
+        cas = (
+            (
+                "512300",
+                "asset_current",
+                "Paiements entrants en suspens",
+                RoleCompte("banque", SOURCE_CONFIGURATION),
+            ),
+            ("445200", "", "", RoleCompte("x", SOURCE_COMPORTEMENT)),
+            (
+                "499000",
+                "asset_current",
+                "Suspense Account",
+                RoleCompte("attente", SOURCE_LIBELLE),
+            ),
+            (
+                "512400",
+                "asset_current",
+                "Outstanding Payments",
+                RoleCompte("paiement_en_suspens", SOURCE_LIBELLE),
+            ),
+            (
+                "445790",
+                "",
+                "TVA due intracommunautaire",
+                RoleCompte("tva_collectee_a_part", SOURCE_LIBELLE),
+            ),
+            (
+                "641200",
+                "expense",
+                "Provision congés payés",
+                RoleCompte("charge_provision", SOURCE_LIBELLE),
+            ),
+            (
+                "606000",
+                "expense",
+                "Achats en attente",
+                RoleCompte("charge", SOURCE_TYPE),
+            ),
+            (
+                "419100",
+                "asset_receivable",
+                "Clients",
+                RoleCompte("client_acompte", SOURCE_TYPE),
+            ),
+            (
+                "445720",
+                "",
+                "TVA 20 %",
+                RoleCompte("tva_collectee", SOURCE_PREFIXE),
+            ),
+            (
+                "641300",
+                "",
+                "Primes",
+                RoleCompte("charge_provision", SOURCE_PREFIXE),
+            ),
+            ("101000", "equity", "Capital", RoleCompte("", SOURCE_PREFIXE)),
+        )
+        for code, type_compte, libelle, attendu in cas:
+            with self.subTest(code=code):
+                self.assertEqual(
+                    role_compte(code, type_compte, None, libelle, indices),
+                    attendu,
+                )
+
+    def ligne_obs(
+        self,
+        eid: int,
+        compte: str,
+        debit: int = 0,
+        credit: int = 0,
+        lettrage: str = "",
+        etat: str = "posted",
+    ) -> Enregistrement:
+        """Ligne minimale pour l'observateur."""
+        return {
+            "ecriture_id": eid,
+            "compte": compte,
+            "debit": debit,
+            "credit": credit,
+            "lettrage": lettrage,
+            "etat": etat,
+        }
+
+    def test_autoliquidation_observee(self) -> None:
+        """TVA collectée compensée par une déductible du même montant."""
+        observateur = ObservateurRoles()
+        lignes = []
+        for eid in range(1, 4):
+            lignes += [
+                self.ligne_obs(eid, "445200", credit=2000),
+                self.ligne_obs(eid, "445660", debit=2000),
+                self.ligne_obs(eid, "445710", credit=500),
+            ]
+        lignes.append(self.ligne_obs(9, "445200", credit=7, etat="draft"))
+        self.assertEqual(len(list(observateur.suivre(lignes))), 10)
+        self.assertEqual(
+            observateur.roles(), {"445200": "tva_collectee_a_part"}
+        )
+
+    def test_compte_de_transit_lettre(self) -> None:
+        """512x lettré à plus de moitié : transit ; banque non lettrée."""
+        observateur = ObservateurRoles()
+        for rang in range(12):
+            observateur.voir(
+                self.ligne_obs(
+                    rang, "512300", 100, lettrage="A" if rang else ""
+                )
+            )
+            observateur.voir(self.ligne_obs(rang, "512100", 100))
+        self.assertEqual(
+            observateur.roles(), {"512300": "paiement_en_suspens"}
+        )
 
 
 class TestExercice(unittest.TestCase):
@@ -943,11 +1170,90 @@ class FauxObjetCumul(FauxObjet):
                 "name": "TVA encaissements",
                 "type": "general",
                 "active": True,
+                "default_account_id": False,
+                "suspense_account_id": False,
             }
         )
         societe = self.donnees["res.company"][0]
         societe["account_opening_move_id"] = [5, "VEN/1"]
         societe["tax_cash_basis_journal_id"] = [2, "TVA encaissements"]
+        societe["account_journal_suspense_account_id"] = [8, "471000"]
+        for ident, code in (
+            (3, "512100"),
+            (4, "512300"),
+            (5, "445710"),
+            (6, "445740"),
+            (7, "445200"),
+            (8, "471000"),
+        ):
+            self.donnees["account.account"].append(
+                {
+                    "id": ident,
+                    "code": code,
+                    "name": code,
+                    "account_type": "asset_current",
+                    "reconcile": False,
+                    "deprecated": False,
+                }
+            )
+        self.donnees["account.journal"].append(
+            {
+                "id": 3,
+                "code": "BNK1",
+                "name": "Banque",
+                "type": "bank",
+                "active": True,
+                "default_account_id": [3, "512100"],
+                "suspense_account_id": [8, "471000"],
+            }
+        )
+        self.donnees["account.payment.method.line"] = [
+            {
+                "id": 1,
+                "journal_id": [3, "BNK1"],
+                "payment_account_id": [4, "x"],
+            },
+            {
+                "id": 2,
+                "journal_id": [99, "autre"],
+                "payment_account_id": [5, "x"],
+            },
+        ]
+        self.donnees["account.tax"] = [
+            {
+                "id": 1,
+                "type_tax_use": "sale",
+                "cash_basis_transition_account_id": [6, "x"],
+            },
+            {
+                "id": 2,
+                "type_tax_use": "purchase",
+                "cash_basis_transition_account_id": False,
+            },
+        ]
+        self.donnees["account.tax.repartition.line"] = [
+            {
+                "id": 1,
+                "tax_id": [1, "x"],
+                "account_id": [5, "x"],
+                "repartition_type": "tax",
+                "factor_percent": 100.0,
+            },
+            {
+                "id": 2,
+                "tax_id": [2, "x"],
+                "account_id": [7, "x"],
+                "repartition_type": "tax",
+                "factor_percent": -100.0,
+            },
+            {
+                "id": 3,
+                "tax_id": [1, "x"],
+                "account_id": False,
+                "repartition_type": "base",
+                "factor_percent": 100.0,
+            },
+        ]
         self.donnees["account.move.line"].append(
             dict(
                 self.donnees["account.move.line"][0],
@@ -1053,6 +1359,20 @@ class TestSourceXmlRpcCumul(unittest.TestCase):
                 modele in SourceXmlRpcOdoo17.METHODES_AUTORISEES
                 for _, modele in self.objet.appels
             )
+        )
+
+    def test_configuration_comptable(self) -> None:
+        """Banque, paiements en suspens, attente et TVA lus par l'API."""
+        self.assertEqual(
+            self.source.configuration_comptable(),
+            {
+                "512100": "banque",
+                "512300": "paiement_en_suspens",
+                "471000": "attente",
+                "445710": "tva_collectee",
+                "445740": "tva_collectee",
+                "445200": "tva_collectee_a_part",
+            },
         )
 
     def test_lignes_portent_rapprochement_et_extourne(self) -> None:

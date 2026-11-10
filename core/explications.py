@@ -59,8 +59,9 @@ CATALOGUE: dict[str, tuple[str, str, str]] = {
     "LIGNE_MONTANT_NUL": (
         "Lignes à montant nul",
         "Sans gravité comptable, mais ces lignes encombrent les états et le "
-        "FEC. Elles "
-        "viennent souvent de lignes de facture à 0 € ou d'imports.",
+        "FEC. Elles viennent souvent de lignes de facture à 0 € ou "
+        "d'imports ; celles du journal de TVA sur encaissements ne sont pas "
+        "comptées. Le rapport les ventile par journal.",
         "Rien d'obligatoire. Les nettoyer si elles gênent la lecture.",
     ),
     "TIERS_MANQUANT": (
@@ -94,8 +95,9 @@ CATALOGUE: dict[str, tuple[str, str, str]] = {
     "DOUBLON_PROBABLE": (
         "Doublons probables",
         "Deux écritures du même journal, à la même date, avec la même "
-        "référence et le "
-        "même montant : souvent une facture saisie ou importée deux fois.",
+        "référence et le même montant : souvent une facture saisie ou "
+        "importée deux fois. Sur le journal de TVA sur encaissements, seules "
+        "comptent les écritures du même rapprochement, hors extournes.",
         "Comparer les écritures de chaque paire ; annuler le doublon s'il "
         "est confirmé.",
     ),
@@ -223,6 +225,45 @@ CATALOGUE: dict[str, tuple[str, str, str]] = {
         "débiteur "
         "signale des avoirs mal imputés ou une déclaration passée en double.",
         "Contrôler les écritures du compte et les déclarations de TVA.",
+    ),
+    "TVA_COLLECTEE_REPARTIE": (
+        "TVA collectée répartie sur plusieurs comptes",
+        "Plusieurs comptes du groupe TVA collectée portent un solde "
+        "important : la TVA est souvent comptée sur un compte (par exemple "
+        "le compte standard d'Odoo) et déclarée sur un autre.",
+        "Rapprocher les comptes du groupe avec les déclarations de TVA, "
+        "puis virer le solde sur le compte où la TVA est déclarée.",
+    ),
+    "TVA_COLLECTEE_SENS_CONTRAIRE": (
+        "Compte de TVA collectée de sens contraire",
+        "Un compte du groupe TVA collectée a un solde de sens contraire à "
+        "celui du groupe. Un compte de transition (TVA sur encaissements) "
+        "débiteur est anormal en soi.",
+        "Ouvrir le grand livre du compte : déclaration passée sur le mauvais "
+        "compte, ou virement de la TVA encaissée manquant.",
+    ),
+    "PAIEMENT_EN_SUSPENS_NON_SOLDE": (
+        "Paiements en suspens non soldés",
+        "Les comptes de paiements entrants et sortants en suspens d'Odoo "
+        "attendent le rapprochement bancaire : un solde signifie des "
+        "paiements jamais rapprochés d'une ligne de relevé.",
+        "Rapprocher les lignes listées (les plus anciennes d'abord) avec "
+        "le relevé bancaire, ou annuler les paiements saisis en double.",
+    ),
+    "CHARGE_PROVISION_CREDITRICE": (
+        "Provision créditrice en cours d'exercice",
+        "Une provision (congés payés, primes) devient créditrice quand sa "
+        "reprise est passée avant la dotation de l'exercice : c'est souvent "
+        "normal en cours d'année.",
+        "Vérifier à la clôture que la dotation de l'exercice a été passée.",
+    ),
+    "OUVERTURE_DOUBLE_POSSIBLE": (
+        "À-nouveaux et historique présents ensemble",
+        "La base contient une écriture d'à-nouveaux et des écritures "
+        "comptabilisées antérieures : compter les deux doublerait les "
+        "soldes d'ouverture. CONCORDE n'en compte qu'un et dit lequel.",
+        "Choisir entre l'à-nouveaux et l'historique : laisser l'à-nouveaux "
+        "en brouillon, ou le comptabiliser une fois l'historique verrouillé.",
     ),
     "COMPTE_DEPRECIE_SOLDE": (
         "Compte déprécié avec un solde",

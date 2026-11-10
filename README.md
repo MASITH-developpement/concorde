@@ -137,7 +137,7 @@ Commande `scripts/concorde_odoo.py` — ADR-0001. Deux sources de **lecture**, m
 | Source | Quand | Accès |
 |---|---|---|
 | `--source sql` | Volumes importants (150 000 lignes ≈ 6 s, ~90 Mo) | PostgreSQL en **lecture seule** ; variables `PGHOST`, `PGPORT`, `PGUSER`, `PGPASSWORD` ; `psycopg2` (optionnel, chargé seulement ici) |
-| `--source xmlrpc` | Partout, Odoo Online compris | Clé API dans `ODOO_API_KEY` ; seules `search_read` / `read` / `fields_get` sont autorisées |
+| `--source xmlrpc` | Partout, Odoo Online compris | Clé API dans `ODOO_API_KEY` ; seules `search_read` / `read` / `fields_get` / `search_count` sont autorisées |
 
 ```bash
 # Télécharger : FEC DGFiP, classeur xlsx (une feuille par objet), CSV d'import Odoo
@@ -156,6 +156,13 @@ python3 -m scripts.concorde_odoo --source sql --base testalbhade analyser --json
   `modifie_le` servent à la réintégration (phase 3) : ne pas les modifier.
 - **CSV** : ordre d'import `1_journaux`, `2_comptes`, `3_tiers`, `4_ecritures` (noms techniques Odoo).
 - **Écriture dans Odoo** : jamais en SQL, toujours par l'ORM (phases 2 et 3, à venir).
+- **Analyse, règles de solde** (ADR-0017) : portent sur le **solde cumulé à la date de fin**
+  (écritures comptabilisées ; bilan depuis l'origine ou le dernier à-nouveaux comptabilisé,
+  gestion depuis le début d'exercice) ; le rapport montre période et cumul. Le **rôle** de chaque
+  compte vient de la table du client, puis de l'`account_type` d'Odoo, puis du préfixe ; sans
+  table, préfixes seuls. Chaque constat cite rôle et source. Les tables des clients restent sur
+  le serveur, **hors git** : `/etc/concorde/roles_clients.yaml` (modèle fictif
+  `roles_clients.exemple.yaml`) ; aucune donnée client n'entre dans ce dépôt public.
 
 ## Migration ERP → Odoo 17 (ADR-0004) — étapes 1 à 5
 

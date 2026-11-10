@@ -7,10 +7,12 @@ nombre total et des exemples (les listes complètes vont dans le JSON).
 
 Contrôles :
   ÉCRITURES  équilibre au centime (écriture et total), ligne sans compte,
-             écriture d'une seule ligne, ligne à montant nul, date future,
+             écriture d'une seule ligne, ligne à montant nul (hors journal
+             de TVA sur encaissements, ventilée par journal), date future,
              compte client / fournisseur sans tiers, compte déprécié utilisé,
-             doublons probables (journal + date + référence + montant),
-             brouillons anciens.
+             doublons probables (journal + date + référence + montant ; sur
+             le journal de TVA sur encaissements, même rapprochement et
+             paires écriture + extourne écartées), brouillons anciens.
   TIERS      société sans SIREN ni TVA, SIREN / TVA FR invalides, doublons
              (même TVA, même SIREN ou même nom normalisé).
   PLAN       compte utilisé absent du plan, journal inactif utilisé.
@@ -41,6 +43,7 @@ Constat = dict[str, Any]
 class ResumeEcriture(TypedDict):
     """Résumé d'une écriture construit pendant la lecture des lignes."""
 
+    id: int
     ecriture: str
     planifiee: bool
     journal: str
@@ -50,6 +53,8 @@ class ResumeEcriture(TypedDict):
     lignes: int
     solde: int
     debit: int
+    caba_rapprochement_id: int | None
+    extourne_de_id: int | None
 
 
 class Rapport:
@@ -168,8 +173,13 @@ def analyser(
     tiers: Iterable[Mapping[str, Any]] = (),
     aujourd_hui: date | None = None,
     societe: str | None = None,
+    journal_caba: str = "",
 ) -> Rapport:
-    """Analyse complète. `lignes` est un itérable (une seule passe)."""
+    """Analyse complète. `lignes` est un itérable (une seule passe).
+
+    journal_caba : code du journal de TVA sur encaissements de la société
+    ('' : aucun), traité à part pour les doublons et les lignes nulles.
+    """
     aujourd_hui = aujourd_hui or date.today()
     r = Rapport()
     if societe:
@@ -186,6 +196,8 @@ def analyser(
     ecritures: dict[int, ResumeEcriture] = {}  # ecriture_id -> résumé
     sans_compte: list[str] = []
     nulles: list[str] = []
+    nulles_par_journal: Counter[str] = Counter()
+    nulles_caba = 0
     futures: list[str] = []
     sans_tiers: list[str] = []
     depreciees: list[str] = []
@@ -219,6 +231,7 @@ def analyser(
                 )
             )
             e = ecritures[ligne["ecriture_id"]] = {
+                "id": ligne["ecriture_id"],
                 "ecriture": nom,
                 "planifiee": ligne.get("auto_post", "no") not in ("", "no"),
                 "journal": ligne["journal_code"],
@@ -228,6 +241,8 @@ def analyser(
                 "lignes": 0,
                 "solde": 0,
                 "debit": 0,
+                "caba_rapprochement_id": ligne["caba_rapprochement_id"],
+                "extourne_de_id": ligne["extourne_de_id"],
             }
         e["lignes"] += 1
         e["solde"] += ligne["debit"] - ligne["credit"]
@@ -240,7 +255,13 @@ def analyser(
         elif plan and plan[ligne["compte"]]["deprecie"]:
             depreciees.append("%s — compte %s" % (ref_l, ligne["compte"]))
         if ligne["debit"] == 0 and ligne["credit"] == 0:
-            nulles.append(ref_l)
+            if journal_caba and ligne["journal_code"] == journal_caba:
+                nulles_caba += 1
+            else:
+                nulles.append(
+                    "%s — journal %s" % (ref_l, ligne["journal_code"])
+                )
+                nulles_par_journal[ligne["journal_code"]] += 1
         if ligne["compte_type"] in TYPES_TIERS and not ligne["tiers_id"]:
             sans_tiers.append("%s — compte %s" % (ref_l, ligne["compte"]))
         if ligne["tiers_id"]:
@@ -264,6 +285,12 @@ def analyser(
     r.info("total_credit", euros_texte(credit, ","))
     r.info("par_etat", dict(par_etat))
     r.info("par_journal", dict(sorted(par_journal.items())))
+    r.info("journal_tva_encaissements", journal_caba)
+    r.info(
+        "lignes_montant_nul_par_journal",
+        dict(sorted(nulles_par_journal.items())),
+    )
+    r.info("lignes_montant_nul_caba_ecartees", nulles_caba)
 
     # --- BLOQUANTS ---------------------------------------------------------
     desequ = [
@@ -337,28 +364,12 @@ def analyser(
         sorted(journal_inactif),
     )
 
-    groupes: defaultdict[tuple[str, date | None, str, int], list[str]] = (
-        defaultdict(list)
-    )
-    for e in ecritures.values():
-        if e["reference"] and e["debit"]:
-            groupes[
-                (
-                    e["journal"],
-                    e["date"],
-                    e["reference"].strip().upper(),
-                    e["debit"],
-                )
-            ].append(e["ecriture"])
     r.constat(
         "ALERTE",
         "DOUBLON_PROBABLE",
-        "Doublons probables (même journal, date, référence et montant)",
-        [
-            "%s : %s" % (k[2], ", ".join(v))
-            for k, v in groupes.items()
-            if len(v) > 1
-        ],
+        "Doublons probables (même journal, date, référence et montant ; "
+        "TVA sur encaissements : même rapprochement, hors extournes)",
+        doublons_probables(ecritures.values(), journal_caba),
     )
 
     limite = aujourd_hui - timedelta(days=JOURS_BROUILLON_ANCIEN)
@@ -384,6 +395,64 @@ def analyser(
             ],
         )
     return r
+
+
+def doublons_probables(
+    ecritures: Iterable[ResumeEcriture], journal_caba: str
+) -> list[str]:
+    """Groupes d'écritures probablement saisies deux fois.
+
+    Rôle : regrouper les écritures par journal, date, référence et montant
+    débit. Sur le journal de TVA sur encaissements (`journal_caba`), Odoo
+    crée une écriture par règlement partiel : la clé y ajoute le
+    rapprochement (`tax_cash_basis_rec_id`, s'il est renseigné), et une
+    écriture et son extourne (`reversed_entry_id`) ne comptent pas.
+    Paramètres : résumés des écritures ; code du journal de TVA sur
+    encaissements ('' : aucun).
+    Retour : un texte « référence : écriture, écriture… » par groupe d'au
+    moins deux écritures.
+    Erreurs : KeyError si un résumé est incomplet.
+    Usages : analyser, tests.
+    """
+    groupes: defaultdict[
+        tuple[str, date | None, str, int, int | None], list[ResumeEcriture]
+    ] = defaultdict(list)
+    for ecriture in ecritures:
+        if ecriture["reference"] and ecriture["debit"]:
+            caba = bool(journal_caba) and ecriture["journal"] == journal_caba
+            groupes[
+                (
+                    ecriture["journal"],
+                    ecriture["date"],
+                    ecriture["reference"].strip().upper(),
+                    ecriture["debit"],
+                    ecriture["caba_rapprochement_id"] if caba else None,
+                )
+            ].append(ecriture)
+    res = []
+    for cle, groupe in groupes.items():
+        if journal_caba and cle[0] == journal_caba:
+            ids = {ecriture["id"] for ecriture in groupe}
+            extournes = {
+                ecriture["extourne_de_id"]
+                for ecriture in groupe
+                if ecriture["extourne_de_id"] in ids
+            }
+            groupe = [
+                ecriture
+                for ecriture in groupe
+                if ecriture["id"] not in extournes
+                and ecriture["extourne_de_id"] not in ids
+            ]
+        if len(groupe) > 1:
+            res.append(
+                "%s : %s"
+                % (
+                    cle[2],
+                    ", ".join(ecriture["ecriture"] for ecriture in groupe),
+                )
+            )
+    return res
 
 
 def _analyser_tiers(r: Rapport, tiers: Sequence[Mapping[str, Any]]) -> None:

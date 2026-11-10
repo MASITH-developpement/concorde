@@ -265,6 +265,10 @@ class FauxObjet:
                     "company_registry": "384684957",
                     "vat": False,
                     "currency_id": [1, "EUR"],
+                    "fiscalyear_last_month": "12",
+                    "fiscalyear_last_day": 31,
+                    "account_opening_move_id": False,
+                    "tax_cash_basis_journal_id": False,
                 }
             ],
             "account.account": [
@@ -306,6 +310,8 @@ class FauxObjet:
                     "ref": False,
                     "write_date": "2025-10-03 10:00:00",
                     "auto_post": "no",
+                    "tax_cash_basis_rec_id": False,
+                    "reversed_entry_id": False,
                 }
             ],
             "res.partner": [
@@ -350,6 +356,8 @@ class FauxObjet:
                     "company_currency_id": [1, "EUR"],
                     "date_maturity": False,
                     "write_date": "2025-10-03 10:00:00",
+                    "date": "2025-10-03",
+                    "parent_state": "posted",
                 }
                 for i, acc, d, c in ((11, 1, 0.0, 100.1), (12, 2, 100.1, 0.0))
             ],
@@ -372,7 +380,12 @@ class FauxObjet:
             return [r for r in recs if r["id"] in args[0]]
         dom = args[0]
         mini = max(
-            [c[2] for c in dom if isinstance(c, tuple) and c[0] == "id"] or [0]
+            [
+                c[2]
+                for c in dom
+                if isinstance(c, tuple) and c[:2] == ("id", ">")
+            ]
+            or [0]
         )
         res = [r for r in recs if r["id"] > mini]
         return res[: kw.get("limit") or None]

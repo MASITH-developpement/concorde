@@ -14,10 +14,17 @@ from datetime import date
 from typing import Any
 
 from .analyser import Constat, analyser
-from .comptes import alertes_balance
+from .comptes import ContexteSoldes, alertes_balance
 from .guardian import Guardian
 from .journal import Journal, nombre_texte, ou_muet
 from .odoo_source import Enregistrement, SourceOdoo
+from .roles_comptes import (
+    ConfigAnalyse,
+    lire_configuration,
+    roles_du_plan,
+    table_du_client,
+)
+from .soldes_cumules import calculer_soldes
 from .telecharger import (
     ErreurFec,
     generer_csv,
@@ -267,21 +274,31 @@ def analyser_source(
     validees: bool = False,
     guardian: Guardian | None = None,
     journal: Journal | None = None,
+    config: ConfigAnalyse | None = None,
+    aujourd_hui: date | None = None,
 ) -> dict[str, Any]:
     """Analyse complète d'une base (écritures, tiers, balance).
 
-    Rôle : action « analyser » ; le journal raconte chaque étape.
+    Rôle : action « analyser » ; le journal raconte chaque étape. Les
+    règles de solde portent sur le solde cumulé à la date de fin, avec les
+    rôles de comptes du client (ADR-0017).
     Paramètres : source Odoo ; période du / au ; validees (écritures
     validées seules, sinon brouillons compris) ; guardian (scellement) ;
-    journal d'activité.
+    journal d'activité ; config — réglages et tables de rôles (lus dans
+    concorde.yaml si absent) ; aujourd_hui (date du jour si absent).
     Retour : le rapport (`Rapport.en_dict`, listes complètes).
-    Erreurs : celles de la source (ErreurSource, ErreurMontant…).
+    Erreurs : celles de la source (ErreurSource, ErreurMontant…) ;
+    ErreurYaml, ErreurRoles si concorde.yaml est invalide.
     Usages : comparaison.comparer_bases, scripts/concorde_odoo.py,
     interface/serveur.py.
     """
     j = ou_muet(journal)
+    aujourd_hui = aujourd_hui or date.today()
+    config = config or lire_configuration()
     etats = ("posted",) if validees else ("posted", "draft")
     societe = source.societe_info()
+    parametres = source.parametres_comptables()
+    table = table_du_client(config, source.base, societe["nom"])
     j.dire(
         "Société %s — devise %s, SIREN %s"
         % (
@@ -289,6 +306,16 @@ def analyser_source(
             societe["devise"],
             societe["siren"] or "non renseigné",
         )
+    )
+    j.dire(
+        (
+            "Rôles des comptes : table du client %s, puis account_type, puis "
+            "préfixe" % table.client
+            if table
+            else "Rôles des comptes : préfixes du plan comptable général "
+            "(aucune table client)"
+        ),
+        "detail",
     )
     with j.etape("Lecture du plan comptable, des journaux et des tiers") as e:
         comptes, journaux, tiers = (
@@ -310,26 +337,66 @@ def analyser_source(
             comptes,
             journaux,
             tiers,
+            aujourd_hui=aujourd_hui,
             societe="%s (%s, base %s)"
             % (societe["nom"], societe["devise"], source.base),
+            journal_caba=parametres["journal_caba"],
         )
         e.conclure(
             "%s écritures contrôlées"
             % nombre_texte(rapport.infos["ecritures"])
         )
     _raconter_constats(j, rapport.constats)
-    with j.etape("Balance et anomalies par compte") as e:
+    with j.etape("Balance et anomalies par compte (soldes cumulés)") as e:
+        calcul = calculer_soldes(
+            source,
+            du,
+            au,
+            comptes,
+            config.journaux_a_nouveaux,
+            aujourd_hui,
+            parametres,
+        )
+        contexte: ContexteSoldes = {
+            "cumul_comptes": calcul["cumul_comptes"],
+            "tiers": calcul["tiers"],
+            "table": table,
+            "suspens": _lignes_en_suspens(
+                source,
+                [
+                    code
+                    for code, role in roles_du_plan(comptes, table).items()
+                    if role.role == "paiement_en_suspens"
+                    and calcul["cumul_comptes"].get(code)
+                ],
+                calcul["depart_bilan"],
+                au,
+            ),
+        }
         bal, alertes_comptes = alertes_balance(
-            source.balance(du, au), source.balance_tiers(du, au), j
+            source.balance(du, au), (), j, contexte
         )
         e.conclure(
-            "%s comptes mouvementés"
-            % nombre_texte(bal.infos["comptes_mouvementes"])
+            "%s comptes mouvementés ; %s"
+            % (
+                nombre_texte(bal.infos["comptes_mouvementes"]),
+                calcul["infos"]["explication"],
+            )
         )
     for c in bal.constats:
         # Même alerte que la surveillance : pas de doublon.
         c["origine"] = "balance"
     rapport.constats.extend(bal.constats)
+    rapport.constat(
+        "INFO",
+        "OUVERTURE_DOUBLE_POSSIBLE",
+        "Écriture d'à-nouveaux et historique antérieur présents ensemble "
+        "(l'ouverture n'est comptée qu'une fois)",
+        calcul["ouvertures"],
+    )
+    rapport.info("calcul_soldes", calcul["infos"])
+    rapport.info("table_roles", table.client if table else None)
+    rapport.info("roles_comptes", bal.infos["roles_comptes"])
     rapport.info("comptes_en_alerte", alertes_comptes)
     d = rapport.en_dict()
     s = d["synthese"]
@@ -349,6 +416,30 @@ def analyser_source(
             "detail",
         )
     return d
+
+
+def _lignes_en_suspens(
+    source: SourceOdoo,
+    codes: Sequence[str],
+    depuis: date | None,
+    au: date | None,
+) -> dict[str, list[Enregistrement]]:
+    """Lignes non lettrées des comptes de paiements en suspens.
+
+    Rôle : détail du constat PAIEMENT_EN_SUSPENS_NON_SOLDE.
+    Paramètres : source ; codes des comptes concernés ; depuis — départ du
+    cumul des comptes de bilan (None : origine) ; au — date de fin.
+    Retour : {code: lignes comptabilisées sans lettrage complet}.
+    Erreurs : celles de la source.
+    Usages : analyser_source.
+    """
+    res: dict[str, list[Enregistrement]] = {}
+    if not codes:
+        return res
+    for ligne in source.lignes(depuis, au, ("posted",), comptes=codes):
+        if not ligne["lettrage"]:
+            res.setdefault(ligne["compte"], []).append(ligne)
+    return res
 
 
 def _raconter_constats(j: Journal, constats: Iterable[Constat]) -> None:

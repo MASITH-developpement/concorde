@@ -3,6 +3,49 @@
 Format : [Keep a Changelog](https://keepachangelog.com/fr/1.1.0/), versions sémantiques.
 Le module Odoo porte la même version au format `17.0.X.Y.Z` (`deploy/addons/concorde/__manifest__.py`).
 
+## [1.13.0] — 2026-11-10
+### Modifié
+- **Analyse : règles de solde sur le solde cumulé à la date de fin**
+  (ADR-0017, acceptée le 10/11/2026). Avant, elles ne voyaient que les
+  mouvements de la période : quand l'historique antérieur est dans la base
+  et l'à-nouveaux en brouillon, caisse, clients et banques étaient signalés
+  à tort. Le cumul prend les écritures
+  comptabilisées (brouillons exclus) datées au plus tard à la date de fin :
+  comptes de bilan depuis l'origine, ou depuis le dernier à-nouveaux
+  comptabilisé (l'ouverture n'est jamais comptée deux fois) ; comptes de
+  gestion depuis le début de l'exercice lu dans la société Odoo. Chaque
+  constat affiche la période et le cumul ; `infos.calcul_soldes` dit le
+  mode et le nombre de lignes antérieures prises.
+- **Rôles de comptes par client** (module `core/roles_comptes.py`) : table
+  client, puis account_type d'Odoo, puis préfixe. Chaque constat cite le
+  rôle et sa source. Les tables des clients sont sur le serveur, **hors
+  git** (`/etc/concorde/roles_clients.yaml`, modèle fictif
+  `roles_clients.exemple.yaml`) : aucune donnée client dans le dépôt, et la
+  synchronisation de `main` ne les écrase pas. Une section `clients` dans
+  `concorde.yaml` est refusée. Sans table, les préfixes seuls servent, comme
+  avant. Rôles possibles : banque, caisse, paiements en suspens, groupe de
+  TVA collectée, compte d'attente, dépréciation, provision, clients et
+  fournisseurs (acomptes sans alerte)…
+- **DOUBLON_PROBABLE** : sur le journal de TVA sur encaissements de la
+  société, même `tax_cash_basis_rec_id` exigé (quand il est renseigné) et
+  paires écriture + extourne écartées. Autres journaux : règle inchangée.
+- **LIGNE_MONTANT_NUL** : lignes du journal de TVA sur encaissements
+  écartées ; les autres ventilées par journal (élément et
+  `infos.lignes_montant_nul_par_journal`). Les lignes de section et de note
+  restaient déjà exclues à la lecture.
+### Ajouté
+- Contrôles `PAIEMENT_EN_SUSPENS_NON_SOLDE` (lignes non lettrées, plus
+  anciennes d'abord), `TVA_COLLECTEE_REPARTIE` (seuil 1 000 €, réglable par
+  client), `TVA_COLLECTEE_SENS_CONTRAIRE`, `CHARGE_PROVISION_CREDITRICE`
+  (INFO) et `OUVERTURE_DOUBLE_POSSIBLE` (INFO).
+- Sources Odoo (SQL et XML-RPC, lecture seule) : `soldes`,
+  `parametres_comptables`, `ecritures_ouverture`, `nombre_lignes_avant` ;
+  les lignes portent `caba_rapprochement_id` et `extourne_de_id`.
+- Tests `tests/test_analyse_cumul.py` : jeux entièrement fictifs (Client A,
+  Tiers 1…) reproduisant les cas réels (caisse redevenue débitrice, client
+  créditeur expliqué par l'historique, fournisseur toujours débiteur, groupe
+  de TVA réparti, à-nouveaux comptabilisé ou en brouillon).
+
 ## [1.12.0] — 2026-11-09
 ### Ajouté
 - **Bouton « Arrêter »** sur toute tâche en cours (ADR-0016, acceptée le

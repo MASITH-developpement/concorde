@@ -107,6 +107,23 @@ class SourceOdoo(Protocol):
     ) -> list[Enregistrement]:
         """Soldes par compte client / fournisseur et par tiers."""
 
+    def soldes(
+        self, depuis: date | None = None, jusqu_au: date | None = None
+    ) -> list[Enregistrement]:
+        """Soldes comptabilisés par (compte, tiers), bornes comprises."""
+
+    def parametres_comptables(self) -> Enregistrement:
+        """Fin d'exercice, écriture d'ouverture, journal de TVA sur
+        encaissements de la société."""
+
+    def ecritures_ouverture(
+        self, journaux: Sequence[str], fin: date | None = None
+    ) -> list[Enregistrement]:
+        """Écritures d'à-nouveaux (validées ou brouillons)."""
+
+    def nombre_lignes_avant(self, jour: date) -> int:
+        """Nombre de lignes comptabilisées datées avant `jour`."""
+
     def comptes(self) -> list[Enregistrement]:
         """Plan comptable de la société."""
 
@@ -260,14 +277,22 @@ def balance_depuis_lignes(
 
 def balance_tiers_depuis_lignes(
     lignes: Iterable[Mapping[str, Any]],
+    types: Sequence[str] | None = TYPES_TIERS,
 ) -> list[Enregistrement]:
-    """Calcule les soldes par compte client / fournisseur et par tiers.
+    """Calcule les soldes par compte et par tiers en Python.
 
+    Rôle : totaliser débit, crédit et lignes par (compte, tiers).
+    Paramètres : lignes — lignes portant compte, tiers_id, tiers_nom,
+    tiers_ref, debit, credit (et compte_type si `types` est donné) ;
+    types — types de comptes retenus (clients et fournisseurs par défaut),
+    None pour tous les comptes.
     Retour : un enregistrement par (compte, tiers), au format de la SQL.
+    Erreurs : KeyError si une clé attendue manque.
+    Usages : `SourceXmlRpcOdoo17.balance_tiers` et `.soldes`.
     """
     groupes: dict[tuple[str, int | None], Enregistrement] = {}
     for ligne in lignes:
-        if ligne["compte_type"] not in TYPES_TIERS:
+        if types is not None and ligne["compte_type"] not in types:
             continue
         g = groupes.setdefault(
             (ligne["compte"], ligne["tiers_id"]),
@@ -500,7 +525,8 @@ SELECT aml.id, am.id, am.name, am.move_type, am.state,
             THEN cur.name END,
        aml.date_maturity, GREATEST(am.write_date, aml.write_date),
        am.auto_post,
-       aml.analytic_distribution
+       aml.analytic_distribution,
+       am.tax_cash_basis_rec_id, am.reversed_entry_id
   FROM account_move_line aml
   JOIN account_move am ON am.id = aml.move_id
   JOIN account_journal aj ON aj.id = am.journal_id
@@ -542,6 +568,8 @@ SELECT aa.id, aa.code, COALESCE(aa.name->>'fr_FR', aa.name->>'en_US'),
  ORDER BY aa.code
 """
 
+# Soldes par (compte, tiers) : comptes clients / fournisseurs (`types`)
+# ou tous les comptes (`types` NULL).
 _SQL_BALANCE_TIERS = """
 SELECT aa.code, rp.id, rp.name, rp.ref,
        SUM(aml.debit), SUM(aml.credit), COUNT(*)
@@ -550,10 +578,24 @@ SELECT aa.code, rp.id, rp.name, rp.ref,
   LEFT JOIN res_partner rp ON rp.id = aml.partner_id
  WHERE aml.company_id = %(societe)s
    AND aml.parent_state = ANY(%(etats)s)
-   AND aa.account_type = ANY(%(types)s)
+   AND (%(types)s::text[] IS NULL
+        OR aa.account_type = ANY(%(types)s::text[]))
    AND (%(debut)s::date IS NULL OR aml.date >= %(debut)s::date)
    AND (%(fin)s::date IS NULL OR aml.date <= %(fin)s::date)
  GROUP BY aa.code, rp.id, rp.name, rp.ref
+"""
+
+# Écritures d'à-nouveaux : ouverture déclarée dans la société, ou
+# écriture d'un des journaux donnés ; validées ou brouillons.
+_SQL_OUVERTURE = """
+SELECT am.id, am.name, am.date, am.state, aj.code
+  FROM account_move am
+  JOIN account_journal aj ON aj.id = am.journal_id
+ WHERE am.company_id = %(societe)s
+   AND am.state IN ('posted', 'draft')
+   AND (am.id = %(ouverture)s::int OR aj.code = ANY(%(journaux)s::text[]))
+   AND (%(fin)s::date IS NULL OR am.date <= %(fin)s::date)
+ ORDER BY am.date, am.id
 """
 
 _CHAMPS_LIGNE = (
@@ -584,6 +626,8 @@ _CHAMPS_LIGNE = (
     "modifie_le",
     "auto_post",
     "analytique",
+    "caba_rapprochement_id",
+    "extourne_de_id",
 )
 
 
@@ -890,27 +934,131 @@ class SourceSqlOdoo17:
         etats: Sequence[str] = ("posted",),
     ) -> list[Enregistrement]:
         """Soldes par compte client / fournisseur et par tiers."""
+        return self._soldes_compte_tiers(debut, fin, etats, TYPES_TIERS)
+
+    def soldes(
+        self, depuis: date | None = None, jusqu_au: date | None = None
+    ) -> list[Enregistrement]:
+        """Soldes comptabilisés de tous les comptes, par (compte, tiers).
+
+        Rôle : cumul des écritures validées hors période (soldes cumulés de
+        l'analyse, ADR-0017).
+        Paramètres : depuis, jusqu_au — bornes de date comprises (None :
+        sans borne).
+        Retour : un enregistrement par (compte, tiers) : compte, tiers_id,
+        tiers_nom, tiers_ref, debit, credit (centimes), lignes.
+        Erreurs : ErreurMontant ; erreurs psycopg2.
+        Usages : passerelle.analyser_source.
+        """
+        return self._soldes_compte_tiers(depuis, jusqu_au, ("posted",), None)
+
+    def _soldes_compte_tiers(
+        self,
+        debut: date | None,
+        fin: date | None,
+        etats: Sequence[str],
+        types: Sequence[str] | None,
+    ) -> list[Enregistrement]:
+        """Totaux par (compte, tiers) de `_SQL_BALANCE_TIERS`.
+
+        Paramètres : période ; états des écritures ; types de comptes
+        retenus (None : tous).
+        Usages : `balance_tiers`, `soldes`.
+        """
         return [
             {
-                "compte": r[0],
-                "tiers_id": r[1],
-                "tiers_nom": r[2] or "",
-                "tiers_ref": r[3] or "",
-                "debit": centimes(r[4]),
-                "credit": centimes(r[5]),
-                "lignes": r[6],
+                "compte": rangee[0],
+                "tiers_id": rangee[1],
+                "tiers_nom": rangee[2] or "",
+                "tiers_ref": rangee[3] or "",
+                "debit": centimes(rangee[4]),
+                "credit": centimes(rangee[5]),
+                "lignes": rangee[6],
             }
-            for r in self._requete(
+            for rangee in self._requete(
                 _SQL_BALANCE_TIERS,
                 {
                     "societe": self.societe,
                     "etats": list(etats),
                     "debut": debut,
                     "fin": fin,
-                    "types": list(TYPES_TIERS),
+                    "types": list(types) if types is not None else None,
                 },
             )
         ]
+
+    def parametres_comptables(self) -> Enregistrement:
+        """Paramètres comptables de la société utiles à l'analyse.
+
+        Retour : fin_exercice_mois et fin_exercice_jour (int),
+        ouverture_id (écriture d'ouverture déclarée, ou None),
+        journal_caba (code du journal de TVA sur encaissements, ou '').
+        Erreurs : erreurs psycopg2.
+        Usages : passerelle.analyser_source.
+        """
+        rangee = self._requete(
+            "SELECT c.fiscalyear_last_month, c.fiscalyear_last_day, "
+            "c.account_opening_move_id, aj.code "
+            "FROM res_company c "
+            "LEFT JOIN account_journal aj "
+            "ON aj.id = c.tax_cash_basis_journal_id "
+            "WHERE c.id = %(s)s",
+            {"s": self.societe},
+        )[0]
+        return {
+            "fin_exercice_mois": int(rangee[0]),
+            "fin_exercice_jour": int(rangee[1]),
+            "ouverture_id": rangee[2],
+            "journal_caba": rangee[3] or "",
+        }
+
+    def ecritures_ouverture(
+        self, journaux: Sequence[str], fin: date | None = None
+    ) -> list[Enregistrement]:
+        """Écritures d'à-nouveaux datées au plus tard `fin`.
+
+        Rôle : repérer l'ouverture pour ne jamais la compter deux fois.
+        Paramètres : journaux — codes des journaux d'à-nouveaux ; fin.
+        Retour : [{id, nom, date, etat, journal}] triés par date : écriture
+        d'ouverture de la société et écritures de ces journaux, validées
+        ou brouillons.
+        Erreurs : erreurs psycopg2.
+        Usages : passerelle.analyser_source.
+        """
+        return [
+            {
+                "id": rangee[0],
+                "nom": rangee[1] or "",
+                "date": rangee[2],
+                "etat": rangee[3],
+                "journal": rangee[4],
+            }
+            for rangee in self._requete(
+                _SQL_OUVERTURE,
+                {
+                    "societe": self.societe,
+                    "ouverture": self.parametres_comptables()["ouverture_id"],
+                    "journaux": list(journaux),
+                    "fin": fin,
+                },
+            )
+        ]
+
+    def nombre_lignes_avant(self, jour: date) -> int:
+        """Nombre de lignes comptabilisées datées avant `jour`.
+
+        Rôle : mesurer l'historique antérieur à une écriture d'à-nouveaux
+        (constat OUVERTURE_DOUBLE_POSSIBLE).
+        Erreurs : erreurs psycopg2.
+        Usages : soldes_cumules.calculer_soldes.
+        """
+        nombre: int = self._requete(
+            "SELECT COUNT(*) FROM account_move_line "
+            "WHERE company_id = %(s)s AND parent_state = 'posted' "
+            "AND date < %(jour)s",
+            {"s": self.societe, "jour": jour},
+        )[0][0]
+        return nombre
 
     def ecriture(self, ident: int | str) -> list[Enregistrement]:
         """Une écriture et ses lignes (toutes états confondus)."""
@@ -1323,6 +1471,8 @@ class SourceXmlRpcOdoo17:
                     "ref",
                     "write_date",
                     "auto_post",
+                    "tax_cash_basis_rec_id",
+                    "reversed_entry_id",
                 ],
             )
         }
@@ -1393,6 +1543,10 @@ class SourceXmlRpcOdoo17:
                     "analytique_comptes": analytique_comptes(
                         b.get("analytic_distribution"), self.noms_analytiques()
                     ),
+                    "caba_rapprochement_id": _m2o(m["tax_cash_basis_rec_id"])[
+                        0
+                    ],
+                    "extourne_de_id": _m2o(m["reversed_entry_id"])[0],
                 }
             )
         # Filtre redondant côté CONCORDE : on ne fait pas aveuglément
@@ -1463,6 +1617,161 @@ class SourceXmlRpcOdoo17:
     ) -> list[Enregistrement]:
         """Soldes par compte client / fournisseur et par tiers."""
         return balance_tiers_depuis_lignes(self.lignes(debut, fin, etats))
+
+    def soldes(
+        self, depuis: date | None = None, jusqu_au: date | None = None
+    ) -> list[Enregistrement]:
+        """Soldes comptabilisés de tous les comptes, par (compte, tiers).
+
+        Rôle : cumul des écritures validées hors période (ADR-0017), en ne
+        lisant que compte, tiers, date et montants de chaque ligne.
+        Paramètres : depuis, jusqu_au — bornes de date comprises (None :
+        sans borne).
+        Retour : comme `SourceSqlOdoo17.soldes`.
+        Erreurs : ErreurMontant ; erreurs de `_appel`.
+        Usages : passerelle.analyser_source.
+        """
+        dom: Domaine = [
+            ("company_id", "=", self.societe),
+            ("parent_state", "=", "posted"),
+            ("display_type", "not in", list(TYPES_AFFICHAGE)),
+        ]
+        if depuis:
+            dom.append(("date", ">=", str(depuis)))
+        if jusqu_au:
+            dom.append(("date", "<=", str(jusqu_au)))
+        brutes = self._tout_lire(
+            "account.move.line",
+            dom,
+            [
+                "account_id",
+                "partner_id",
+                "debit",
+                "credit",
+                "date",
+                "parent_state",
+            ],
+        )
+        codes = {c["id"]: c["code"] for c in self.comptes()}
+        ids_tiers = sorted(
+            {_m2o(brute["partner_id"])[0] for brute in brutes} - {None}
+        )
+        tiers = {
+            partenaire["id"]: partenaire
+            for partenaire in self._lire_par_lots(
+                "res.partner", ids_tiers, ["name", "ref"]
+            )
+        }
+        lignes = []
+        for brute in brutes:
+            jour = _date(brute["date"])
+            # Filtre redondant : on ne fait pas aveuglément confiance au
+            # domaine.
+            if (
+                brute["parent_state"] != "posted"
+                or (depuis and jour and jour < depuis)
+                or (jusqu_au and jour and jour > jusqu_au)
+            ):
+                continue
+            id_tiers = _m2o(brute["partner_id"])[0]
+            lignes.append(
+                {
+                    "compte": codes.get(_m2o(brute["account_id"])[0], ""),
+                    "tiers_id": id_tiers,
+                    "tiers_nom": _texte(tiers.get(id_tiers, {}).get("name")),
+                    "tiers_ref": _texte(tiers.get(id_tiers, {}).get("ref")),
+                    "debit": centimes(brute["debit"]),
+                    "credit": centimes(brute["credit"]),
+                }
+            )
+        return balance_tiers_depuis_lignes(lignes, None)
+
+    def parametres_comptables(self) -> Enregistrement:
+        """Paramètres comptables de la société utiles à l'analyse.
+
+        Retour : comme `SourceSqlOdoo17.parametres_comptables`.
+        Erreurs : erreurs de `_appel`.
+        Usages : passerelle.analyser_source, `ecritures_ouverture`.
+        """
+        societe_odoo = self._lire_societe(
+            [
+                "fiscalyear_last_month",
+                "fiscalyear_last_day",
+                "account_opening_move_id",
+                "tax_cash_basis_journal_id",
+            ]
+        )
+        id_caba = _m2o(societe_odoo["tax_cash_basis_journal_id"])[0]
+        codes = {j["id"]: j["code"] for j in self.journaux()}
+        return {
+            "fin_exercice_mois": int(societe_odoo["fiscalyear_last_month"]),
+            "fin_exercice_jour": int(societe_odoo["fiscalyear_last_day"]),
+            "ouverture_id": _m2o(societe_odoo["account_opening_move_id"])[0],
+            "journal_caba": codes.get(id_caba, "") if id_caba else "",
+        }
+
+    def ecritures_ouverture(
+        self, journaux: Sequence[str], fin: date | None = None
+    ) -> list[Enregistrement]:
+        """Écritures d'à-nouveaux datées au plus tard `fin`.
+
+        Retour et usages : comme `SourceSqlOdoo17.ecritures_ouverture`.
+        Erreurs : erreurs de `_appel`.
+        """
+        ouverture = self.parametres_comptables()["ouverture_id"]
+        dom: Domaine = [
+            ("company_id", "=", self.societe),
+            ("state", "in", ["posted", "draft"]),
+            "|",
+            ("id", "=", ouverture or 0),
+            ("journal_id.code", "in", list(journaux)),
+        ]
+        if fin:
+            dom.append(("date", "<=", str(fin)))
+        codes = {j["id"]: j["code"] for j in self.journaux()}
+        res = []
+        for piece in self._tout_lire(
+            "account.move", dom, ["name", "date", "state", "journal_id"]
+        ):
+            jour = _date(piece["date"])
+            code = codes.get(_m2o(piece["journal_id"])[0], "")
+            # Filtre redondant, comme pour les lignes.
+            if (
+                piece["state"] not in ("posted", "draft")
+                or (piece["id"] != ouverture and code not in journaux)
+                or (fin and jour and jour > fin)
+            ):
+                continue
+            res.append(
+                {
+                    "id": piece["id"],
+                    "nom": _texte(piece["name"]),
+                    "date": jour,
+                    "etat": piece["state"],
+                    "journal": code,
+                }
+            )
+        return sorted(res, key=lambda e: (e["date"] or date.min, e["id"]))
+
+    def nombre_lignes_avant(self, jour: date) -> int:
+        """Nombre de lignes comptabilisées datées avant `jour`.
+
+        Rôle et usages : comme `SourceSqlOdoo17.nombre_lignes_avant`
+        (search_count, en lecture seule).
+        Erreurs : erreurs de `_appel`.
+        """
+        nombre: int = self._appel(
+            "account.move.line",
+            "search_count",
+            [
+                [
+                    ("company_id", "=", self.societe),
+                    ("parent_state", "=", "posted"),
+                    ("date", "<", str(jour)),
+                ]
+            ],
+        )
+        return nombre
 
     def ecriture(self, ident: int | str) -> list[Enregistrement]:
         """Une écriture et ses lignes (toutes états confondus)."""

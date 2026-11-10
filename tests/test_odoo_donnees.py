@@ -56,6 +56,8 @@ def ligne(**kw: Any) -> Enregistrement:
         "echeance": None,
         "modifie_le": "2025-10-03 10:00:00",
         "auto_post": "no",
+        "caba_rapprochement_id": None,
+        "extourne_de_id": None,
     }
     base.update(kw)
     return base

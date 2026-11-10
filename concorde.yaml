@@ -63,3 +63,14 @@ cible:
 azalplus:
   module_independant: true
   manifeste: azalplus_module.yaml
+
+# Analyse des bases Odoo (ADR-0017) : soldes cumulés à la date de fin.
+analyse:
+  # Journaux dont les écritures sont des à-nouveaux (avec l'ouverture
+  # déclarée dans la société Odoo).
+  journaux_a_nouveaux: [AN, RAN]
+  # TVA_COLLECTEE_REPARTIE : solde à partir duquel un compte du groupe compte.
+  seuil_tva_repartie_euros: 1000
+
+# Les rôles des comptes de chaque client (données client) ne sont PAS ici :
+# /etc/concorde/roles_clients.yaml, hors git. Modèle : roles_clients.exemple.yaml.

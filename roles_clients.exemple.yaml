@@ -1,0 +1,31 @@
+# Modèle FICTIF de /etc/concorde/roles_clients.yaml (ADR-0017).
+# Le vrai fichier reste sur le serveur, hors git : il contient des données
+# de clients et ne doit jamais entrer dans ce dépôt public. Sans lui,
+# l'analyse applique les préfixes du plan comptable général.
+#
+# Client reconnu par le nom de la base, puis par le nom de la société Odoo.
+# Rôle d'un compte : « comptes » (code exact), puis « prefixes » (le plus
+# long), puis l'account_type d'Odoo, puis le préfixe du plan général.
+# Rôles possibles : voir ROLES_CONNUS dans core/roles_comptes.py.
+clients:
+  - nom: Client A
+    bases: [client_a_production, client_a_preproduction]
+    societes: [Société A]
+    seuil_tva_repartie_euros: 1000
+    comptes:
+      "512100": banque
+      "512200": banque
+      "512300": paiement_en_suspens   # paiements entrants en suspens (Odoo)
+      "512400": paiement_en_suspens   # paiements sortants en suspens (Odoo)
+      "445710": tva_collectee         # groupe : compte standard d'Odoo
+      "445720": tva_collectee         # groupe : compte de l'ancien logiciel
+      "445740": tva_collectee         # groupe : transition sur encaissements
+      "445790": tva_collectee_a_part
+      "499000": attente
+      "491000": depreciation
+      "641200": charge_provision
+    prefixes:
+      "411": client
+      "419": client_acompte
+      "401": fournisseur
+      "409": fournisseur_acompte

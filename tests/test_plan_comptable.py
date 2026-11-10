@@ -160,13 +160,13 @@ class TestLecturePlan(unittest.TestCase):
         )
 
     def test_code_numerique_converti_en_texte(self) -> None:
-        """Un code saisi en nombre (ou « 10130000.0 ») devient un texte."""
+        """Un code saisi en nombre (ou « 10139001.0 ») devient un texte."""
         comptes = lire_plan(
             ("Code", "Nom"),
-            [(10130000, "Capital"), ("10140000.0", "Capital non appelé")],
+            [(10139001, "Capital"), ("10140000.0", "Capital non appelé")],
         )
         self.assertEqual(
-            [compte["code"] for compte in comptes], ["10130000", "10140000"]
+            [compte["code"] for compte in comptes], ["10139001", "10140000"]
         )
 
     def test_espaces_retires(self) -> None:

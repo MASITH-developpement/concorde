@@ -183,8 +183,8 @@ class TestFec(unittest.TestCase):
     def test_nom_reglementaire(self) -> None:
         """Vérifie le nom réglementaire du fichier FEC."""
         self.assertEqual(
-            nom_fichier_fec("384684957", date(2025, 12, 31)),
-            "384684957FEC20251231.txt",
+            nom_fichier_fec("666666664", date(2025, 12, 31)),
+            "666666664FEC20251231.txt",
         )
 
 
@@ -330,7 +330,7 @@ class TestAnalyse(unittest.TestCase):
         }
         tiers = [
             dict(t, id=7, nom="ACME SARL"),
-            dict(t, id=8, nom="Acme", tva="FR02384684957"),
+            dict(t, id=8, nom="Acme", tva="FR72666666664"),
             dict(t, id=9, nom="Ltd", pays="GB", siren="HRB 123"),
             dict(t, id=10, nom="Bad", siren="123456789"),
         ]

@@ -1,17 +1,19 @@
 # ADR-0006 — Aligner la production sur la base de test, sur une période (comparer, puis appliquer)
 
+> Noms et codes neutralisés le 10/11/2026 (données client retirées du dépôt). Décision inchangée.
+
 - **Statut** : Acceptée — validée par Stéphane Moreau le 06/11/2026
 - **Date** : 06/11/2026
 - **Décideur** : Stéphane Moreau
 
 ## Contexte
 Le travail de correction se fait dans une **base de test**, une copie de la production du
-client restaurée sur notre serveur (exemple : `testalbhade`, copie de `alb_alpha` du
+client restaurée sur notre serveur (exemple : `base_test`, copie de `base_production` du
 14/10/2026 à 18 h 01 UTC). Une fois le travail validé, la **production** du client doit
 devenir identique à la base de test **sur une période**. Cela vaut pour les écritures, mais
 aussi pour **l'analytique**, à vérifier et à réinjecter.
 
-Ordre de grandeur chez Albhades : 170 133 lignes d'écritures, dont 97 425 (57 %) avec une
+Ordre de grandeur chez Client A : 170 133 lignes d'écritures, dont 97 425 (57 %) avec une
 répartition analytique ; 6 plans analytiques, 194 comptes analytiques, 12 règles
 d'obligation, 45 451 lignes analytiques.
 
@@ -78,10 +80,10 @@ Un nouveau comparatif sur la même période doit trouver **0 différence**, hors
 ## Conséquences
 - Il faut garder, pour chaque base de test, sa **date de copie** (saisie à la restauration).
 - Il faut le **login et la clé API** de la production du client (écran Bases).
-- La base de test doit exister pendant toute l'opération. `testalbhade` a été supprimée le
+- La base de test doit exister pendant toute l'opération. `base_test` a été supprimée le
   06/11/2026 à 07 h 24 ; elle peut être restaurée depuis sa sauvegarde
-  `testalbhade_20261106-072455.dump` (gardée jusqu'au 13/11) ou depuis
-  `alb_alpha_14Oct26_bf.dump`.
+  `base_test_20261106-072455.dump` (gardée jusqu'au 13/11) ou depuis
+  `base_production_14Oct26_bf.dump`.
 
 ## Options écartées
 - **Vider la période en production et tout réinjecter** : cela supprime et recrée des

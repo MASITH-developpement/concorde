@@ -96,7 +96,7 @@ class FaussesBases(Bases):
                 "version": "17.0",
                 "societe": "Soc",
                 "devise": "EUR",
-                "siren": "384684957",
+                "siren": "666666664",
                 "url": "http://x",
             }
         ]

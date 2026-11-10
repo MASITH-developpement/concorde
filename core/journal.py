@@ -5,7 +5,7 @@ Chaque événement : {t (horodatage ISO), niveau, message}.
 Niveaux : etape (début d'une étape), ok, info, detail, alerte, erreur.
 
     j = Journal()
-    j.dire("Connexion à testalbhade…")
+    j.dire("Connexion à base_test…")
     with j.etape("Lecture des écritures") as e:
         ...
         e.conclure("153 765 lignes")

@@ -143,7 +143,7 @@ class TestEcranTransferts(unittest.TestCase):
         """Dépose un FEC ; rend la fiche du dépôt."""
         reponse, corps = self.envoyer(
             "POST",
-            "/api/connexions/%s/depot?nom=384684957FEC20251231.txt" % ident,
+            "/api/connexions/%s/depot?nom=666666664FEC20251231.txt" % ident,
             brut=contenu,
         )
         self.assertEqual(reponse.status, 201, corps.decode())
@@ -302,7 +302,7 @@ class TestEcranTransferts(unittest.TestCase):
             (depot["lignes"], depot["ecritures"], depot["debit"]),
             (5, 2, 112000),
         )
-        self.assertEqual(depot["nom"], "384684957FEC20251231.txt")
+        self.assertEqual(depot["nom"], "666666664FEC20251231.txt")
         connexions = self.json_ok("GET", "/api/connexions")
         relue = next(cx for cx in connexions if cx["id"] == source["id"])
         self.assertEqual(relue["depot"]["lignes"], 5)

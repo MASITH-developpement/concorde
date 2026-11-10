@@ -41,7 +41,9 @@ pipeline:
     description: Rapport final relie a son explication Marceau
 
 mapping:
-  fichier: mapping_quadra_odoo.json
+  # Table du client, hors git (données client) : modèle fictif
+  # mapping_quadra_odoo.exemple.json.
+  fichier: /etc/concorde/mapping_quadra_odoo.json
 
 regles:
   montants: centimes_entier

@@ -164,23 +164,23 @@ def journal_vente() -> Canonique:
 
     Rôle : données d'entrée de mapper_comptes.
     Paramètres : aucun.
-    Retour : Canonique de trois lignes (41100000, 70600000, 44571000),
+    Retour : Canonique de trois lignes (41109009, 70609017, 44589011),
     équilibré à 120,00 EUR.
     Erreurs : aucune.
     Usages : tests de mapper_comptes.
     """
     canon = Canonique()
-    canon.ajouter(ligne_canonique("41100000", 12000, 0))
-    canon.ajouter(ligne_canonique("70600000", 0, 10000))
-    canon.ajouter(ligne_canonique("44571000", 0, 2000))
+    canon.ajouter(ligne_canonique("41109009", 12000, 0))
+    canon.ajouter(ligne_canonique("70609017", 0, 10000))
+    canon.ajouter(ligne_canonique("44589011", 0, 2000))
     return canon
 
 
 # Mapping complet du journal_vente.
 MAPPING_VENTE = {
-    "41100000": "411000",
-    "70600000": "706000",
-    "44571000": "445710",
+    "41109009": "411000",
+    "70609017": "706000",
+    "44589011": "445710",
 }
 
 
@@ -228,14 +228,14 @@ class TestCompteTexte(unittest.TestCase):
 
     def test_nombres(self) -> None:
         """Vérifie qu'un entier ou un flottant entier perd le '.0'."""
-        self.assertEqual(_compte_txt(10130000), "10130000")
-        self.assertEqual(_compte_txt(10130000.0), "10130000")
+        self.assertEqual(_compte_txt(10139001), "10139001")
+        self.assertEqual(_compte_txt(10139001.0), "10139001")
         self.assertEqual(_compte_txt(4011.5), "4011.5")
 
     def test_textes(self) -> None:
         """Vérifie le nettoyage des espaces et du suffixe '.0' textuel."""
-        self.assertEqual(_compte_txt(" 41100000 "), "41100000")
-        self.assertEqual(_compte_txt("10130000.0"), "10130000")
+        self.assertEqual(_compte_txt(" 41109009 "), "41109009")
+        self.assertEqual(_compte_txt("10139001.0"), "10139001")
         self.assertEqual(_compte_txt("411A.0"), "411A.0")
         self.assertEqual(_compte_txt(".0"), ".0")
 
@@ -252,38 +252,38 @@ class TestChargerMappingJson(unittest.TestCase):
         """Vérifie la lecture d'une liste JSON et le nettoyage des comptes."""
         source = json.dumps(
             [
-                {"quadra": " 41100000 ", "odoo": " 411000 "},
-                {"quadra": "70600000", "odoo": "706000"},
+                {"quadra": " 41109009 ", "odoo": " 411000 "},
+                {"quadra": "70609017", "odoo": "706000"},
             ]
         )
         self.assertEqual(
             charger_mapping("  \n" + source),
-            {"41100000": "411000", "70600000": "706000"},
+            {"41109009": "411000", "70609017": "706000"},
         )
 
     def test_lignes_incompletes_ignorees(self) -> None:
         """Vérifie qu'une ligne sans 'quadra' ou sans 'odoo' est ignorée."""
         source = json.dumps(
             [
-                {"quadra": "41100000", "odoo": "411000"},
-                {"quadra": "70600000"},
+                {"quadra": "41109009", "odoo": "411000"},
+                {"quadra": "70609017"},
                 {"odoo": "445710"},
                 {"quadra": "", "odoo": "401000"},
                 {"quadra": "60100000", "odoo": ""},
             ]
         )
-        self.assertEqual(charger_mapping(source), {"41100000": "411000"})
+        self.assertEqual(charger_mapping(source), {"41109009": "411000"})
 
     def test_comptes_numeriques_convertis(self) -> None:
         """Vérifie qu'un compte JSON numérique devient du texte."""
-        source = json.dumps([{"quadra": 41100000, "odoo": 411000}])
-        self.assertEqual(charger_mapping(source), {"41100000": "411000"})
+        source = json.dumps([{"quadra": 41109009, "odoo": 411000}])
+        self.assertEqual(charger_mapping(source), {"41109009": "411000"})
 
     def test_fichier_json(self) -> None:
         """Vérifie la lecture d'un fichier JSON UTF-8 par son chemin."""
         correspondances = [
-            {"quadra": "41100000", "odoo": "411000"},
-            {"quadra": "44571000", "odoo": "445710"},
+            {"quadra": "41109009", "odoo": "411000"},
+            {"quadra": "44589011", "odoo": "445710"},
         ]
         with tempfile.TemporaryDirectory() as dossier_temporaire:
             chemin_mapping = os.path.join(dossier_temporaire, "mapping.json")
@@ -291,23 +291,23 @@ class TestChargerMappingJson(unittest.TestCase):
                 json.dump(correspondances, fichier)
             mapping_lu = charger_mapping(chemin_mapping)
         self.assertEqual(
-            mapping_lu, {"41100000": "411000", "44571000": "445710"}
+            mapping_lu, {"41109009": "411000", "44589011": "445710"}
         )
 
     def test_dict_copie(self) -> None:
         """Vérifie qu'un dict est rendu tel quel, sous forme de copie."""
-        source = {"41100000": "411000"}
+        source = {"41109009": "411000"}
         mapping_lu = charger_mapping(source)
-        self.assertEqual(mapping_lu, {"41100000": "411000"})
-        mapping_lu["70600000"] = "706000"
-        self.assertEqual(source, {"41100000": "411000"})
+        self.assertEqual(mapping_lu, {"41109009": "411000"})
+        mapping_lu["70609017"] = "706000"
+        self.assertEqual(source, {"41109009": "411000"})
 
     def test_tuple_de_paires(self) -> None:
         """Vérifie un tuple de paires et le nettoyage des espaces."""
-        source = ((" 41100000", "411000 "), ("70600000", "706000"))
+        source = ((" 41109009", "411000 "), ("70609017", "706000"))
         self.assertEqual(
             charger_mapping(source),
-            {"41100000": "411000", "70600000": "706000"},
+            {"41109009": "411000", "70609017": "706000"},
         )
 
     def test_liste_vide(self) -> None:
@@ -317,20 +317,20 @@ class TestChargerMappingJson(unittest.TestCase):
     def test_objet_json_quadra_odoo(self) -> None:
         """Vérifie qu'un objet JSON {quadra: odoo} est lu comme mapping."""
         self.assertEqual(
-            charger_mapping('{"41100000": " 411000 ", "70600000": 706000}'),
-            {"41100000": "411000", "70600000": "706000"},
+            charger_mapping('{"41109009": " 411000 ", "70609017": 706000}'),
+            {"41109009": "411000", "70609017": "706000"},
         )
 
     def test_liste_json_de_paires(self) -> None:
         """Vérifie qu'une ligne JSON [quadra, odoo] est lue comme paire."""
         self.assertEqual(
-            charger_mapping('[["41100000", "411000"]]'),
-            {"41100000": "411000"},
+            charger_mapping('[["41109009", "411000"]]'),
+            {"41109009": "411000"},
         )
 
     def test_ligne_json_ni_objet_ni_paire(self) -> None:
         """Vérifie qu'une ligne JSON ni objet ni paire est refusée."""
-        for source in ('[["41100000"]]', "[42]", '["41100000"]'):
+        for source in ('[["41109009"]]', "[42]", '["41109009"]'):
             with self.subTest(source=source):
                 with self.assertRaisesRegex(
                     ErreurMapping, "correspondance illisible"
@@ -340,10 +340,10 @@ class TestChargerMappingJson(unittest.TestCase):
     def test_compte_json_non_scalaire(self) -> None:
         """Vérifie qu'un compte JSON objet, liste ou booléen est refusé."""
         for source in (
-            '{"41100000": {"compte": "411000"}}',
-            '[{"quadra": "41100000", "odoo": ["411000"]}]',
+            '{"41109009": {"compte": "411000"}}',
+            '[{"quadra": "41109009", "odoo": ["411000"]}]',
             '[{"quadra": true, "odoo": "411000"}]',
-            '{"41100000": NaN}',
+            '{"41109009": NaN}',
         ):
             with self.subTest(source=source):
                 with self.assertRaisesRegex(ErreurMapping, "compte illisible"):
@@ -366,7 +366,7 @@ class TestChargerMappingJson(unittest.TestCase):
     def test_fichier_json_invalide_ou_non_utf8(self) -> None:
         """Vérifie un fichier JSON mal formé ou non UTF-8, chemin cité."""
         contenus_illisibles = (
-            b'{"41100000": ',
+            b'{"41109009": ',
             '{"411é": "411000"}'.encode("latin-1"),
         )
         for contenu in contenus_illisibles:
@@ -405,7 +405,7 @@ class TestChargerMappingJson(unittest.TestCase):
 
     def test_source_non_supportee(self) -> None:
         """Vérifie qu'un type de source inconnu lève ErreurMapping."""
-        source_entiere = cast(SourceMapping, 41100000)
+        source_entiere = cast(SourceMapping, 41109009)
         with self.assertRaisesRegex(ErreurMapping, "non supportée"):
             charger_mapping(source_entiere)
 
@@ -510,9 +510,9 @@ class TestLireFeuilleXlsx(unittest.TestCase):
             cellule_texte("B1", "en ligne"),
             cellule_brute("C1", "b", "1"),
             cellule_brute("D1", "b", "0"),
-            cellule_brute("E1", "", "41100000"),
+            cellule_brute("E1", "", "41109009"),
             cellule_brute("F1", "n", "12.5"),
-            cellule_brute("G1", "", "10130000.0"),
+            cellule_brute("G1", "", "10139001.0"),
             cellule_brute("H1", "str", "formule"),
             cellule_brute("I1", "s", "7"),
             cellule_brute("J1", "s", "x"),
@@ -528,9 +528,9 @@ class TestLireFeuilleXlsx(unittest.TestCase):
                 1: "en ligne",
                 2: True,
                 3: False,
-                4: 41100000,
+                4: 41109009,
                 5: 12.5,
-                6: 10130000,
+                6: 10139001,
                 7: "formule",
             },
         )
@@ -634,9 +634,9 @@ class TestChargerMappingXlsx(unittest.TestCase):
     def test_classeur_client_ecrit_par_concorde(self) -> None:
         """Vérifie un classeur écrit par ecrire_xlsx (comptes numériques)."""
         lignes_client: list[list[object]] = [
-            [41100000, "Clients", 411000],
-            ["70600000", "Prestations", "706000"],
-            [44571000, "TVA collectée", 445710],
+            [41109009, "Clients", 411000],
+            ["70609017", "Prestations", "706000"],
+            [44589011, "TVA collectée", 445710],
         ]
         with tempfile.TemporaryDirectory() as dossier_temporaire:
             chemin_classeur = os.path.join(
@@ -651,9 +651,9 @@ class TestChargerMappingXlsx(unittest.TestCase):
         self.assertEqual(
             charger_mapping_xlsx(brut, "Mapping Quadra Odoo.xlsx"),
             {
-                "41100000": "411000",
-                "70600000": "706000",
-                "44571000": "445710",
+                "41109009": "411000",
+                "70609017": "706000",
+                "44589011": "445710",
             },
         )
 
@@ -664,37 +664,37 @@ class TestChargerMappingXlsx(unittest.TestCase):
                 ("Export Quadra du 01/02/2026",),
                 (),
                 ("ODOO acct.", "Libellé", "NUMERO"),
-                ("411000", "Clients", "41100000"),
-                ("706000", "Prestations", "70600000"),
+                ("411000", "Clients", "41109009"),
+                ("706000", "Prestations", "70609017"),
             ]
         )
         self.assertEqual(
             charger_mapping_xlsx(brut),
-            {"41100000": "411000", "70600000": "706000"},
+            {"41109009": "411000", "70609017": "706000"},
         )
 
     def test_synonyme_odoo_compte(self) -> None:
         """Vérifie l'en-tête « Odoo compte » (commence par odoo + compte)."""
         brut = classeur_tableau(
-            [("Numéro", "Odoo-Compte"), ("41100000", "411000")]
+            [("Numéro", "Odoo-Compte"), ("41109009", "411000")]
         )
-        self.assertEqual(charger_mapping_xlsx(brut), {"41100000": "411000"})
+        self.assertEqual(charger_mapping_xlsx(brut), {"41109009": "411000"})
 
     def test_lignes_vides_et_cibles_absentes(self) -> None:
         """Vérifie que lignes vides et cibles vides sont ignorées."""
         brut = classeur_tableau(
             [
                 ENTETE_MAPPING_CLIENT,
-                ("41100000", "Clients", "411000"),
+                ("41109009", "Clients", "411000"),
                 (),
                 ("", "Sous-total", "999999"),
                 ("60100000", "Achats", ""),
-                ("44571000", "TVA", "445710"),
+                ("44589011", "TVA", "445710"),
             ]
         )
         self.assertEqual(
             charger_mapping_xlsx(brut),
-            {"41100000": "411000", "44571000": "445710"},
+            {"41109009": "411000", "44589011": "445710"},
         )
 
     def test_lignes_avant_entete_ignorees(self) -> None:
@@ -703,32 +703,32 @@ class TestChargerMappingXlsx(unittest.TestCase):
             [
                 ("10100000", "", "101000"),
                 ENTETE_MAPPING_CLIENT,
-                ("41100000", "Clients", "411000"),
+                ("41109009", "Clients", "411000"),
             ]
         )
-        self.assertEqual(charger_mapping_xlsx(brut), {"41100000": "411000"})
+        self.assertEqual(charger_mapping_xlsx(brut), {"41109009": "411000"})
 
     def test_doublon_identique_accepte(self) -> None:
         """Vérifie qu'un doublon de même cible n'est pas une erreur."""
         brut = classeur_tableau(
             [
                 ENTETE_MAPPING_CLIENT,
-                ("41100000", "Clients", "411000"),
-                ("41100000", "Clients bis", "411000"),
+                ("41109009", "Clients", "411000"),
+                ("41109009", "Clients bis", "411000"),
             ]
         )
-        self.assertEqual(charger_mapping_xlsx(brut), {"41100000": "411000"})
+        self.assertEqual(charger_mapping_xlsx(brut), {"41109009": "411000"})
 
     def test_cibles_contradictoires(self) -> None:
         """Vérifie que des cibles différentes sont toutes citées, triées."""
         brut = classeur_tableau(
             [
                 ENTETE_MAPPING_CLIENT,
-                ("70600000", "", "706100"),
-                ("41100000", "", "411000"),
-                ("70600000", "", "706000"),
-                ("41100000", "", "411900"),
-                ("70600000", "", "706200"),
+                ("70609017", "", "706100"),
+                ("41109009", "", "411000"),
+                ("70609017", "", "706000"),
+                ("41109009", "", "411900"),
+                ("70609017", "", "706200"),
             ]
         )
         with self.assertRaises(ErreurMapping) as contexte_erreur:
@@ -736,14 +736,14 @@ class TestChargerMappingXlsx(unittest.TestCase):
         self.assertEqual(
             str(contexte_erreur.exception),
             "Fichier de mapping 'mapping.xlsx' : comptes Quadra avec cibles "
-            "Odoo contradictoires : 41100000->411000/411900, "
-            "70600000->706000/706100/706200",
+            "Odoo contradictoires : 41109009->411000/411900, "
+            "70609017->706000/706100/706200",
         )
 
     def test_entete_introuvable(self) -> None:
         """Vérifie l'erreur explicite si « Odoo Acct » manque."""
         brut = classeur_tableau(
-            [("Numéro", "Intitulé", "Odoo"), ("41100000", "", "411000")]
+            [("Numéro", "Intitulé", "Odoo"), ("41109009", "", "411000")]
         )
         with self.assertRaisesRegex(
             ErreurMapping,
@@ -756,7 +756,7 @@ class TestChargerMappingXlsx(unittest.TestCase):
         brut = classeur_tableau(
             [
                 ("Numéro", "Odoo Acct", "Numéro"),
-                ("41100000", "411000", "70600000"),
+                ("41109009", "411000", "70609017"),
             ]
         )
         with self.assertRaisesRegex(
@@ -780,7 +780,7 @@ class TestChargerMappingXlsx(unittest.TestCase):
             [
                 ("Numéro", "Intitulé"),
                 ("", "", "Odoo Acct"),
-                ("41100000", "Clients", "411000"),
+                ("41109009", "Clients", "411000"),
             ]
         )
         with self.assertRaisesRegex(ErreurMapping, "en-tête introuvable"):
@@ -793,7 +793,7 @@ class TestChargerMappingXlsx(unittest.TestCase):
             ligne_xml(
                 2,
                 [
-                    cellule_texte("A2", "41100000"),
+                    cellule_texte("A2", "41109009"),
                     cellule_brute("B2", "e", "#N/A"),
                 ],
             ),
@@ -808,7 +808,7 @@ class TestChargerMappingXlsx(unittest.TestCase):
         """Vérifie que l'en-tête n'est cherché que dans 50 lignes."""
         lignes_titre: list[tuple[str, ...]] = [("titre",)] * 50
         brut = classeur_tableau(
-            lignes_titre + [ENTETE_MAPPING_CLIENT, ("41100000", "", "411000")]
+            lignes_titre + [ENTETE_MAPPING_CLIENT, ("41109009", "", "411000")]
         )
         with self.assertRaisesRegex(ErreurMapping, "en-tête introuvable"):
             charger_mapping_xlsx(brut)
@@ -817,14 +817,14 @@ class TestChargerMappingXlsx(unittest.TestCase):
         """Vérifie qu'un en-tête en ligne 50 est encore trouvé."""
         lignes_titre: list[tuple[str, ...]] = [("titre",)] * 49
         brut = classeur_tableau(
-            lignes_titre + [ENTETE_MAPPING_CLIENT, ("41100000", "", "411000")]
+            lignes_titre + [ENTETE_MAPPING_CLIENT, ("41109009", "", "411000")]
         )
-        self.assertEqual(charger_mapping_xlsx(brut), {"41100000": "411000"})
+        self.assertEqual(charger_mapping_xlsx(brut), {"41109009": "411000"})
 
     def test_aucune_correspondance(self) -> None:
         """Vérifie l'erreur si l'en-tête n'est suivi d'aucune ligne utile."""
         brut = classeur_tableau(
-            [ENTETE_MAPPING_CLIENT, ("41100000", "Clients", "")]
+            [ENTETE_MAPPING_CLIENT, ("41109009", "Clients", "")]
         )
         with self.assertRaisesRegex(
             ErreurMapping, "aucune correspondance trouvée sous l'en-tête"
@@ -844,9 +844,9 @@ class TestChargerMappingXlsx(unittest.TestCase):
             ),
         ]
         brut = classeur_lignes(
-            lignes, ["Numéro", "Odoo Acct", "41100000", "411000"]
+            lignes, ["Numéro", "Odoo Acct", "41109009", "411000"]
         )
-        self.assertEqual(charger_mapping_xlsx(brut), {"41100000": "411000"})
+        self.assertEqual(charger_mapping_xlsx(brut), {"41109009": "411000"})
 
     def test_contenu_non_xlsx(self) -> None:
         """Vérifie que l'erreur cite le fichier « de mapping »."""
@@ -919,23 +919,23 @@ class TestMapperComptes(unittest.TestCase):
     def test_comptes_inconnus_comptes_et_tries(self) -> None:
         """Vérifie le détail trié et le nombre d'occurrences des inconnus."""
         canon = journal_vente()
-        canon.ajouter(ligne_canonique("44571000", 0, 500))
+        canon.ajouter(ligne_canonique("44589011", 0, 500))
         with self.assertRaises(ErreurMapping) as contexte_erreur:
-            mapper_comptes(canon, {"70600000": "706000"})
+            mapper_comptes(canon, {"70609017": "706000"})
         self.assertTrue(
             str(contexte_erreur.exception).endswith(
-                "aucun compte deviné : 41100000 (x1), 44571000 (x2)"
+                "aucun compte deviné : 41109009 (x1), 44589011 (x2)"
             )
         )
 
     def test_echec_sans_modification(self) -> None:
         """Vérifie qu'un mapping incomplet laisse le canonique intact."""
         canon = journal_vente()
-        with self.assertRaisesRegex(ErreurMapping, "70600000"):
-            mapper_comptes(canon, {"41100000": "411000"})
+        with self.assertRaisesRegex(ErreurMapping, "70609017"):
+            mapper_comptes(canon, {"41109009": "411000"})
         self.assertEqual(
             [ligne.compte for ligne in canon.lignes],
-            ["41100000", "70600000", "44571000"],
+            ["41109009", "70609017", "44589011"],
         )
 
     def test_canonique_vide_dans_dict(self) -> None:

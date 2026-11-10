@@ -1,5 +1,7 @@
 # ADR-0012 — Montée de version : pilotage sur le serveur CONCORDE et écran
 
+> Noms et codes neutralisés le 10/11/2026 (données client retirées du dépôt). Décision inchangée.
+
 - **Statut** : Acceptée — arbitrages de Stéphane Moreau du 08/11/2026
 - **Date** : 08/11/2026
 - **Décideur** : Stéphane Moreau
@@ -139,7 +141,7 @@ L'écran **Montée de version** dépose les demandes de ces étapes (point 1) et
 
 ## Conséquences
 - **Taille des bases acceptées** : avec 9,4 Go libres, une base d'environ 2 Go
-  décompressés au plus. Une base comme celle d'Albhades (170 133 lignes d'écritures,
+  décompressés au plus. Une base comme celle d'Client A (170 133 lignes d'écritures,
   pièces jointes comprises) risque d'être refusée par le garde-fou : à mesurer sur sa
   sauvegarde. Si elle l'est, il faut agrandir le disque du serveur avant la montée.
 - **Mémoire** : un saut bridé à 1,5 Go peut échouer sur une grosse base. Il s'arrête

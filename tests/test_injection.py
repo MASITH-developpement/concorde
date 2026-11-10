@@ -46,7 +46,7 @@ class TestCible(unittest.TestCase):
         with self.assertRaises(injection.ErreurInjection):
             injection.CibleTest(
                 "http://127.0.0.1:8017",
-                "alb_alpha",
+                "base_production",
                 "a",
                 "b",
                 proxy_commun=FauxCommun(),
@@ -68,14 +68,14 @@ class TestCible(unittest.TestCase):
         """Vérifie le type de compte Odoo déduit du plan comptable."""
         t = injection.type_compte_pcg
         self.assertEqual(t("41110000"), "asset_receivable")
-        self.assertEqual(t("40110000"), "liability_payable")
+        self.assertEqual(t("40119006"), "liability_payable")
         self.assertEqual(t("40910000"), "asset_current")
-        self.assertEqual(t("16400000"), "liability_non_current")
-        self.assertEqual(t("21540000"), "asset_non_current")
+        self.assertEqual(t("16409002"), "liability_non_current")
+        self.assertEqual(t("21549003"), "asset_non_current")
         self.assertEqual(t("51210000"), "asset_cash")
         self.assertEqual(t("58000000"), "asset_current")
         self.assertEqual(t("68110000"), "expense_depreciation")
-        self.assertEqual(t("70600000"), "income")
+        self.assertEqual(t("70609017"), "income")
         self.assertNotIn("equity_unaffected", {t(str(c)) for c in range(10)})
 
 

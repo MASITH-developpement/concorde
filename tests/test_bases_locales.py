@@ -85,7 +85,7 @@ def sauvegarde_ratee(
     raise RuntimeError("pg_dump en panne")
 
 
-LOCALES = ["concorde", "concorde_test", "testalbhade"]
+LOCALES = ["concorde", "concorde_test", "base_test"]
 
 
 class TestHote(unittest.TestCase):
@@ -133,8 +133,8 @@ class TestHote(unittest.TestCase):
         cx = FausseConnexion()
         with self.assertRaises(bl.SuppressionInterdite):
             bl.supprimer(
-                "testalbhade",
-                "testalbhade",
+                "base_test",
+                "base_test",
                 LOCALES,
                 tempfile.mkdtemp(),
                 connexion=cx,
@@ -208,30 +208,30 @@ class TestGardeFous(unittest.TestCase):
     def test_protegee(self) -> None:
         """Les bases protégées sont refusées ; la liste est réglable."""
         self.refuse("concorde")
-        os.environ["CONCORDE_BASES_PROTEGEES"] = "testalbhade"
-        self.refuse("testalbhade")
+        os.environ["CONCORDE_BASES_PROTEGEES"] = "base_test"
+        self.refuse("base_test")
         self.assertTrue(
             self.tenter("concorde")
         )  # liste remplacée : concorde libérée
 
     def test_confirmation_et_tache_en_cours(self) -> None:
         """Confirmation inexacte ou tâche en cours : refus."""
-        self.refuse("testalbhade", confirmation="testalbhad")
-        self.refuse("testalbhade", confirmation="")
-        self.refuse("testalbhade", en_cours={"testalbhade"})
+        self.refuse("base_test", confirmation="base_tes")
+        self.refuse("base_test", confirmation="")
+        self.refuse("base_test", en_cours={"base_test"})
 
     def test_suppression_autorisee(self) -> None:
         """Base locale confirmée : un seul DROP DATABASE est émis."""
-        sql = self.tenter("testalbhade")
-        self.assertEqual(sql, ['DROP DATABASE "testalbhade" WITH (FORCE)'])
+        sql = self.tenter("base_test")
+        self.assertEqual(sql, ['DROP DATABASE "base_test" WITH (FORCE)'])
 
     def test_rien_sans_sauvegarde(self) -> None:
         """Sauvegarde en échec : aucune suppression."""
         cx = FausseConnexion()
         with self.assertRaises(RuntimeError):
             bl.supprimer(
-                "testalbhade",
-                "testalbhade",
+                "base_test",
+                "base_test",
                 LOCALES,
                 tempfile.mkdtemp(),
                 connexion=cx,
@@ -264,8 +264,8 @@ class TestGardeFous(unittest.TestCase):
             bl.SuppressionInterdite
         ):  # copie client : pas de modèle
             bl.reinitialiser(
-                "testalbhade",
-                "testalbhade",
+                "base_test",
+                "base_test",
                 LOCALES,
                 {"concorde_test": "concorde_test_modele"},
                 tempfile.mkdtemp(),
@@ -313,8 +313,8 @@ class TestGardeFous(unittest.TestCase):
         cx = FausseConnexion()
         with self.assertRaises(RuntimeError):
             bl.supprimer(
-                "testalbhade",
-                "testalbhade",
+                "base_test",
+                "base_test",
                 LOCALES,
                 tempfile.mkdtemp(),
                 connexion=cx,
@@ -513,7 +513,7 @@ class TestClesDistantes(unittest.TestCase):
 
 
 class TestNomsDeBases(unittest.TestCase):
-    """Nom parlant des bases (« Albhades — production »)."""
+    """Nom parlant des bases (« Client A — production »)."""
 
     def annuaire(self, chemin: str) -> Bases:
         """Annuaire : une base locale, une distante, noms dans ``chemin``."""
@@ -522,21 +522,21 @@ class TestNomsDeBases(unittest.TestCase):
             float("inf"),
             [
                 {
-                    "id": "sql:testalbhade",
-                    "nom": "testalbhade",
+                    "id": "sql:base_test",
+                    "nom": "base_test",
                     "source": "sql",
-                    "societe": "Albhades",
+                    "societe": "Client A",
                 }
             ],
         )
         b._distants["xmlrpc:1"] = {
             "id": "xmlrpc:1",
-            "nom": "alb_alpha",
+            "nom": "base_production",
             "source": "xmlrpc",
             "url": "https://alb.odoo.com",
             "utilisateur": "u",
             "cle": "secret",
-            "libelle": "Albhades — production",
+            "libelle": "Client A — production",
         }
         b.charger_libelles(chemin)
         return b
@@ -546,25 +546,25 @@ class TestNomsDeBases(unittest.TestCase):
         chemin = os.path.join(tempfile.mkdtemp(), "noms.json")
         b = self.annuaire(chemin)
         self.assertEqual(
-            b.renommer("sql:testalbhade", "  Albhades —\ncopie du 14/10 "),
-            "Albhades — copie du 14/10",
+            b.renommer("sql:base_test", "  Client A —\ncopie du 14/10 "),
+            "Client A — copie du 14/10",
         )
         noms = {x["id"]: x["libelle"] for x in b.lister()}
         self.assertEqual(
             noms,
             {
-                "sql:testalbhade": "Albhades — copie du 14/10",
-                "xmlrpc:1": "Albhades — production",
+                "sql:base_test": "Client A — copie du 14/10",
+                "xmlrpc:1": "Client A — production",
             },
         )
         self.assertEqual(
-            b.nom("sql:testalbhade"), "Albhades — copie du 14/10 (testalbhade)"
+            b.nom("sql:base_test"), "Client A — copie du 14/10 (base_test)"
         )
         b2 = self.annuaire(chemin)  # « redémarrage »
         self.assertEqual(
-            b2.lister()[0]["libelle"], "Albhades — copie du 14/10"
+            b2.lister()[0]["libelle"], "Client A — copie du 14/10"
         )
-        b2.renommer("sql:testalbhade", "")  # vide = retiré
+        b2.renommer("sql:base_test", "")  # vide = retiré
         self.assertEqual(self.annuaire(chemin).lister()[0]["libelle"], "")
 
     def test_refus(self) -> None:
@@ -573,10 +573,10 @@ class TestNomsDeBases(unittest.TestCase):
         with self.assertRaises(ValueError):
             b.renommer("sql:inconnue", "x")
         with self.assertRaises(ValueError):
-            b.renommer("sql:testalbhade", "x" * 61)
-        b.renommer("xmlrpc:1", "Albhades — prod (nouveau nom)")
+            b.renommer("sql:base_test", "x" * 61)
+        b.renommer("xmlrpc:1", "Client A — prod (nouveau nom)")
         self.assertEqual(
-            b.lister()[1]["libelle"], "Albhades — prod (nouveau nom)"
+            b.lister()[1]["libelle"], "Client A — prod (nouveau nom)"
         )
         self.assertNotIn("cle", b.lister()[1])  # la clé ne sort jamais
 

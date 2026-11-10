@@ -18,5 +18,6 @@ echo "PONT INSTALLE"
 - **Synchro** : automatique, chaque push GitHub arrive en < 1 min.
 - **Diagnostic** : quand l'assistant demande un diagnostic, taper `bash /opt/concorde/diag.sh`
   et coller la sortie complete dans la conversation.
-- Le mapping reel (362 comptes) est dans `mapping_quadra_odoo.json` a la racine :
-  le moteur le trouve automatiquement depuis /opt/concorde.
+- La table de correspondance des comptes du client est sur le serveur, hors git :
+  `/etc/concorde/mapping_quadra_odoo.json` (donnees client ; modele fictif
+  `mapping_quadra_odoo.exemple.json`). Le moteur la lit via `concorde.yaml`.

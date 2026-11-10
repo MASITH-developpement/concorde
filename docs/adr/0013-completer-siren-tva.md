@@ -1,11 +1,13 @@
 # ADR-0013 — Compléter le SIRET et la TVA des tiers depuis CONCORDE
 
+> Noms et codes neutralisés le 10/11/2026 (données client retirées du dépôt). Décision inchangée.
+
 - **Statut** : Acceptée — arbitrages de Stéphane Moreau du 09/11/2026
 - **Date** : 09/11/2026
 - **Décideur** : Stéphane Moreau
 
 ## Contexte
-L'analyse d'Albhades (base `alb_alpha`, 08/11/2026) signale **182 sociétés françaises
+L'analyse d'Client A (base `base_production`, 08/11/2026) signale **182 sociétés françaises
 sans SIREN ni TVA** (constat `TIERS_SANS_SIREN_TVA`). Depuis la facture électronique,
 le SIREN du client est une mention obligatoire : sans lui, la facture ne peut pas
 passer par une plateforme agréée. Stéphane veut les compléter directement dans
@@ -15,11 +17,11 @@ Mesures du 09/11/2026 :
 - l'annuaire public des entreprises (`recherche-entreprises.api.gouv.fr`, État, gratuit,
   sans clé) répond depuis le serveur : nom, SIREN, siège (code postal, commune), état
   (active ou fermée) ;
-- un même nom donne souvent plusieurs sociétés (« BIOMERIEUX » : 479 090 979 et
-  673 620 399) : il faut rapprocher aussi l'adresse, et une personne doit valider ;
+- un même nom donne souvent plusieurs sociétés (« EXEMPLE » : 777 777 772 et
+  222 222 226) : il faut rapprocher aussi l'adresse, et une personne doit valider ;
 - l'annuaire donne aussi le **SIRET** de chaque établissement (avec son code postal et
-  son état) et le **numéro de TVA** de l'entreprise (« BIOMERIEUX », Marcy-l'Étoile :
-  SIRET du siège 673 620 399 00026, TVA FR69673620399) ;
+  son état) et le **numéro de TVA** de l'entreprise (« EXEMPLE », Paris :
+  SIRET du siège 222 222 226 00029, TVA FR46222222226) ;
 - CONCORDE contrôle déjà la clé de Luhn d'un SIREN et d'un SIRET, et la clé d'une TVA
   française (`core/demat.py`).
 
@@ -53,7 +55,7 @@ compléter dans Odoo.
 - On choisit **la base à compléter** et **sa copie de test** parmi les bases où CONCORDE
   peut écrire : celles du sélecteur de l'interface (Odoo distant branché avec sa clé
   API, ou base du serveur dont les identifiants d'écriture sont configurés) et les
-  connexions Odoo de l'écran Transferts. La copie de test (ex. `testalbhade`) reçoit
+  connexions Odoo de l'écran Transferts. La copie de test (ex. `base_test`) reçoit
   d'abord les mêmes écritures ; puis **feu vert**, nom de la base retapé, pour la
   production. *Mis à jour le 09/11/2026 : au départ, seules les connexions de
   Transferts étaient proposées, ce qui obligeait à ressaisir une base déjà branchée.*

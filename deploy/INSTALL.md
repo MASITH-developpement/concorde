@@ -70,7 +70,7 @@ from core.mapping import mapper_comptes
 from injectors.odoo17 import InjecteurOdoo17
 
 canon = parse_fec("FEC_QUADRA.txt")
-mapper_comptes(canon, "mapping_quadra_odoo.json")
+mapper_comptes(canon, "/etc/concorde/mapping_quadra_odoo.json")  # table du client, hors git
 rapport = InjecteurOdoo17().injecter(canon)   # dry-run : rien n'est écrit
 print(rapport)
 EOF

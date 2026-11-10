@@ -10,7 +10,7 @@ Deux sources de lecture, mêmes résultats (ADR-0001) :
                     Clé API : variable ODOO_API_KEY (jamais en argument).
 
 Exemples (depuis la racine du dépôt) :
-  python3 -m scripts.concorde_odoo --source sql --base testalbhade \\
+  python3 -m scripts.concorde_odoo --source sql --base base_test \\
       telecharger --format fec xlsx csv --du 2025-01-01 --au 2025-12-31 \\
       -o sorties/
   python3 -m scripts.concorde_odoo --source xmlrpc \\

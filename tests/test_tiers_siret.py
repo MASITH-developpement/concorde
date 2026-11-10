@@ -35,38 +35,38 @@ from interface.serveur import Application, Bases, creer_serveur
 from interface.transferts import ErreurEcran
 from tests.test_interface import MDP, FaussesBases, entete_obligatoire
 
-# BIOMERIEUX SA : SIREN, SIRET du siège et TVA réels (annuaire, 09/11/2026).
-BIOMERIEUX = {
-    "siren": "673620399",
-    "nom_complet": "BIOMERIEUX SA (BIOMERIEUX)",
-    "nom_raison_sociale": "BIOMERIEUX SA",
-    "sigle": "BIOMERIEUX",
+# Société d'exemple : SIREN, SIRET et TVA fictifs (clés de contrôle valides).
+SOCIETE_EXEMPLE = {
+    "siren": "222222226",
+    "nom_complet": "EXEMPLE SA (EXEMPLE)",
+    "nom_raison_sociale": "EXEMPLE SA",
+    "sigle": "EXEMPLE",
     "etat_administratif": "A",
-    "tva": ["FR69673620399"],
+    "tva": ["FR46222222226"],
     "siege": {
-        "siret": "67362039900026",
-        "code_postal": "69280",
-        "adresse": "376 CHEMIN DE L'ORME 69280 MARCY-L'ETOILE",
+        "siret": "22222222600029",
+        "code_postal": "75001",
+        "adresse": "1 RUE DE L'EXEMPLE 75001 PARIS",
         "etat_administratif": "A",
     },
     "matching_etablissements": [
         {
-            "siret": "67362039900125",
-            "code_postal": "69280",
+            "siret": "22222222600128",
+            "code_postal": "75001",
             "etat_administratif": "A",
-            "adresse": "AUTRE SITE 69280 MARCY-L'ETOILE",
+            "adresse": "AUTRE SITE 75001 PARIS",
         }
     ],
 }
 FONDATION = {
-    "siren": "892294166",
-    "nom_complet": "FONDS DE DOTATION BIOMERIEUX",
-    "nom_raison_sociale": "FONDS DE DOTATION BIOMERIEUX",
+    "siren": "444444442",
+    "nom_complet": "FONDS DE DOTATION EXEMPLE",
+    "nom_raison_sociale": "FONDS DE DOTATION EXEMPLE",
     "etat_administratif": "A",
     "tva": [],
-    "siege": {"siret": "89229416600012", "code_postal": "69280"},
+    "siege": {"siret": "44444444200016", "code_postal": "75001"},
 }
-FERMEE = dict(BIOMERIEUX, etat_administratif="C")
+FERMEE = dict(SOCIETE_EXEMPLE, etat_administratif="C")
 
 
 class FauxAnnuaire:
@@ -99,8 +99,8 @@ class FauxOdoo:
         """Trois tiers sans identifiant, un déjà complété."""
         self.siret = siret
         self.fiches: dict[int, dict[str, Any]] = {
-            8391: {"name": "BIOMERIEUX", "zip": "69280", "city": "Marcy"},
-            8390: {"name": "AIR LIQUIDE", "zip": "", "city": ""},
+            8391: {"name": "EXEMPLE", "zip": "75001", "city": "Paris"},
+            8390: {"name": "AUTRE SOCIETE", "zip": "", "city": ""},
             8159: {"name": "ABATTOIR ROMINOS", "zip": "00000", "city": ""},
             9000: {"name": "DEJA FAIT", "zip": "", "city": "", "vat": "FR1"},
         }
@@ -145,9 +145,9 @@ class FauxOdoo:
 
 
 def annuaire_simule() -> FauxAnnuaire:
-    """Annuaire des tests : BIOMERIEUX (2 réponses), AIR LIQUIDE fermée."""
+    """Annuaire des tests : EXEMPLE (2 réponses), AUTRE SOCIETE fermée."""
     return FauxAnnuaire(
-        {"BIOMERIEUX": [BIOMERIEUX, FONDATION], "AIR LIQUIDE": [FERMEE]}
+        {"EXEMPLE": [SOCIETE_EXEMPLE, FONDATION], "AUTRE SOCIETE": [FERMEE]}
     )
 
 
@@ -157,22 +157,22 @@ class TestRegles(unittest.TestCase):
     def test_controles_par_calcul(self) -> None:
         """Vérifie SIRET (Luhn, SIREN) et TVA (clé, SIREN)."""
         self.assertEqual(
-            controler("67362039900026", "FR69673620399", "673620399"), []
+            controler("22222222600029", "FR46222222226", "222222226"), []
         )
         self.assertIn(
             "SIRET invalide (clé de Luhn)",
-            controler("67362039900027", "FR69673620399", "673620399"),
+            controler("22222222600020", "FR46222222226", "222222226"),
         )
         self.assertIn(
             "le SIRET n'appartient pas à ce SIREN",
-            controler("89229416600012", "FR69673620399", "673620399"),
+            controler("44444444200016", "FR46222222226", "222222226"),
         )
         self.assertIn(
             "TVA fausse (clé ou SIREN)",
-            controler("67362039900026", "FR70673620399", "673620399"),
+            controler("22222222600029", "FR47222222226", "222222226"),
         )
         self.assertEqual(
-            controler("67362039900026", "", "673620399", False), []
+            controler("22222222600029", "", "222222226", False), []
         )
         self.assertEqual(
             identifiants_constat(
@@ -197,7 +197,7 @@ class TestRegles(unittest.TestCase):
         retenue = propositions[0]["candidates"][0]
         self.assertEqual(
             (retenue["siret"], retenue["tva"]),
-            ("67362039900125", "FR69673620399"),
+            ("22222222600128", "FR46222222226"),
         )
         self.assertEqual(
             propositions[0]["candidates"][1]["controles"],
@@ -222,11 +222,11 @@ class TestRegles(unittest.TestCase):
                 [
                     {
                         "id": 8391,
-                        "siret": "67362039900026",
-                        "tva": "FR69673620399",
+                        "siret": "22222222600029",
+                        "tva": "FR46222222226",
                     },
-                    {"id": 9000, "siret": "67362039900026", "tva": ""},
-                    {"id": 8390, "siret": "67362039900026", "tva": ""},
+                    {"id": 9000, "siret": "22222222600029", "tva": ""},
+                    {"id": 8390, "siret": "22222222600029", "tva": ""},
                 ],
                 "base de test",
                 trace,
@@ -235,9 +235,9 @@ class TestRegles(unittest.TestCase):
             self.assertEqual(bilan["ignores"], [9000])
             self.assertIn("TVA refusé", bilan["refus"][0]["cause"])
             self.assertEqual(
-                odoo.fiches[8391]["company_registry"], "67362039900026"
+                odoo.fiches[8391]["company_registry"], "22222222600029"
             )
-            odoo.fiches[8391]["vat"] = "FR69673620399"
+            odoo.fiches[8391]["vat"] = "FR46222222226"
             self.assertEqual(
                 annuler(odoo, trace), {"remis": [8391], "ignores": []}
             )
@@ -264,9 +264,9 @@ class TestEcranSiret(unittest.TestCase):
         )
         annuaire = self.app.transferts.annuaire
         parametres = {"url": "https://x", "base": "b", "utilisateur": "u"}
-        self.test = annuaire.ajouter("odoo", "Albhades test", parametres)["id"]
+        self.test = annuaire.ajouter("odoo", "Client A test", parametres)["id"]
         self.prod = annuaire.ajouter(
-            "odoo", "Albhades production", parametres, self.test
+            "odoo", "Client A production", parametres, self.test
         )["id"]
         self.sans_test = annuaire.ajouter("odoo", "Seule", parametres)["id"]
         self.couple = {
@@ -315,8 +315,8 @@ class TestEcranSiret(unittest.TestCase):
                         {
                             "code": "TIERS_SANS_SIREN_TVA",
                             "elements": [
-                                "BIOMERIEUX (id 8391)",
-                                "AIR LIQUIDE (id 8390)",
+                                "EXEMPLE (id 8391)",
+                                "AUTRE SOCIETE (id 8390)",
                             ],
                         }
                     ]
@@ -420,9 +420,9 @@ class TestEcranSiret(unittest.TestCase):
         )
         ident = etat["id"]
         _, donnees = self.envoyer("GET", "/api/siret/" + ident)
-        self.assertEqual(donnees["connexion_test"], "Albhades test")
+        self.assertEqual(donnees["connexion_test"], "Client A test")
         choix = [
-            {"id": 8391, "siret": "67362039900125", "tva": "FR69673620399"}
+            {"id": 8391, "siret": "22222222600128", "tva": "FR46222222226"}
         ]
         self.assertIn(
             "ne vient pas",
@@ -433,7 +433,7 @@ class TestEcranSiret(unittest.TestCase):
                     "choix": [
                         {
                             "id": 8391,
-                            "siret": "67362039900026",
+                            "siret": "22222222600029",
                             "tva": "FR00000000000",
                         }
                     ],
@@ -447,7 +447,7 @@ class TestEcranSiret(unittest.TestCase):
                 {
                     "cible": "production",
                     "choix": choix,
-                    "confirmation": "Albhades production",
+                    "confirmation": "Client A production",
                 },
             ),
         )
@@ -456,7 +456,7 @@ class TestEcranSiret(unittest.TestCase):
         )
         self.assertEqual(essai["resultat"]["ecrits"], [8391])
         self.assertEqual(
-            self.odoo[self.test].fiches[8391]["siret"], "67362039900125"
+            self.odoo[self.test].fiches[8391]["siret"], "22222222600128"
         )
         self.assertFalse(self.odoo[self.prod].fiches[8391]["siret"])
         self.assertIn(
@@ -466,7 +466,7 @@ class TestEcranSiret(unittest.TestCase):
                 {
                     "cible": "production",
                     "choix": choix,
-                    "confirmation": "Albhades",
+                    "confirmation": "Client A",
                 },
             ),
         )
@@ -475,12 +475,12 @@ class TestEcranSiret(unittest.TestCase):
             {
                 "cible": "production",
                 "choix": choix,
-                "confirmation": "Albhades production",
+                "confirmation": "Client A production",
             },
         )
         self.assertEqual(prod["resultat"]["ecrits"], [8391])
         self.assertEqual(
-            self.odoo[self.prod].fiches[8391]["vat"], "FR69673620399"
+            self.odoo[self.prod].fiches[8391]["vat"], "FR46222222226"
         )
         annule = self.tache(
             "/api/siret/%s/annuler" % ident, {"cible": "production"}
@@ -574,23 +574,23 @@ class TestBasesEcriture(unittest.TestCase):
         with mock.patch.dict(os.environ, {}, clear=False):
             os.environ.pop("CONCORDE_TEST_BASE", None)
             with self.assertRaises(ErreurSource) as contexte:
-                bases.acces_ecriture("sql:testalbhade", CibleNotee)
+                bases.acces_ecriture("sql:base_test", CibleNotee)
             self.assertIn("CONCORDE_TEST", str(contexte.exception))
         with mock.patch.dict(
             os.environ,
-            {"CONCORDE_TEST_BASE": "testalbhade", "CONCORDE_TEST_MDP": "m"},
+            {"CONCORDE_TEST_BASE": "base_test", "CONCORDE_TEST_MDP": "m"},
         ):
-            acces = bases.acces_ecriture("sql:testalbhade", CibleNotee)
+            acces = bases.acces_ecriture("sql:base_test", CibleNotee)
         self.assertEqual(
-            identifiants_recus(acces)[1:], ("testalbhade", "admin", "m")
+            identifiants_recus(acces)[1:], ("base_test", "admin", "m")
         )
         with self.assertRaises(ErreurSource) as contexte:
             bases.acces_ecriture("xmlrpc:inconnu", CibleNotee)
         self.assertIn("rebranchez", str(contexte.exception))
         bases._distants["xmlrpc:alb"] = {
             "id": "xmlrpc:alb",
-            "nom": "alb_alpha",
-            "url": "https://albhades.example",
+            "nom": "base_production",
+            "url": "https://client-a.example",
             "utilisateur": "u",
             "cle": "",
         }
@@ -600,7 +600,7 @@ class TestBasesEcriture(unittest.TestCase):
         acces = bases.acces_ecriture("xmlrpc:alb", CibleNotee)
         self.assertEqual(
             identifiants_recus(acces),
-            ("https://albhades.example", "alb_alpha", "u", "k"),
+            ("https://client-a.example", "base_production", "u", "k"),
         )
 
 
@@ -616,8 +616,8 @@ class TestBasesDuSelecteur(TestEcranSiret):
             lambda instance, rafraichir=False: [
                 {
                     "id": "xmlrpc:alb",
-                    "nom": "alb_alpha",
-                    "libelle": "albhades prod",
+                    "nom": "base_production",
+                    "libelle": "client a prod",
                     "ecriture_ok": True,
                 },
                 {
@@ -635,7 +635,7 @@ class TestBasesDuSelecteur(TestEcranSiret):
             _, sources = self.envoyer("GET", "/api/tiers/bases")
             self.assertEqual(
                 sources[0],
-                {"id": "base:xmlrpc:alb", "libelle": "albhades prod"},
+                {"id": "base:xmlrpc:alb", "libelle": "client a prod"},
             )
             self.assertEqual(
                 sorted(source["id"] for source in sources[1:]),
@@ -656,7 +656,7 @@ class TestBasesDuSelecteur(TestEcranSiret):
             _, donnees = self.envoyer("GET", "/api/siret/" + etat["id"])
             self.assertEqual(
                 (donnees["connexion"], donnees["connexion_test"]),
-                ("albhades prod", "Albhades test"),
+                ("client a prod", "Client A test"),
             )
         with self.assertRaises(ErreurEcran):
             self.app.siret.acces("autre:x")

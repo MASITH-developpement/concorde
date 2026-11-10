@@ -463,10 +463,18 @@ class ConcordeImportWizard(models.TransientModel):
                 "libelle": "%s (%d correspondances)"
                 % (self.mapping_filename or "mapping.xlsx", len(mapping)),
             }
+        embarque = os.path.join(_chemin_engine(), "mapping_quadra_odoo.json")
+        if not os.path.isfile(embarque):
+            # La table du client n'est plus dans le dépôt (données client) :
+            # install_module.sh ne l'embarque que si /etc/concorde l'a.
+            raise UserError(
+                _(
+                    "Aucune table de correspondance des comptes embarquée : "
+                    "déposez le classeur de correspondance (xlsx)."
+                )
+            )
         return {
-            "fichier": os.path.join(
-                _chemin_engine(), "mapping_quadra_odoo.json"
-            ),
+            "fichier": embarque,
             "libelle": "mapping_quadra_odoo.json (embarqué)",
         }
 

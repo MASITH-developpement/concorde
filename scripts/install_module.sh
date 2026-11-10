@@ -7,7 +7,13 @@ MODULE_DIR=deploy/addons/concorde
 # Copie fidele du moteur depuis le depot local (jamais de transcription manuelle)
 mkdir -p "$MODULE_DIR/engine"
 cp core/*.py "$MODULE_DIR/engine/"
-cp mapping_quadra_odoo.json "$MODULE_DIR/engine/"
+# Table de correspondance du client : hors git, dans /etc/concorde. Absente,
+# l'assistant d'import demande de déposer le classeur de correspondance.
+if [ -f /etc/concorde/mapping_quadra_odoo.json ]; then
+    cp /etc/concorde/mapping_quadra_odoo.json "$MODULE_DIR/engine/"
+else
+    echo "Aucune table /etc/concorde/mapping_quadra_odoo.json : rien d'embarqué (dépôt du classeur obligatoire dans l'assistant)."
+fi
 
 # Logo officiel CONCORDE (SVG, copie exacte du fichier fourni par MASITH,
 # tatouage numerique invisible inclus) dans le module

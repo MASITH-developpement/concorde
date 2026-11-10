@@ -1,5 +1,7 @@
 # ADR-0001 — Passerelle de données Odoo 17 : lire en SQL ou en XML-RPC, écrire par l'ORM
 
+> Noms et codes neutralisés le 10/11/2026 (données client retirées du dépôt). Décision inchangée.
+
 - **Statut** : Acceptée — arbitrages de Stéphane Moreau en séance du 06/11/2026
 - **Date** : 06/11/2026
 - **Décideur** : Stéphane Moreau
@@ -7,7 +9,7 @@
 ## Contexte
 CONCORDE doit pouvoir **uploader, analyser, modifier et télécharger** les données
 comptables d'un Odoo 17 : écritures, plan comptable, journaux, tiers, factures.
-Volume de référence : base `testalbhade`, 170 133 lignes d'écritures (153 765 hors
+Volume de référence : base `base_test`, 170 133 lignes d'écritures (153 765 hors
 sections et notes), 45 673 écritures, 5 570 tiers. Le travail se fait **hors d'Odoo**,
 en ligne de commande.
 
@@ -25,7 +27,7 @@ en ligne de commande.
    revalidation. Refus si la période est verrouillée ou le journal sécurisé.
    **Factures validées** ou transmises en facture électronique : jamais modifiées,
    on passe par un avoir.
-4. **Base d'écriture en développement : `concorde` uniquement.** `testalbhade` sert
+4. **Base d'écriture en développement : `concorde` uniquement.** `base_test` sert
    à tester la lecture du gros volume.
 5. Formats de sortie : FEC DGFiP, xlsx (bibliothèque standard), CSV d'import Odoo.
 6. Montants en centimes (int) de bout en bout ; un montant Odoo non exact au centime

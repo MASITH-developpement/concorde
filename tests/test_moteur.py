@@ -31,8 +31,8 @@ from injectors.odoo_conversion import ConvertisseurOdoo, ErreurConversion
 FEC_MINIMAL = (
     "JournalCode;EcritureNum;EcritureDate;CompteNum;CompteLib;EcritureLib;"
     "Debit;Credit\r\n"
-    "AC;1;20260201;41100000;Clients;Facture A;100,00;0,00\r\n"
-    "AC;1;20260201;70600000;Prestations;Facture A;0,00;100,00\r\n"
+    "AC;1;20260201;41109009;Clients;Facture A;100,00;0,00\r\n"
+    "AC;1;20260201;70609017;Prestations;Facture A;0,00;100,00\r\n"
 )
 
 
@@ -87,7 +87,7 @@ def journal_desequilibre() -> Canonique:
             "AC",
             "9",
             date(2026, 1, 1),
-            "41100000",
+            "41109009",
             "Orphelin",
             debit=5000,
         )
@@ -114,7 +114,7 @@ class TestCentimes(unittest.TestCase):
             "AC",
             "1",
             date(2026, 1, 1),
-            "41100000",
+            "41109009",
             "Test",
             debit=10000,
         )
@@ -133,7 +133,7 @@ class TestParseurFEC(unittest.TestCase):
         self.assertEqual(len(canon), 2)
         self.assertTrue(canon.est_equilibre())
         self.assertEqual(canon.lignes[0].debit, 10000)
-        self.assertEqual(canon.lignes[0].compte, "41100000")
+        self.assertEqual(canon.lignes[0].compte, "41109009")
 
     def test_parse_iso_tab_preambule(self) -> None:
         """Vérifie la lecture d'un FEC ISO-8859-1 tabulé avec préambule."""
@@ -167,8 +167,8 @@ class TestLettrage(unittest.TestCase):
         fec2 = (
             "JournalCode;EcritureNum;EcritureDate;CompteNum;CompteLib;"
             "EcritureLib;Debit;Credit\r\n"
-            "AC;1;20260201;41100000;Clients;Fact A;50,00;0,00\r\n"
-            "AC;2;20260215;41100000;Clients;Regl A;0,00;50,00\r\n"
+            "AC;1;20260201;41109009;Clients;Fact A;50,00;0,00\r\n"
+            "AC;2;20260215;41109009;Clients;Regl A;0,00;50,00\r\n"
         )
         canon2 = parse_fec(fec2.encode("utf-8"))
         paires, anomalies, stats = lettrer(canon2)
@@ -244,16 +244,16 @@ class TestMapping(unittest.TestCase):
     """Correspondance des comptes Quadra vers Odoo."""
 
     MAPPING_CLIENT = [
-        ("41100000", "41000000"),
-        ("70600000", "70600000"),
-        ("40100000", "40000000"),
-        ("60100000", "60110000"),
+        ("41109009", "41009008"),
+        ("70609017", "70609017"),
+        ("40109005", "40009004"),
+        ("60100000", "60119014"),
     ]
 
     def test_charger_mapping_tuples(self) -> None:
         """Vérifie le chargement d'un mapping donné en paires."""
         m = charger_mapping(self.MAPPING_CLIENT)
-        self.assertEqual(m["41100000"], "41000000")
+        self.assertEqual(m["41109009"], "41009008")
         self.assertEqual(len(m), 4)
 
     def test_mapper_comptes_ok(self) -> None:
@@ -261,24 +261,24 @@ class TestMapping(unittest.TestCase):
         canon = journal_minimal()
         r = mapper_comptes(canon, self.MAPPING_CLIENT)
         self.assertEqual(r["nb_mappees"], 2)
-        self.assertEqual(canon.lignes[0].compte, "41000000")
-        self.assertEqual(canon.lignes[1].compte, "70600000")
+        self.assertEqual(canon.lignes[0].compte, "41009008")
+        self.assertEqual(canon.lignes[1].compte, "70609017")
 
     def test_mapper_comptes_inconnu_bloquant(self) -> None:
         """Vérifie qu'un compte sans correspondance bloque le mapping."""
         canon = journal_minimal()
-        mapping_incomplet = [("41100000", "41000000")]
+        mapping_incomplet = [("41109009", "41009008")]
         with self.assertRaises(ErreurMapping) as cm:
             mapper_comptes(canon, mapping_incomplet)
-        self.assertIn("70600000", str(cm.exception))
+        self.assertIn("70609017", str(cm.exception))
 
     def test_pipeline_avec_fichier_mapping(self) -> None:
         """Vérifie le pipeline complet avec un mapping lu depuis un JSON."""
         correspondances = [
-            {"quadra": "41100000", "odoo": "41000000"},
-            {"quadra": "70615000", "odoo": "70600000"},
-            {"quadra": "40120000", "odoo": "40110000"},
-            {"quadra": "60411000", "odoo": "60400000"},
+            {"quadra": "41109009", "odoo": "41009008"},
+            {"quadra": "70619018", "odoo": "70609017"},
+            {"quadra": "40129007", "odoo": "40119006"},
+            {"quadra": "60419016", "odoo": "60409015"},
         ]
         with tempfile.TemporaryDirectory() as dossier_temporaire:
             chemin_mapping = os.path.join(dossier_temporaire, "mapping.json")
@@ -305,14 +305,14 @@ class TestMapping(unittest.TestCase):
                     {"nom": "rapport", "fonction": "rapport"},
                 ],
             }
-            comptes = [("41100000", "70615000"), ("40120000", "60411000")]
+            comptes = [("41109009", "70619018"), ("40129007", "60419016")]
             brut = generer_fec(10, comptes=comptes)
             moteur = MoteurConcorde(config=config)
             contexte = moteur.executer(brut)
         self.assertEqual(len(contexte["resultats"]), 5)
         self.assertTrue(contexte["audit_valide"])
         canon = resultat_etape(contexte, 1, dict)["canon"]
-        comptes_attendus = {"41000000", "70600000", "40110000", "60400000"}
+        comptes_attendus = {"41009008", "70609017", "40119006", "60409015"}
         self.assertEqual(
             {ligne_canon.compte for ligne_canon in canon.lignes},
             comptes_attendus,

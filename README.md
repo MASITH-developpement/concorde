@@ -141,11 +141,11 @@ Commande `scripts/concorde_odoo.py` — ADR-0001. Deux sources de **lecture**, m
 
 ```bash
 # Télécharger : FEC DGFiP, classeur xlsx (une feuille par objet), CSV d'import Odoo
-python3 -m scripts.concorde_odoo --source sql --base testalbhade \
+python3 -m scripts.concorde_odoo --source sql --base base_test \
     telecharger --format fec xlsx csv --du 2025-01-01 --au 2025-12-31 -o sorties/
 
 # Analyser : équilibre au centime, dates futures, doublons, tiers sans SIREN/TVA…
-python3 -m scripts.concorde_odoo --source sql --base testalbhade analyser --json analyse.json
+python3 -m scripts.concorde_odoo --source sql --base base_test analyser --json analyse.json
 # code retour : 0 conforme, 1 erreur, 2 anomalies
 ```
 
@@ -195,7 +195,7 @@ viennent ensuite.
 Écran **Comparer** de l'interface, ou :
 
 ```bash
-python3 -m scripts.concorde_comparer --a testalbhade --b testalbhade_cmp \
+python3 -m scripts.concorde_comparer --a base_test --b base_test_cmp \
     --du 2025-11-01 --au 2025-11-30 [--brouillons] [--date-copie 2026-10-14T18:01:57] -o dossier
 ```
 

@@ -444,14 +444,14 @@ class TestRoutesEtTiers(test_tiers_siret.TestEcranSiret):
             "/api/siret", dict(self.couple, analyse=self.analyse)
         )
         choix = [
-            {"id": 8391, "siret": "67362039900125", "tva": "FR69673620399"}
+            {"id": 8391, "siret": "22222222600128", "tva": "FR46222222226"}
         ]
         essai = self.tache(
             "/api/siret/%s/ecrire" % etat["id"],
             {"cible": "test", "choix": choix},
         )
         self.assertEqual(
-            self.odoo[self.test].fiches[8391]["siret"], "67362039900125"
+            self.odoo[self.test].fiches[8391]["siret"], "22222222600128"
         )
         bilan = self.app.siret._defaire_ecriture(essai, Journal())
         self.assertEqual(bilan["remis"], [8391])

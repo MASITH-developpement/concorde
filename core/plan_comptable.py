@@ -160,7 +160,7 @@ def charger_plan_xlsx(
     """Charge un plan comptable depuis un classeur .xlsx (octets).
 
     Retourne une liste ordonnée de dicts {code, nom, type} :
-    - code  : texte non vide (jamais '10130000.0') ;
+    - code  : texte non vide (jamais '10139001.0') ;
     - nom   : texte non vide ;
     - type  : account_type Odoo (TYPES_ACCOUNT) si déterminé SINON None
               (explicite :

@@ -227,7 +227,7 @@ function afficherBases() {
                onclick: () => dialogueBase(b, "supprimer_base") })])))));
   if (!etat.bases.length) corps.append(el("tr", {}, el("td", { colspan: 7, class: "vide", texte: "Aucune base." })));
 }
-// Nom parlant d'une base : « Albhades — copie du 14/10 (testalbhade) ».
+// Nom parlant d'une base : « Client A — copie du 14/10 (base_test) ».
 function nomBase(b) {
   return b.libelle ? `${b.libelle} (${b.nom})` : `${b.nom} — ${b.societe}`;
 }
@@ -236,7 +236,7 @@ function boutonRenommer(b) {
   return el("button", { class: "bouton petit", type: "button", texte: b.libelle ? "Renommer" : "Nommer",
     title: "Donner un nom parlant à cette base (vide pour le retirer)",
     onclick: async () => {
-      const libelle = prompt(`Nom parlant pour la base « ${b.nom} » (${b.societe}) :\nex. « Albhades — production », « Albhades — copie du 14/10 »`, b.libelle || "");
+      const libelle = prompt(`Nom parlant pour la base « ${b.nom} » (${b.societe}) :\nex. « Client A — production », « Client A — copie du 14/10 »`, b.libelle || "");
       if (libelle === null) return;
       try {
         await api("/api/bases/nom", { method: "POST", corps: { base_id: b.id, libelle } });

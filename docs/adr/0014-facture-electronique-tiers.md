@@ -1,5 +1,7 @@
 # ADR-0014 — Facture électronique : vérifier l'inscription des tiers et reprendre leur adresse dans l'ERP
 
+> Noms et codes neutralisés le 10/11/2026 (données client retirées du dépôt). Décision inchangée.
+
 - **Statut** : Acceptée — arbitrages de Stéphane Moreau du 09/11/2026
 - **Date** : 09/11/2026
 - **Décideur** : Stéphane Moreau
@@ -24,7 +26,7 @@ Mesures et recherches du 09/11/2026 :
   depuis le serveur et contient **5 764 406 participants français**. Les plateformes y
   publient les adresses de facturation électronique françaises : identifiant `0225`
   (SIREN + code de routage) ou `0002` (SIREN). Recherche par SIREN mesurée :
-  `673620399` (BIOMERIEUX) → 3 adresses (`0225:673620399_bmxegencia`, …), avec les
+  `222222226` (société d'exemple) → 3 adresses (`0225:222222226_routage1`, …), avec les
   documents acceptés (facture, avoir) et la date d'inscription.
 - **Limite** : être trouvé sur Peppol prouve l'inscription. **Ne pas y être trouvé ne
   prouve pas l'absence d'inscription** (plateforme qui ne publie pas, ou pas encore).
@@ -43,7 +45,7 @@ Résultat dans l'écran (par tiers, filtrable) et en CSV, avec un compte par cla
 
 ### 2. Reprendre l'adresse dans l'ERP
 - Odoo : champs `peppol_eas` (schéma, ex. `0225`) et `peppol_endpoint` (ex.
-  `673620399_bmxegencia`) du tiers, s'ils existent dans la base (module de facture
+  `222222226_routage1`) du tiers, s'ils existent dans la base (module de facture
   électronique installé) et si le schéma est accepté par cette version d'Odoo ; sinon,
   rien n'est écrit et la cause est donnée.
 - Plusieurs adresses pour un tiers : proposée d'office celle **sans code de routage**

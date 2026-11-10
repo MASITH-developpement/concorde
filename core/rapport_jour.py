@@ -10,7 +10,7 @@ Chaque ligne (conclusion, ajout, détail) porte sa date et son heure
 07/11/2026).
 
 Chaque conclusion a un identifiant STABLE
-(ex. « alerte|balance|testalbhade|CLIENT_CREDITEUR »).
+(ex. « alerte|balance|base_test|CLIENT_CREDITEUR »).
 Les choix de l'utilisateur (masquée, texte corrigé, commentaire) sont
 rattachés à cet identifiant : régénérer le rapport ajoute les nouvelles
 conclusions sans écraser ses corrections. Déterministe : aucun texte ne

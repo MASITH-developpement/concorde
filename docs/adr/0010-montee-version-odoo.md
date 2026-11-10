@@ -1,5 +1,7 @@
 # ADR-0010 — Montée de version Odoo : OpenUpgrade fait la migration, CONCORDE certifie la comptabilité
 
+> Noms et codes neutralisés le 10/11/2026 (données client retirées du dépôt). Décision inchangée.
+
 - **Statut** : Acceptée — arbitrages de Stéphane Moreau du 08/11/2026
 - **Date** : 08/11/2026
 - **Décideur** : Stéphane Moreau
@@ -34,7 +36,7 @@ Ce que CONCORDE sait déjà faire (mesuré dans le code au 08/11/2026) :
   refusent toute autre version.
 
 Serveur CONCORDE (mesure du 08/11/2026) : 38 Go de disque dont 9,4 Go libres, environ
-4 Go de mémoire. Une base comme celle d'Albhades (170 133 lignes d'écritures) montée sur
+4 Go de mémoire. Une base comme celle d'Client A (170 133 lignes d'écritures) montée sur
 plusieurs versions n'y tient pas.
 
 ## Décision
@@ -107,7 +109,7 @@ plusieurs versions n'y tient pas.
 - **Délai** : il dépend d'OpenUpgrade. Si une version ou un module n'est pas couvert, la
   montée est bloquée ; CONCORDE le dit, il ne contourne pas.
 - **À surveiller** : la durée d'un saut sur une grosse base (à mesurer sur une copie de
-  `alb_alpha` ou d'une base de même taille) et la place disque nécessaire (environ trois
+  `base_production` ou d'une base de même taille) et la place disque nécessaire (environ trois
   copies de la base au pire moment).
 
 ## Options écartées

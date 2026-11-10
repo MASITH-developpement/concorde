@@ -2,7 +2,7 @@
 # CONCORDE — (c) MASITH / Stéphane Moreau. Tous droits réservés.
 """Vérifier, analyser et comparer deux bases Odoo 17 — lecture seule.
 
-  python3 -m scripts.concorde_comparer --a testalbhade --b testalbhade_cmp \\
+  python3 -m scripts.concorde_comparer --a base_test --b base_test_cmp \\
       --du 2025-11-01 --au 2025-11-30 [--brouillons] \\
       [--date-copie 2026-10-14T18:01:57] [-o dossier]
 

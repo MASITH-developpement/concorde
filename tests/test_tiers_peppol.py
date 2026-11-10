@@ -43,16 +43,16 @@ def participant(valeur: str, *documents: str) -> dict[str, Any]:
 
 
 REPONSES = {
-    "538133141": [
-        participant("0002:538133141", FACTURE_UBL, AVOIR_UBL),
-        participant("0225:538133141", FACTURE_UBL, FACTURE_CII),
+    "111111118": [
+        participant("0002:111111118", FACTURE_UBL, AVOIR_UBL),
+        participant("0225:111111118", FACTURE_UBL, FACTURE_CII),
         participant("0225:999999999", FACTURE_UBL),
     ],
-    "673620399": [
-        participant("0225:673620399_bmxegencia", FACTURE_UBL),
-        participant("0009:67362039900026", FACTURE_UBL),
-        participant("0009:673620399abc", FACTURE_UBL),
-        participant("9957:FR69673620399", FACTURE_UBL),
+    "222222226": [
+        participant("0225:222222226_routage1", FACTURE_UBL),
+        participant("0009:22222222600029", FACTURE_UBL),
+        participant("0009:222222226abc", FACTURE_UBL),
+        participant("9957:FR46222222226", FACTURE_UBL),
     ],
 }
 
@@ -84,15 +84,15 @@ class FauxOdooFacturation(FauxOdoo):
         super().__init__()
         self.peppol = peppol
         self.fiches = {
-            1: {"name": "ISB", "company_registry": "538133141"},
-            2: {"name": "BIOMERIEUX", "vat": "FR69673620399"},
-            3: {"name": "MANUTAN", "siret": "33466885200042"},
+            1: {"name": "TIERS UN", "company_registry": "111111118"},
+            2: {"name": "EXEMPLE", "vat": "FR46222222226"},
+            3: {"name": "TIERS TROIS", "siret": "33333333400048"},
             4: {"name": "SANS SIREN"},
             5: {
                 "name": "DEJA",
-                "company_registry": "538133141",
+                "company_registry": "111111118",
                 "peppol_eas": "0225",
-                "peppol_endpoint": "538133141",
+                "peppol_endpoint": "111111118",
             },
         }
         for fiche in self.fiches.values():
@@ -147,29 +147,31 @@ class TestReglesPeppol(unittest.TestCase):
 
     def test_adresses_et_proposition(self) -> None:
         """Vérifie le filtre par SIREN, les documents et l'adresse proposée."""
-        adresses_isb = adresses_peppol(
-            {"matches": REPONSES["538133141"]}, "538133141"
+        adresses_tiers_un = adresses_peppol(
+            {"matches": REPONSES["111111118"]}, "111111118"
         )
         self.assertEqual(
             [
                 (adresse["schema"], adresse["identifiant"])
-                for adresse in adresses_isb
+                for adresse in adresses_tiers_un
             ],
-            [("0002", "538133141"), ("0225", "538133141")],
+            [("0002", "111111118"), ("0225", "111111118")],
         )
         self.assertEqual(
-            adresses_isb[1]["documents"],
+            adresses_tiers_un[1]["documents"],
             ["facture UBL", "facture CII (Factur-X)"],
         )
-        self.assertEqual(adresse_proposee(adresses_isb), adresses_isb[1])
-        adresses_bmx = adresses_peppol(
-            {"matches": REPONSES["673620399"]}, "673620399"
+        self.assertEqual(
+            adresse_proposee(adresses_tiers_un), adresses_tiers_un[1]
+        )
+        adresses_exemple = adresses_peppol(
+            {"matches": REPONSES["222222226"]}, "222222226"
         )
         self.assertEqual(
-            [adresse["identifiant"] for adresse in adresses_bmx],
-            ["67362039900026", "673620399_bmxegencia"],
+            [adresse["identifiant"] for adresse in adresses_exemple],
+            ["22222222600029", "222222226_routage1"],
         )
-        self.assertIsNone(adresse_proposee(adresses_bmx))
+        self.assertIsNone(adresse_proposee(adresses_exemple))
 
     def test_verifier_tous_les_tiers(self) -> None:
         """Vérifie les trois classes et un seul appel par SIREN."""
@@ -177,9 +179,9 @@ class TestReglesPeppol(unittest.TestCase):
             tiers = lire_tiers_facturation(FauxOdooFacturation())
         self.assertEqual(
             [un_tiers["siren"] for un_tiers in tiers],
-            ["538133141", "673620399", "334668852", "", "538133141"],
+            ["111111118", "222222226", "333333334", "", "111111118"],
         )
-        self.assertEqual(tiers[4]["adresse_actuelle"], "0225:538133141")
+        self.assertEqual(tiers[4]["adresse_actuelle"], "0225:111111118")
         repertoire = FauxRepertoire()
         resultats = verifier(tiers, repertoire, lambda duree: None)
         self.assertEqual(
@@ -187,14 +189,14 @@ class TestReglesPeppol(unittest.TestCase):
             [INSCRIT, INSCRIT, NON_TROUVE, SANS_SIREN, INSCRIT],
         )
         self.assertEqual(
-            repertoire.appels, ["538133141", "673620399", "334668852"]
+            repertoire.appels, ["111111118", "222222226", "333333334"]
         )
 
     def test_ecrire_adresses(self) -> None:
         """Vérifie l'écriture, la fiche déjà renseignée et les refus."""
         choix = [
-            {"id": 1, "schema": "0225", "identifiant": "538133141"},
-            {"id": 5, "schema": "0225", "identifiant": "538133141"},
+            {"id": 1, "schema": "0225", "identifiant": "111111118"},
+            {"id": 5, "schema": "0225", "identifiant": "111111118"},
         ]
         with tempfile.TemporaryDirectory() as dossier:
             trace = os.path.join(dossier, "t.jsonl")
@@ -209,7 +211,7 @@ class TestReglesPeppol(unittest.TestCase):
                         {
                             "id": 2,
                             "schema": "0009",
-                            "identifiant": "67362039900026",
+                            "identifiant": "22222222600029",
                         }
                     ],
                     "b",
@@ -220,7 +222,7 @@ class TestReglesPeppol(unittest.TestCase):
         self.assertEqual((bilan["ecrits"], bilan["ignores"]), ([1], [5]))
         self.assertEqual(
             (odoo.fiches[1]["peppol_eas"], odoo.fiches[1]["peppol_endpoint"]),
-            ("0225", "538133141"),
+            ("0225", "111111118"),
         )
 
 
@@ -264,7 +266,7 @@ class TestEcranPeppol(test_tiers_siret.TestEcranSiret):
         self.assertEqual(statut, 200)
         self.assertIn("facture_electronique", disposition)
         self.assertIn("non trouvé (à vérifier)", contenu)
-        choix = [{"id": 1, "schema": "0225", "identifiant": "538133141"}]
+        choix = [{"id": 1, "schema": "0225", "identifiant": "111111118"}]
         self.assertIn(
             "pas été trouvée",
             self.refus(
@@ -284,12 +286,12 @@ class TestEcranPeppol(test_tiers_siret.TestEcranSiret):
             {
                 "cible": "production",
                 "choix": choix,
-                "confirmation": "Albhades production",
+                "confirmation": "Client A production",
             },
         )
         self.assertEqual(prod["resultat"]["ecrits"], [1])
         self.assertEqual(
-            self.odoo[self.prod].fiches[1]["peppol_endpoint"], "538133141"
+            self.odoo[self.prod].fiches[1]["peppol_endpoint"], "111111118"
         )
         annule = self.tache(
             "/api/peppol/%s/annuler" % ident, {"cible": "production"}

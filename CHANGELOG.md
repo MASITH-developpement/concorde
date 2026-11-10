@@ -3,6 +3,33 @@
 Format : [Keep a Changelog](https://keepachangelog.com/fr/1.1.0/), versions sémantiques.
 Le module Odoo porte la même version au format `17.0.X.Y.Z` (`deploy/addons/concorde/__manifest__.py`).
 
+## [1.14.0] — 2026-11-10
+### Modifié
+- **Aucune donnée client dans le dépôt** (le dépôt a été public) :
+  - la table de correspondance des comptes du client sort du dépôt :
+    `/etc/concorde/mapping_quadra_odoo.json`, hors git (`concorde.yaml`,
+    `scripts/export_odoo_online.py`) ; modèle fictif
+    `mapping_quadra_odoo.exemple.json` ; le fichier est ignoré par git.
+    Absente, la lecture échoue avec un message qui cite le chemin ;
+  - module Odoo : `install_module.sh` n'embarque la table que si
+    `/etc/concorde` l'a ; sans table embarquée ni classeur déposé,
+    l'assistant d'import le dit au lieu de planter ;
+  - noms du client et de ses bases remplacés par des noms neutres
+    (« Client A », `base_test`, `base_production`) dans le code, les
+    écrans, les docs, les ADR et les tests ;
+  - codes de comptes du plan client remplacés par des codes fictifs dans
+    les tests et les exemples (4 premiers chiffres gardés : même sens
+    comptable).
+  - SIREN, SIRET, TVA, noms et adresses de sociétés réelles des tests
+    (annuaire, Peppol, démat) remplacés par des valeurs fictives aux clés
+    de contrôle valides (ou fausses quand le test l'exige) ;
+  - ADR 0001, 0006, 0010, 0012, 0013 et 0014 : noms et codes neutralisés,
+    décision inchangée (mention en tête de chacune ; exception à la règle
+    « une ADR acceptée ne se modifie pas », validée par Stéphane).
+### Mise en place (root, avant la fusion)
+- `sudo install -o ubuntu -g ubuntu -m 640 mapping_quadra_odoo.json
+  /etc/concorde/mapping_quadra_odoo.json` (copie de la table actuelle).
+
 ## [1.13.0] — 2026-11-10
 ### Modifié
 - **Analyse : règles de solde sur le solde cumulé à la date de fin**
@@ -116,7 +143,7 @@ Le module Odoo porte la même version au format `17.0.X.Y.Z` (`deploy/addons/con
 ### Corrigé
 - « Facture électronique » et « Compléter SIRET et TVA » ne proposaient que
   les connexions de l'écran Transferts : une base déjà branchée dans le
-  sélecteur (ex. `albhades prod`) devait être ressaisie, et la liste restait
+  sélecteur (ex. `client a prod`) devait être ressaisie, et la liste restait
   vide. Ils proposent maintenant toutes les bases où CONCORDE peut écrire
   (sélecteur et Transferts) : on choisit la base à compléter et sa copie de
   test. `Bases.acces_ecriture`, route `GET /api/tiers/bases`.

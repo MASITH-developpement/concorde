@@ -701,7 +701,7 @@ class TestNormalisation(unittest.TestCase):
 
     def test_nombre_texte(self) -> None:
         """Les flottants entiers d'Excel perdent leur « .0 »."""
-        self.assertEqual(_nombre_texte(10130000.0), "10130000")
+        self.assertEqual(_nombre_texte(10139001.0), "10139001")
         self.assertEqual(_nombre_texte(401), "401")
         self.assertEqual(_nombre_texte(12.5), "12.5")
         self.assertEqual(_nombre_texte(" 411A "), "411A")

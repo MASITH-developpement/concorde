@@ -23,7 +23,11 @@ from core.export_odoo import (
     generer_csv_ecritures,
 )
 from core.fec_parser import parse_fec
-from core.mapping import charger_mapping, charger_mapping_xlsx
+from core.mapping import (
+    CHEMIN_MAPPING_CLIENT,
+    charger_mapping,
+    charger_mapping_xlsx,
+)
 from core.moteur import verifier_equilibre
 from core.xlsx_vers_fec import xlsx_vers_fec
 
@@ -70,7 +74,8 @@ def main() -> int:
         "-m",
         "--mapping",
         default=None,
-        help="Fichier de mapping (xlsx) ; sinon JSON embarqué",
+        help="Fichier de mapping (xlsx) ; sinon la table du client "
+        "(/etc/concorde/mapping_quadra_odoo.json)",
     )
     ap.add_argument(
         "-v",
@@ -110,12 +115,7 @@ def main() -> int:
                 nom_fichier=os.path.basename(args.mapping),
             )
     else:
-        mapping = charger_mapping(
-            os.path.join(
-                os.path.dirname(os.path.dirname(os.path.abspath(__file__))),
-                "mapping_quadra_odoo.json",
-            )
-        )
+        mapping = charger_mapping(CHEMIN_MAPPING_CLIENT)
 
     # Correspondance identité pour les comptes absents du mapping (décision
     # client explicite) : compte Odoo de même code, créé depuis l'export.

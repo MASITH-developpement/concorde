@@ -298,7 +298,7 @@ def _centimes(v: object, contexte: str) -> int:
 def _nombre_texte(v: object) -> str:
     """Normalise un identifiant (EcritureNum, CompteNum) depuis une cellule.
 
-    Excel stocke souvent les numeros en float (5535.0, 10130000.0) :
+    Excel stocke souvent les numeros en float (5535.0, 10139001.0) :
     on affiche sans decimale parasite, sans deviner autre chose.
     """
     if v is None:

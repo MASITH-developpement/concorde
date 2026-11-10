@@ -13,11 +13,13 @@ import importlib.util
 import io
 import os
 import sys
+import tempfile
 import types
 import unittest
 import zipfile
 from collections.abc import Mapping
 from typing import Protocol
+from unittest import mock
 
 from core.fec_parser import parse_fec
 from samples.generateur_fec_test import generer_fec
@@ -151,6 +153,9 @@ class AssistantImport(Protocol):
     def _lire_binaire(self, valeur: object) -> bytes:
         """Rend le contenu brut (octets) d'un champ Binary."""
 
+    def _config_mapping(self) -> Mapping[str, object]:
+        """Mapping du pipeline : fichier déposé ou table embarquée."""
+
 
 class TestLireBinaire(unittest.TestCase):
     """_lire_binaire : contenu brut d'un champ Binary, toutes versions."""
@@ -222,6 +227,32 @@ class ModelePiecesJointes:
         return self.derniere_piece
 
 
+class TestTableEmbarquee(unittest.TestCase):
+    """Table de correspondance du client : hors git, embarquée si présente."""
+
+    def test_table_absente_message_clair(self) -> None:
+        """Sans table embarquée ni classeur déposé : message, pas plantage."""
+        module = charger_assistant_import()
+        assistant: AssistantImport = module.ConcordeImportWizard()
+        with mock.patch.object(
+            module, "_chemin_engine", return_value=tempfile.mkdtemp()
+        ):
+            with self.assertRaises(ErreurUtilisateurBouchon) as erreur_levee:
+                assistant._config_mapping()
+        self.assertIn("déposez le classeur", str(erreur_levee.exception))
+
+    def test_table_presente_utilisee(self) -> None:
+        """Table copiée par install_module.sh : elle est utilisée."""
+        module = charger_assistant_import()
+        assistant: AssistantImport = module.ConcordeImportWizard()
+        dossier = tempfile.mkdtemp()
+        chemin = os.path.join(dossier, "mapping_quadra_odoo.json")
+        with open(chemin, "w", encoding="utf-8") as fichier:
+            fichier.write("[]")
+        with mock.patch.object(module, "_chemin_engine", return_value=dossier):
+            self.assertEqual(assistant._config_mapping()["fichier"], chemin)
+
+
 class TestExporter(unittest.TestCase):
     """action_exporter : le zip d'import Odoo porte les intitulés du FEC."""
 
@@ -231,7 +262,7 @@ class TestExporter(unittest.TestCase):
         contexte_simule = {
             "resultats": [{}, {}, {"resultat": {"canon": canon}}]
         }
-        mapping_simule = {"libelles": {"41100000": "Clients test"}}
+        mapping_simule = {"libelles": {"41109009": "Clients test"}}
         pieces_jointes = ModelePiecesJointes()
         assistant = charger_assistant_import().ConcordeImportWizard()
         assistant.fec_file = "UEsDBA=="

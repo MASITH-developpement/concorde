@@ -18,3 +18,5 @@ deploy/addons/accounting_pdf_reports/
 deploy/clamav/
 deploy/*.backup-*
 .coverage
+# Table de correspondance des comptes d'un client (hors git, /etc/concorde).
+mapping_quadra_odoo.json

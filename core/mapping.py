@@ -28,6 +28,11 @@ from .xml_sur import ElementXml, ErreurLectureXml, lire_xml
 from .canonical import Canonique, extraire_canon
 from .xlsx_ecrire import lettres_colonne
 
+# Table de correspondance des comptes d'un client : sur le serveur, hors git
+# (données client ; le dépôt est public). Modèle fictif :
+# mapping_quadra_odoo.exemple.json.
+CHEMIN_MAPPING_CLIENT = "/etc/concorde/mapping_quadra_odoo.json"
+
 
 class ErreurMapping(RuntimeError):
     """Mapping illisible, incomplet ou contradictoire (jamais deviné)."""
@@ -437,7 +442,7 @@ def valeurs_cellules_ligne(
 
 
 def _compte_txt(v: object) -> str:
-    """Numéro de compte -> texte propre (jamais '10130000.0')."""
+    """Numéro de compte -> texte propre (jamais '10139001.0')."""
     if isinstance(v, bool):
         return ""
     if isinstance(v, float):

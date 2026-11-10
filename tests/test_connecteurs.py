@@ -1080,7 +1080,7 @@ class TestConnecteurOdoo(Bac):
         info = self.odoo().tester(Journal())
         self.assertEqual(
             (info["societe"], info["siren"], info["version"]),
-            ("Soc", "384684957", "17.0"),
+            ("Soc", "666666664", "17.0"),
         )
         lot = self.odoo().lire({"du": None, "au": None}, Journal())
         self.assertEqual(lot.source["type"], "odoo")

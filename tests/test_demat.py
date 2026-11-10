@@ -23,8 +23,8 @@ from core.demat import (
 from tests.outils import Enregistrement
 
 AUJ = date(2026, 11, 2)
-SIREN_OK = "732829320"  # clé de Luhn valide
-TVA_OK = "FR44732829320"
+SIREN_OK = "555555556"  # clé de Luhn valide
+TVA_OK = "FR70555555556"
 
 # Condition de domaine Odoo : (champ, opérateur, valeur).
 ConditionDomaine = tuple[str, str, Any]
@@ -272,13 +272,13 @@ class TestIdentifiants(unittest.TestCase):
     def test_siren_siret_tva(self) -> None:
         """Vérifie la clé de contrôle des SIREN, SIRET et TVA françaises."""
         self.assertTrue(siren_valide(SIREN_OK))
-        self.assertFalse(siren_valide("732829321"))
+        self.assertFalse(siren_valide("555555550"))
         self.assertTrue(siren_valide("356000000"))  # La Poste
-        self.assertTrue(siret_valide("73282932000074"))
-        self.assertFalse(siret_valide("73282932000075"))
+        self.assertTrue(siret_valide("55555555600078"))
+        self.assertFalse(siret_valide("55555555600070"))
         self.assertTrue(tva_fr_valide(TVA_OK))
-        self.assertTrue(tva_fr_valide("fr 44 732829320"))
-        self.assertFalse(tva_fr_valide("FR45732829320"))
+        self.assertTrue(tva_fr_valide("fr 70 555555556"))
+        self.assertFalse(tva_fr_valide("FR71555555556"))
 
     def test_centimes(self) -> None:
         """Vérifie la conversion exacte des montants Odoo en centimes."""
